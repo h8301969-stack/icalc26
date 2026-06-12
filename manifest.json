@@ -1,0 +1,30 @@
+
+{
+  "name": "Vision iCalc 26",
+  "short_name": "iCalc",
+  "description": "Spatial Glassmorphic Calculator for iOS 26",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "https://i.ibb.co/Vc84fBqf/grok-image-xo6gt4m-1.jpg",
+      "sizes": "1024x1024",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://i.ibb.co/Vc84fBqf/grok-image-xo6gt4m-1.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "https://i.ibb.co/Vc84fBqf/grok-image-xo6gt4m-1.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Icalc 26 new",
+  "description": "A futuristic calculator mimicking the sleek aesthetic of iOS 26, featuring glassmorphism, smooth animations, and advanced spatial design.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
