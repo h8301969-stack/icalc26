@@ -1,3 +1,56 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  
+  --animate-ripple: ripple 0.6s linear;
+  --animate-fade-in: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-insight-pop: insight-pop 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+
+  @keyframes ripple {
+    0% { transform: scale(0); opacity: 0.4; }
+    100% { transform: scale(4); opacity: 0; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes insight-pop {
+    from { opacity: 0; transform: scale(0.9) translateY(60px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+}
+
+/* Base overrides and glassmorphism helpers */
+:root { --glass-blur: 24px; }
+
+body {
+  @apply bg-black text-white overflow-hidden;
+  font-family: var(--font-sans);
+  height: 100dvh;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+#root { height: 100%; }
+
+.glass-panel {
+  @apply border-[rgba(255,255,255,0.15)] border;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
+/* Utility classes and accessibility overrides */
+* { 
+  -webkit-touch-callout: none; 
+  -webkit-user-select: none; 
+  user-select: none; 
+}
+
+input, textarea { -webkit-user-select: auto; user-select: auto; }
+::-webkit-scrollbar { display: none; }
+
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.custom-scrollbar::-webkit-scrollbar { width: 6px; display: block; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.25); border-radius: 30px; }

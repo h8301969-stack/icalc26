@@ -10,79 +10,10 @@
     <link rel="apple-touch-icon" href="https://i.ibb.co/Vc84fBqf/grok-image-xo6gt4m-1.jpg">
     <link rel="manifest" href="manifest.json">
     <title>iCalc 26 | Spatial Edition</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-          theme: {
-            extend: {
-              fontFamily: {
-                sans: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Display"', '"SF Pro Text"', '"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
-              },
-              animation: {
-                'ripple': 'ripple 0.6s linear',
-                'fade-in': 'fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-                'insight-pop': 'insight-pop 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-              },
-              keyframes: {
-                ripple: {
-                  '0%': { transform: 'scale(0)', opacity: '0.4' },
-                  '100%': { transform: 'scale(4)', opacity: '0' },
-                },
-                'fade-in': { 
-                  'from': { opacity: '0', transform: 'translateY(16px)' }, 
-                  'to': { opacity: '1', transform: 'translateY(0)' } 
-                },
-                'insight-pop': { 
-                  'from': { opacity: '0', transform: 'scale(0.9) translateY(60px)' }, 
-                  'to': { opacity: '1', transform: 'scale(1) translateY(0)' } 
-                }
-              }
-            },
-          },
-        }
-    </script>
-    <style>
-        :root { --glass-blur: 24px; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
-            background-color: #000;
-            color: #fff;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            height: 100dvh;
-            -webkit-tap-highlight-color: transparent;
-            overscroll-behavior-y: none;
-        }
-        #root { height: 100%; }
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.08);
-            backdrop-filter: blur(var(--glass-blur));
-            -webkit-backdrop-filter: blur(var(--glass-blur));
-            border: 1px solid rgba(255, 255, 255, 0.15);
-        }
-        ::-webkit-scrollbar { display: none; }
-        * { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
-        input, textarea { -webkit-user-select: auto; user-select: auto; }
-        
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.25); border-radius: 30px; }
-    </style>
-    <script type="importmap">
-    {
-      "imports": {
-        "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-        "react/": "https://esm.sh/react@^19.2.3/",
-        "react": "https://esm.sh/react@^19.2.3",
-        "@google/genai": "https://esm.sh/@google/genai@^0.2.1"
-      }
-    }
-    </script>
+    <meta name="description" content="A professional grade spatial calculator with high-precision math engine.">
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root" aria-hidden="false"></div>
     <script type="module" src="index.tsx"></script>
     <!-- Service worker registration moved to index.tsx and enabled only in production builds -->
 </body>

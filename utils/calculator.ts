@@ -1,7 +1,4 @@
-/**
- * Production-grade expression evaluator
- * Handles operator precedence, decimals, and validates input
- */
+import Fraction from 'fraction.js';
 
 export class CalculationError extends Error {
   constructor(message: string) {
@@ -10,295 +7,125 @@ export class CalculationError extends Error {
   }
 }
 
-interface Token {
-  type: 'number' | 'operator' | 'paren';
-  value: string;
-}
-
 /**
- * Tokenizes an expression string
- * Supports unary minus (negation) and rejects invalid characters.
+ * Production-grade Math Engine
+ * Uses Recursive Descent Parsing and Fraction.js for precision.
  */
-function tokenize(expr: string): Token[] {
-  const tokens: Token[] = [];
-  let i = 0;
+export const evaluateExpression = (input: string): number => {
+  const sanitized = input.replace(/×/g, '*').replace(/÷/g, '/').trim();
+  if (!sanitized) throw new CalculationError('Empty expression');
 
-  while (i < expr.length) {
-    const char = expr[i];
+  const tokens = tokenize(sanitized);
+  let pos = 0;
 
-    if (char === ' ') {
-      i++;
-      continue;
+  const parseExpression = (): Fraction => {
+    let node = parseTerm();
+    while (pos < tokens.length && (tokens[pos] === '+' || tokens[pos] === '-')) {
+      const op = tokens[pos++];
+      const right = parseTerm();
+      node = op === '+' ? node.add(right) : node.sub(right);
     }
+    return node;
+  };
 
-    if (/\d/.test(char) || char === '.') {
-      let current = '';
-      while (i < expr.length && (/\d/.test(expr[i]) || expr[i] === '.')) {
-        current += expr[i];
-        i++;
-      }
-      if (current.endsWith('.')) {
-        throw new CalculationError('Invalid decimal number');
-      }
-      tokens.push({ type: 'number', value: current });
-      continue;
-    }
-
-    if (['+', '*', '/', '%', '×', '÷'].includes(char)) {
-      const op = char === '×' ? '*' : char === '÷' ? '/' : char;
-      tokens.push({ type: 'operator', value: op });
-      i++;
-      continue;
-    }
-
-    if (char === '-') {
-      const prev = tokens.length > 0 ? tokens[tokens.length - 1] : null;
-      const isUnaryContext = !prev ||
-        prev.type === 'operator' ||
-        (prev.type === 'paren' && prev.value === '(');
-
-      if (isUnaryContext) {
-        i++; // consume the '-'
-        let num = '';
-        while (i < expr.length && (/\d/.test(expr[i]) || expr[i] === '.')) {
-          num += expr[i];
-          i++;
-        }
-        if (!num) {
-          // unary minus not followed by digits, e.g. "5*-" or "(-" at end
-          tokens.push({ type: 'operator', value: '-' });
-          continue;
-        }
-        if (num.startsWith('.')) num = '0' + num;
-        if (num.endsWith('.')) {
-          throw new CalculationError('Invalid decimal number');
-        }
-        tokens.push({ type: 'number', value: '-' + num });
-        continue;
+  const parseTerm = (): Fraction => {
+    let node = parseFactor();
+    while (pos < tokens.length && (tokens[pos] === '*' || tokens[pos] === '/' || tokens[pos] === '%')) {
+      const op = tokens[pos++];
+      const right = parseFactor();
+      if (op === '/' || op === '%') {
+        if (right.equals(0)) throw new CalculationError('Division by zero');
+        node = op === '/' ? node.div(right) : node.mod(right);
       } else {
-        // binary minus
-        tokens.push({ type: 'operator', value: '-' });
-        i++;
-        continue;
+        node = node.mul(right);
       }
     }
+    return node;
+  };
 
-    if (char === '(' || char === ')') {
-      tokens.push({ type: 'paren', value: char });
-      i++;
-      continue;
+  const parseFactor = (): Fraction => {
+    const token = tokens[pos++];
+    if (token === '(') {
+      const val = parseExpression();
+      if (tokens[pos++] !== ')') throw new CalculationError('Mismatched parentheses');
+      return val;
     }
-
-    // Unknown character -> invalid input
-    throw new CalculationError('Invalid character in expression');
-  }
-
-  return tokens;
-}
-
-/**
- * Validates tokens for syntax errors
- */
-function validateTokens(tokens: Token[]): void {
-  if (tokens.length === 0) {
-    throw new CalculationError('Empty expression');
-  }
-
-  // Check for invalid token sequences
-  for (let i = 0; i < tokens.length; i++) {
-    const curr = tokens[i];
-    const next = tokens[i + 1];
-    const prev = tokens[i - 1];
-
-    // Operator can't be at start (except minus for negation)
-    if (curr.type === 'operator' && i === 0 && curr.value !== '-') {
-      throw new CalculationError('Expression cannot start with an operator');
+    if (token === '-') {
+      return parseFactor().mul(-1);
     }
-
-    // Two operators in a row
-    if (curr.type === 'operator' && next?.type === 'operator') {
-      throw new CalculationError('Cannot have two operators in a row');
+    if (!isNaN(Number(token))) {
+      return new Fraction(token);
     }
+    throw new CalculationError(`Invalid token: ${token}`);
+  };
 
-    // Invalid decimal
-    if (curr.type === 'number' && (curr.value === '.' || /\.\d*\./.test(curr.value))) {
-      throw new CalculationError('Invalid decimal number');
-    }
+  const result = parseExpression();
+  if (pos !== tokens.length) throw new CalculationError('Invalid expression syntax');
+  return result.valueOf();
+};
 
-    // Parenthesis mismatch
-    if (curr.type === 'paren' && curr.value === ')' && prev?.type === 'operator') {
-      throw new CalculationError('Invalid expression near parenthesis');
-    }
-  }
+const tokenize = (str: string): string[] => {
+  const regex = /\d*\.?\d+|[+\-*/%()]/g;
+  const matches = str.match(regex);
+  if (!matches) throw new CalculationError('No valid tokens found');
+  return matches;
+};
 
-  // Check balanced parentheses
-  let parenCount = 0;
-  for (const token of tokens) {
-    if (token.type === 'paren') {
-      parenCount += token.value === '(' ? 1 : -1;
-      if (parenCount < 0) {
-        throw new CalculationError('Unmatched closing parenthesis');
-      }
-    }
-  }
-  if (parenCount !== 0) {
-    throw new CalculationError('Unmatched opening parenthesis');
-  }
-}
-
-/**
- * Recursive descent parser with proper precedence
- */
-class Parser {
-  private tokens: Token[];
-  private pos: number = 0;
-
-  constructor(tokens: Token[]) {
-    this.tokens = tokens;
-  }
-
-  private current(): Token | null {
-    return this.tokens[this.pos] ?? null;
-  }
-
-  private advance(): void {
-    this.pos++;
-  }
-
-  private consume(expected: string): Token {
-    const curr = this.current();
-    if (!curr || curr.value !== expected) {
-      throw new CalculationError(`Expected ${expected}`);
-    }
-    this.advance();
-    return curr;
-  }
-
-  parse(): number {
-    const result = this.parseAddition();
-    if (this.current() !== null) {
-      throw new CalculationError('Unexpected tokens after expression');
-    }
-    return result;
-  }
-
-  private parseAddition(): number {
-    let left = this.parseMultiplication();
-
-    while (this.current()?.type === 'operator' && ['+', '-'].includes(this.current()!.value)) {
-      const op = this.current()!.value;
-      this.advance();
-      const right = this.parseMultiplication();
-      left = op === '+' ? left + right : left - right;
-    }
-
-    return left;
-  }
-
-  private parseMultiplication(): number {
-    let left = this.parsePrimary();
-
-    while (this.current()?.type === 'operator' && ['*', '/', '%'].includes(this.current()!.value)) {
-      const op = this.current()!.value;
-      this.advance();
-      const right = this.parsePrimary();
-
-      if (op === '*') {
-        left = left * right;
-      } else if (op === '/') {
-        if (right === 0) {
-          throw new CalculationError('Division by zero');
-        }
-        left = left / right;
-      } else if (op === '%') {
-        if (right === 0) {
-          throw new CalculationError('Modulo by zero');
-        }
-        left = left % right;
-      }
-    }
-
-    return left;
-  }
-
-  private parsePrimary(): number {
-    const curr = this.current();
-
-    if (!curr) {
-      throw new CalculationError('Unexpected end of expression');
-    }
-
-    // Parenthesized expression
-    if (curr.type === 'paren' && curr.value === '(') {
-      this.advance();
-      const result = this.parseAddition();
-      this.consume(')');
-      return result;
-    }
-
-    // Number
-    if (curr.type === 'number') {
-      const value = parseFloat(curr.value);
-      if (isNaN(value)) {
-        throw new CalculationError('Invalid number');
-      }
-      this.advance();
-      return value;
-    }
-
-    throw new CalculationError('Unexpected token in expression');
-  }
-}
-
-/**
- * Evaluates a mathematical expression string
- * @throws CalculationError if expression is invalid
- */
-export function evaluateExpression(expr: string): number {
-  if (!expr || expr.trim() === '') {
-    throw new CalculationError('Empty expression');
-  }
-
-  const tokens = tokenize(expr);
-  validateTokens(tokens);
-  const parser = new Parser(tokens);
-  const result = parser.parse();
-
-  if (!isFinite(result)) {
-    throw new CalculationError('Result is not a valid number');
-  }
-
-  return result;
-}
-
-/**
- * Safely evaluates expression and returns formatted result.
- * Never throws — returns a default formatted value on any error (for live previews).
- */
-export function safeEvaluate(expr: string, decimalPlaces: number = 2, defaultValue: string = '0.00'): string {
+export const safeEvaluate = (expr: string, decimals = 2): string => {
   try {
-    if (!expr || expr === '0') return defaultValue;
-
-    const result = evaluateExpression(expr);
-    if (!isFinite(result)) return defaultValue;
-    return result.toFixed(decimalPlaces);
+    // Clean trailing operators before evaluation
+    const cleanExpr = expr.replace(/[+\-*/%×÷(]+$/, '');
+    if (!cleanExpr || cleanExpr === '0') return '0.00';
+    
+    const result = evaluateExpression(cleanExpr);
+    if (!isFinite(result)) return '0.00';
+    
+    return result.toLocaleString('en-US', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+      useGrouping: false
+    });
   } catch {
-    return defaultValue;
+    return '0.00';
   }
-}
+};
 
-/**
- * Validates if a string is a valid incomplete expression
- */
-export function isValidPartialExpression(expr: string): boolean {
-  if (!expr || expr === '0') return true;
-
+export const isValidPartialExpression = (expr: string): boolean => {
+  if (!expr) return true;
   try {
-    const tokens = tokenize(expr);
-    // Valid partial if it doesn't end with an operator
-    const last = tokens[tokens.length - 1];
-    return last?.type !== 'operator';
+    const sanitized = expr.replace(/×/g, '*').replace(/÷/g, '/');
+    // Simple check: shouldn't end with a binary operator for a "final" evaluation
+    return !/[+\-*/%]$/.test(sanitized);
   } catch {
     return false;
   }
-}
+};
+
+/**
+ * Handles complex toggle sign logic for expression strings
+ */
+export const toggleExpressionSign = (expression: string): string => {
+  if (expression === '0') return '0';
+  
+  // Regex to find the last number or parenthesized group
+  const match = expression.match(/([+\-×÷(]|^)(-?\d*\.?\d*)$/);
+  if (!match) return expression;
+
+  const prefix = expression.slice(0, match.index! + (match[1] ? match[1].length : 0));
+  let lastNum = match[2] || '';
+
+  if (lastNum === '' && prefix.endsWith('(')) {
+     return expression; // Don't negate empty parens yet
+  }
+
+  const toggled = lastNum.startsWith('-') ? lastNum.slice(1) : '-' + lastNum;
+  
+  // Cleanup double negatives or operator clashes
+  let result = prefix + toggled;
+  return result
+    .replace(/\+\-/g, '-')
+    .replace(/\-\-/g, '+')
+    .replace(/×\-/g, '×-')
+    .replace(/÷\-/g, '÷-')
+    .replace(/\(\-/g, '(-');
+};

@@ -1,38 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { HistoryItem } from '../types';
 import { Icons } from '../constants';
-
-interface ActivityLogEntry {
-  id: string;
-  type: 'restock' | 'sale' | 'cart-add' | 'cart-remove' | 'image-update';
-  action: string;
-  time: string;
-  timestamp: number;
-}
-
-interface PurchaseRecord {
-  id: string;
-  itemName: string;
-  quantity: number;
-  price: number;
-  total: number;
-  date: string;
-  timestamp: number;
-}
-
-interface InventoryItem {
-  id: string;
-  name: string;
-  stock: number;
-  price: number;
-  threshold: number;
-  category: string;
-  dateAdded: string;
-  supplier: string;
-  lastStocked: string; 
-  image: string;
-  activities: ActivityLogEntry[];
-}
+import { usePOS, InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS';
 
 interface POSDashboardProps {
   history: HistoryItem[];
@@ -44,40 +13,8 @@ interface POSDashboardProps {
   updateSettings: (key: string, value: any) => void;
 }
 
-const INITIAL_INVENTORY: InventoryItem[] = [
-  { 
-    id: '1', 
-    name: 'Neural Processor X1', 
-    stock: 42, 
-    price: 450,
-    threshold: 50, 
-    category: 'Hardware', 
-    dateAdded: '2025-01-10', 
-    supplier: 'Synapse Tech', 
-    lastStocked: new Date(Date.now() - 3600000 * 2).toISOString(),
-    image: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&q=80',
-    activities: [
-      { id: '1a', type: 'restock', action: 'Restocked 10 units', time: '2h ago', timestamp: Date.now() - 3600000 * 2 },
-    ]
-  },
-  { 
-    id: '2', 
-    name: 'Optic Glass v26', 
-    stock: 12, 
-    price: 120,
-    threshold: 20, 
-    category: 'Optics', 
-    dateAdded: '2025-02-14', 
-    supplier: 'Lumina Corp', 
-    lastStocked: new Date(Date.now() - 3600000 * 48).toISOString(),
-    image: 'https://images.unsplash.com/photo-1509223197845-458d87318791?w=400&q=80',
-    activities: [
-      { id: '2b', type: 'restock', action: 'Restocked 5 units', time: '2 days ago', timestamp: Date.now() - 3600000 * 48 },
-    ]
-  }
-];
-
 const POSDashboard: React.FC<POSDashboardProps> = ({ history, isOpen, onClose, isLight, accentColor, formatCurrency, updateSettings }) => {
+  const { items, setItems, purchases } = usePOS(history);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [inventoryExpanded, setInventoryExpanded] = useState(false);
   const [purchasesExpanded, setPurchasesExpanded] = useState(false);
@@ -92,7 +29,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({ history, isOpen, onClose, i
   const [customDateEnd, setCustomDateEnd] = useState('');
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [items, setItems] = useState<InventoryItem[]>(INITIAL_INVENTORY);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   
   const [newItemName, setNewItemName] = useState('');
@@ -101,8 +37,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({ history, isOpen, onClose, i
   const [newItemImageUrl, setNewItemImageUrl] = useState('');
   const [restockQty, setRestockQty] = useState('25');
   const [restockSupplier, setRestockSupplier] = useState('');
-
-  const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
 
   // Keyboard accessibility: close on Escape
   useEffect(() => {
@@ -114,41 +48,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({ history, isOpen, onClose, i
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    const savedInventory = localStorage.getItem('pos_inventory');
-    if (savedInventory) setItems(JSON.parse(savedInventory));
-    
-    const savedPurchases = localStorage.getItem('pos_purchases');
-    if (savedPurchases) setPurchases(JSON.parse(savedPurchases));
-    
     return () => clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem('pos_inventory', JSON.stringify(items));
-  }, [items]);
-
-  useEffect(() => {
-    localStorage.setItem('pos_purchases', JSON.stringify(purchases));
-  }, [purchases]);
-
-  useEffect(() => {
-    if (history.length > 0) {
-      const latest = history[0];
-      const exists = purchases.some(p => p.id === latest.id);
-      if (!exists) {
-        const newPurchase: PurchaseRecord = {
-          id: latest.id,
-          itemName: 'Retail Sale',
-          quantity: 1,
-          price: parseFloat(latest.result),
-          total: parseFloat(latest.result),
-          date: new Date(latest.timestamp).toLocaleString(),
-          timestamp: latest.timestamp
-        };
-        setPurchases(prev => [newPurchase, ...prev].slice(0, 50));
-      }
-    }
-  }, [history, purchases.length]);
 
   const stats = useMemo(() => {
     const now = new Date();
