@@ -1,5 +1,3 @@
-export type Operation = '+' | '-' | '*' | '/' | '%' | null;
-
 export interface HistoryItem {
   id: string;
   expression: string;

@@ -1,6 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
-import { THEMES, WALLPAPER_SLIDES } from '../constants';
+import { THEMES } from '../constants';
 import { storage } from './storage';
+
+// Import local images to replace external links
+import pos1 from '@/assets/autoswipe/pos1.png';
+import pos2 from '@/assets/autoswipe/pos2.png';
+import pos3 from '@/assets/autoswipe/pos3.png';
+import pos4 from '@/assets/autoswipe/pos4.png';
+import pos5 from '@/assets/autoswipe/pos5.png';
+import pos6 from '@/assets/autoswipe/pos6.png';
+
+const LOCAL_WALLPAPERS = [pos1, pos2, pos3, pos4, pos5, pos6];
+export { LOCAL_WALLPAPERS }; // Export for use in Settings UI components
 
 const SETTINGS_KEY = 'calc_settings';
 
@@ -11,7 +22,7 @@ const DEFAULTS = {
   hapticIntensity: 'medium' as 'soft' | 'medium' | 'intense',
   themeMode: 'light' as 'light' | 'dark',
   currency: 'GHS' as 'GHS' | 'USD' | 'EUR' | 'GBP' | 'JPY' | 'NGN',
-  customWallpapers: WALLPAPER_SLIDES,
+  customWallpapers: LOCAL_WALLPAPERS,
   uiScale: 1
 };
 
