@@ -26,18 +26,18 @@ export const AutoSwipe: React.FC = () => {
   }, []);
 
   return (
-    <div className="fixed inset-0 w-full h-full overflow-hidden -z-10 bg-black">
+    <div className="relative w-full max-w-lg mx-auto overflow-hidden rounded-2xl shadow-xl bg-gray-900">
       {/* Slider Container */}
       <div 
-        className="flex h-full transition-transform duration-1000 ease-in-out"
+        className="flex transition-transform duration-700 ease-in-out"
         style={{ transform: `translateX(-${currentIndex * 100}%)` }}
       >
         {swipeImages.map((image, index) => (
-          <div key={index} className="w-full h-full flex-shrink-0">
+          <div key={index} className="w-full flex-shrink-0">
             <img 
               src={image} 
               alt={`Slide ${index + 1}`} 
-              className="w-full h-full object-cover opacity-60"
+              className="w-full h-auto object-contain"
             />
           </div>
         ))}

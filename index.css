@@ -3,16 +3,6 @@
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
   
-  /* iOS Consistent Radius Scale */
-  --radius-xs: 0.25rem;    /* 4px */
-  --radius-sm: 0.5rem;     /* 8px */
-  --radius-md: 0.75rem;    /* 12px - standard iOS buttons */
-  --radius-lg: 1rem;       /* 16px - cards */
-  --radius-xl: 1.25rem;    /* 20px */
-  --radius-2xl: 1.5rem;    /* 24px - modal sheets */
-  --radius-3xl: 2rem;      /* 32px - main containers */
-  --radius-4xl: 3rem;      /* 48px - outer device frame */
-
   --animate-ripple: ripple 0.6s linear;
   --animate-fade-in: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   --animate-insight-pop: insight-pop 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
