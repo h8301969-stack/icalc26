@@ -44,7 +44,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       <div className="absolute inset-0 bg-black/40 backdrop-blur-md cursor-pointer" onClick={onClose} aria-hidden="true" />
       <div 
         className={`
-          relative w-full max-w-sm max-h-[75vh] flex flex-col rounded-[44px] shadow-[0_60px_160px_rgba(0,0,0,0.6)] overflow-hidden transition-all duration-300 transform cubic-bezier(0.16, 1, 0.3, 1)
+          relative w-full max-w-sm max-h-[75vh] flex flex-col rounded-[28.6px] shadow-[0_60px_160px_rgba(0,0,0,0.6)] overflow-hidden transition-all duration-300 transform cubic-bezier(0.16, 1, 0.3, 1)
           ${isOpen ? 'scale-100 translate-y-0 opacity-100' : 'scale-95 translate-y-8 opacity-0'}
           ${isLight ? 'bg-[#f2f2f7]/95 text-black' : 'bg-zinc-900/90 text-white'}
         `}
@@ -75,7 +75,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 aria-label={`History item ${idx + 1}: ${item.expression} equals ${item.result}`}
                 onClick={() => onSelect(item)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(item); } }}
-                className={`p-6 rounded-[36px] transition-all duration-300 cursor-pointer group active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-white/40 ${levitateClass}`}
+                className={`p-6 rounded-[23.4px] transition-all duration-300 cursor-pointer group active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-white/40 ${levitateClass}`}
               >
                 <div className="flex justify-between items-start mb-2">
                   <div className="text-[9px] uppercase tracking-[0.2em] font-black opacity-30">{formatDateTime(item.timestamp)}</div>
@@ -91,7 +91,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           <button 
             onClick={onClear} 
             aria-label="Clear all calculation history"
-            className="w-full py-5 rounded-[28px] bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all duration-300 font-black uppercase tracking-[0.3em] text-[10px] active:scale-95"
+            className="w-full py-5 rounded-[18.2px] bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all duration-300 font-black uppercase tracking-[0.3em] text-[10px] active:scale-95"
           >
             Clear History
           </button>

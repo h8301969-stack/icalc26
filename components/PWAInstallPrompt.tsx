@@ -19,8 +19,8 @@ const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({ showPrompt, onInsta
       />
       
       {/* Prompt card */}
-      <div className="relative w-full pb-safe pointer-events-auto animate-in slide-in-from-bottom-4 duration-300">
-        <div className="mx-4 mb-4 rounded-3xl bg-gradient-to-br from-white/80 to-white/70 backdrop-blur-xl border border-white/40 shadow-2xl overflow-hidden">
+      <div className="relative w-full pb-safe pointer-events-auto animate-in slide-in-from-bottom-4 duration-300 rounded-[15.6px]">
+        <div className="mx-4 mb-4 rounded-[15.6px] bg-gradient-to-br from-white/80 to-white/70 backdrop-blur-xl border border-white/40 shadow-2xl overflow-hidden">
           <div className="p-6 space-y-4">
             {/* Header */}
             <div className="flex items-start justify-between">
@@ -50,13 +50,13 @@ const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({ showPrompt, onInsta
             <div className="flex gap-3 pt-2">
               <button
                 onClick={onDismiss}
-                className="flex-1 py-3 px-4 rounded-xl font-medium text-gray-700 bg-white/50 hover:bg-white/70 transition-colors border border-white/60"
+                className="flex-1 py-3 px-4 rounded-[10.4px] font-medium text-gray-700 bg-white/50 hover:bg-white/70 transition-colors border border-white/60"
               >
                 Not now
               </button>
               <button
                 onClick={onInstall}
-                className="flex-1 py-3 px-4 rounded-xl font-medium text-white bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 transition-all shadow-lg"
+                className="flex-1 py-3 px-4 rounded-[10.4px] font-medium text-white bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 transition-all shadow-lg"
               >
                 Install now
               </button>

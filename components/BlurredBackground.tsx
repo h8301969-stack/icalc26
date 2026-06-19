@@ -3,9 +3,10 @@ import React, { useState, useEffect } from 'react';
 interface BlurredBackgroundProps {
   isLight: boolean;
   wallpapers: { image: string; header: string; subHeader: string }[];
+  isUnlocked?: boolean;
 }
 
-const BlurredBackground: React.FC<BlurredBackgroundProps> = ({ isLight, wallpapers }) => {
+const BlurredBackground: React.FC<BlurredBackgroundProps> = ({ isLight, wallpapers, isUnlocked = true }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
 
   useEffect(() => {
@@ -28,7 +29,7 @@ const BlurredBackground: React.FC<BlurredBackgroundProps> = ({ isLight, wallpape
           <img 
             src={slide.image} 
             alt="" 
-            className="w-full h-full object-cover scale-110 blur-[80px] brightness-[0.7] saturate-[1.2]"
+            className={`w-full h-full object-cover scale-110 transition-all duration-1000 ${isUnlocked ? 'blur-[80px]' : 'blur-0'} brightness-[0.7] saturate-[1.2]`}
           />
         </div>
       ))}

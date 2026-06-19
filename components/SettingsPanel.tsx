@@ -12,12 +12,12 @@ interface SettingsPanelProps {
 }
 
 const CURATED_SCENIC = [
-  { image: 'https://images.unsplash.com/photo-1528164344705-47542687990d?w=800&q=80', header: 'Fuji Peaks', subHeader: 'Serenity at the height of the world.' },
-  { image: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80', header: 'Nordic Lake', subHeader: 'Crystal reflections in the deep north.' },
-  { image: 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?w=800&q=80', header: 'Golden Bridge', subHeader: 'Urban precision meets the fog.' },
-  { image: 'https://images.unsplash.com/photo-1473580044384-7ba9967e16a0?w=800&q=80', header: 'Desert Night', subHeader: 'Golden dunes under a vast cosmos.' },
-  { image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80', header: 'Tropical Tide', subHeader: 'Azure waters and endless warmth.' },
-  { image: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&q=80', header: 'Forest Path', subHeader: 'Nature\'s geometry in emerald light.' }
+  { image: '/assets/autoswipe/pos1.png', header: 'Spatial Flow 1', subHeader: 'Fluid design patterns.' },
+  { image: '/assets/autoswipe/pos2.png', header: 'Spatial Flow 2', subHeader: 'Fluid design patterns.' },
+  { image: '/assets/autoswipe/pos3.png', header: 'Spatial Flow 3', subHeader: 'Algorithmic visual structures.' },
+  { image: '/assets/autoswipe/pos4.png', header: 'Spatial Flow 4', subHeader: 'Expansive vistas.' },
+  { image: '/assets/autoswipe/pos5.png', header: 'Spatial Flow 5', subHeader: 'Structural integrity.' },
+  { image: '/assets/autoswipe/pos6.png', header: 'Spatial Flow 6', subHeader: 'Depth processing.' }
 ];
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
@@ -95,7 +95,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       <div className="absolute inset-0 bg-black/40 backdrop-blur-md cursor-pointer" onClick={onClose} aria-hidden="true" />
       <div 
         className={`
-          relative w-full max-w-sm max-h-[85vh] flex flex-col rounded-[44px] border shadow-[0_40px_120px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-200 transform cubic-bezier(0.16, 1, 0.3, 1)
+          relative w-full max-w-sm max-h-[85vh] flex flex-col rounded-[28.6px] border shadow-[0_40px_120px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-200 transform cubic-bezier(0.16, 1, 0.3, 1)
           ${isOpen ? 'scale-100 translate-y-0 opacity-100' : 'scale-95 translate-y-8 opacity-0'}
           ${isLight ? 'bg-[#f2f2f7] text-zinc-900 border-zinc-200' : 'bg-[#1c1c1e] text-white border-white/10'}
         `}
@@ -241,7 +241,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-6" role="presentation" aria-hidden={modifyingIndex === null}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-xl cursor-pointer" onClick={() => setModifyingIndex(null)} aria-hidden="true" />
           <div 
-            className={`relative w-full max-w-xs rounded-[36px] border p-8 shadow-2xl animate-insight-pop ${isLight ? 'bg-white border-zinc-200' : 'bg-[#1a1a1e] border-white/10'}`}
+            className={`relative w-full max-w-xs rounded-[23.4px] border p-8 shadow-2xl animate-insight-pop ${isLight ? 'bg-white border-zinc-200' : 'bg-[#1a1a1e] border-white/10'}`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="modify-env-title"
@@ -255,14 +255,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                  <button 
                    onClick={() => replaceInputRef.current?.click()} 
                    aria-label="Replace wallpaper from device"
-                   className={`py-4 rounded-2xl font-black uppercase text-xs tracking-widest transition-all active:scale-95 border ${isLight ? 'bg-zinc-100 border-zinc-200 text-zinc-900' : 'bg-white/5 border-white/10 text-white'}`}
+                   className={`py-4 rounded-[13px] font-black uppercase text-xs tracking-widest transition-all active:scale-95 border ${isLight ? 'bg-zinc-100 border-zinc-200 text-zinc-900' : 'bg-white/5 border-white/10 text-white'}`}
                  >
                    Replace from Device
                  </button>
                  <button 
                    onClick={() => removeWallpaper(modifyingIndex)} 
                    aria-label="Delete this wallpaper slot"
-                   className={`py-4 rounded-2xl font-black uppercase text-xs tracking-widest transition-all active:scale-95 bg-red-500/10 text-red-500`}
+                   className={`py-4 rounded-[13px] font-black uppercase text-xs tracking-widest transition-all active:scale-95 bg-red-500/10 text-red-500`}
                  >
                    Delete Slot
                  </button>
@@ -310,8 +310,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       )}
 
       <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; display: block; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.3); border-radius: 10px; }
         @keyframes insight-pop {
           from { opacity: 0; transform: scale(0.9) translateY(20px); }
           to { opacity: 1; transform: scale(1) translateY(0); }

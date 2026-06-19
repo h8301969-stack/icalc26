@@ -10,34 +10,19 @@ export const THEMES = [
 
 export const WALLPAPER_SLIDES = [
   {
-    image: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop',
-    header: 'Vision iCalc 26',
-    subHeader: 'Experience the future of spatial computation today.'
+    image: '/assets/autoswipe-1.png',
+    header: 'iCalc Vision',
+    subHeader: 'Precision engineered for the next generation of spatial computing.'
   },
   {
-    image: 'https://images.unsplash.com/photo-1635776062127-d379bfcba9f8?q=80&w=2564&auto=format&fit=crop',
-    header: 'Glassmorphic Design',
-    subHeader: 'A UI that lives and breathes with your environment.'
+    image: '/assets/autoswipe-2.png',
+    header: 'Spatial Identity',
+    subHeader: 'Seamless integration with modern digital ecosystems.'
   },
   {
-    image: 'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=2564&auto=format&fit=crop',
-    header: 'Precision Refined',
-    subHeader: 'Advanced math logic meets uncompromising aesthetics.'
-  },
-  {
-    image: 'https://images.unsplash.com/photo-1579546929662-711aa33e6b6f?q=80&w=2564&auto=format&fit=crop',
-    header: 'Digital Canvas',
-    subHeader: 'Colors that inspire and dimensions that innovate.'
-  },
-  {
-    image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?q=80&w=2564&auto=format&fit=crop',
-    header: 'Seamless Integration',
-    subHeader: 'Where technology and artistry converge.'
-  },
-  {
-    image: 'https://images.unsplash.com/photo-1561070791-2526d30994b5?q=80&w=2564&auto=format&fit=crop',
-    header: 'Evolution',
-    subHeader: 'The next generation of computational excellence.'
+    image: '/assets/autoswipe-3.png',
+    header: 'Neural Flow',
+    subHeader: 'Dynamic visual structures designed for immersive workflows.'
   }
 ];
 

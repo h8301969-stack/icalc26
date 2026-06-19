@@ -26,6 +26,10 @@ const WallpaperOverlay: React.FC<WallpaperOverlayProps> = ({ onEnter, isLight, a
 
   return (
     <div className={`fixed inset-0 z-[1000] flex flex-col items-center justify-between p-12 transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) ${isEntering ? 'opacity-0 scale-125' : 'opacity-100 scale-100'}`}>
+      <div className="absolute top-12 left-12">
+        <img src="/assets/logo-brand.png" alt="iCalc Logo" className="w-12 h-12 object-contain" />
+      </div>
+
       <div className="flex flex-col items-center mt-20 select-none pointer-events-none">
         <p className="text-[12px] font-black uppercase tracking-[0.5em] opacity-40 mb-4" style={{ color: isLight ? '#000' : '#fff' }}>
           Spatial Hub
@@ -41,7 +45,7 @@ const WallpaperOverlay: React.FC<WallpaperOverlayProps> = ({ onEnter, isLight, a
       <div className="flex flex-col items-center w-full max-w-xs space-y-10">
         <button 
           onClick={handleEnter}
-          className="group relative w-full py-6 rounded-[32px] overflow-hidden transition-all duration-300 active:scale-90 shadow-2xl glass-panel"
+          className="group relative w-full py-6 rounded-[20.8px] overflow-hidden transition-all duration-300 active:scale-90 shadow-2xl glass-panel"
           style={{ 
             background: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)',
             border: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)' 
