@@ -13,14 +13,24 @@ import { useSettings } from './hooks/useSettings';
 import { useHistory } from './hooks/useHistory';
 import { useCalculator } from './hooks/useCalculator';
 import { useSwipeGesture } from './hooks/useGestures';
+import { usePOS } from './hooks/usePOS';
+import { useInvoice } from './hooks/useInvoice';
 
 const AppContent: React.FC = () => {
   const { settings, updateSettings, triggerHaptic, isLight, formatCurrency } = useSettings();
-  const { history, setHistory, saveResult, clearHistory } = useHistory();
+  const { history, saveResult } = useHistory();
+  const { items, setItems, purchases, setPurchases } = usePOS(history);
   const { 
     expression, setExpression, calcError, inputChar, 
     toggleSign, finalize, handleUndo, handleRedo, clearExpression 
   } = useCalculator(saveResult, triggerHaptic);
+  const {
+    invoiceName,
+    setInvoiceName,
+    cartItems,
+    actionLogs,
+    runningTotal,
+  } = useInvoice(expression, items, settings.currency);
 
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -30,7 +40,7 @@ const AppContent: React.FC = () => {
   const gestures = useSwipeGesture(() => setIsHistoryOpen(true));
   const { showPrompt, handleInstall, handleDismiss } = usePWAPrompt();
   const displayContentRef = useRef<HTMLDivElement>(null);
-  const [displayFontSize, setDisplayFontSize] = useState(116.16); 
+  const [displayFontSize, setDisplayFontSize] = useState(20); 
 
   useLayoutEffect(() => {
     if (!displayContentRef.current) return;
@@ -157,9 +167,36 @@ const AppContent: React.FC = () => {
         </div>
       </div>
 
-      <HistoryPanel history={history} isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} onClear={clearHistory} onSelect={(i) => { setExpression(i.result); setIsHistoryOpen(false); }} isLight={isLight} />
+      <HistoryPanel
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onClear={() => {
+          clearExpression();
+          triggerHaptic();
+        }}
+        isLight={isLight}
+        currency={settings.currency}
+        invoiceName={invoiceName}
+        onInvoiceNameChange={setInvoiceName}
+        cartItems={cartItems}
+        actionLogs={actionLogs}
+        runningTotal={runningTotal}
+      />
       <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} updateSettings={(k, v) => updateSettings({ [k]: v })} />
-      <POSDashboard history={history} isOpen={isPOSOpen} onClose={() => setIsPOSOpen(false)} isLight={isLight} accentColor={settings.accentColor} formatCurrency={formatCurrency} updateSettings={(k, v) => updateSettings({ [k]: v })} />
+      <POSDashboard
+        history={history}
+        items={items}
+        setItems={setItems}
+        purchases={purchases}
+        setPurchases={setPurchases}
+        invoiceActionLogs={actionLogs}
+        isOpen={isPOSOpen}
+        onClose={() => setIsPOSOpen(false)}
+        isLight={isLight}
+        accentColor={settings.accentColor}
+        formatCurrency={formatCurrency}
+        updateSettings={(k, v) => updateSettings({ [k]: v })}
+      />
       <PWAInstallPrompt showPrompt={showPrompt} onInstall={handleInstall} onDismiss={handleDismiss} />
     </div>
   );

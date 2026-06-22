@@ -1,10 +1,15 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { HistoryItem } from '../types';
+import { HistoryItem, InvoiceActionLog } from '../types';
 import { Icons } from '../constants';
-import { usePOS, InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS';
+import { InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS';
 
 interface POSDashboardProps {
   history: HistoryItem[];
+  items: InventoryItem[];
+  setItems: React.Dispatch<React.SetStateAction<InventoryItem[]>>;
+  purchases: PurchaseRecord[];
+  setPurchases: React.Dispatch<React.SetStateAction<PurchaseRecord[]>>;
+  invoiceActionLogs: InvoiceActionLog[];
   isOpen: boolean;
   onClose: () => void;
   isLight: boolean;
@@ -13,8 +18,19 @@ interface POSDashboardProps {
   updateSettings: (key: string, value: any) => void;
 }
 
-const POSDashboard: React.FC<POSDashboardProps> = ({ history, isOpen, onClose, isLight, accentColor, formatCurrency, updateSettings }) => {
-  const { items, setItems, purchases } = usePOS(history);
+const POSDashboard: React.FC<POSDashboardProps> = ({
+  history,
+  items,
+  setItems,
+  purchases,
+  invoiceActionLogs,
+  isOpen,
+  onClose,
+  isLight,
+  accentColor,
+  formatCurrency,
+  updateSettings,
+}) => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [inventoryExpanded, setInventoryExpanded] = useState(false);
   const [purchasesExpanded, setPurchasesExpanded] = useState(false);
@@ -69,11 +85,22 @@ const POSDashboard: React.FC<POSDashboardProps> = ({ history, isOpen, onClose, i
 
   const systemLogs = useMemo(() => {
     const dayAgo = Date.now() - 86400000;
-    return items
+    const inventoryLogs = items
       .flatMap(item => item.activities.map(log => ({ ...log, itemName: item.name })))
-      .filter(log => log.timestamp >= dayAgo)
+      .filter(log => log.timestamp >= dayAgo);
+
+    const liveInvoiceLogs = invoiceActionLogs.map((log) => ({
+      id: log.id,
+      type: 'cart-add' as ActivityLogEntry['type'],
+      action: log.message,
+      itemName: log.itemName ?? `${log.price} ghs`,
+      time: 'Live',
+      timestamp: log.timestamp,
+    }));
+
+    return [...liveInvoiceLogs, ...inventoryLogs]
       .sort((a, b) => b.timestamp - a.timestamp);
-  }, [items]);
+  }, [items, invoiceActionLogs]);
 
   const filteredInventory = useMemo(() => {
     let result = [...items];

@@ -1,4 +1,5 @@
 import Fraction from 'fraction.js';
+import { evaluatePosExpression, isPosStyleExpression } from './posExpression';
 
 export class CalculationError extends Error {
   constructor(message: string) {
@@ -74,10 +75,12 @@ const tokenize = (str: string): string[] => {
 export const safeEvaluate = (expr: string, decimals = 2): string => {
   try {
     // Clean trailing operators before evaluation
-    const cleanExpr = expr.replace(/[+\-*/%×÷(]+$/, '');
+    const cleanExpr = expr.replace(/[+\-*/%×÷x(]+$/i, '');
     if (!cleanExpr || cleanExpr === '0') return '0.00';
-    
-    const result = evaluateExpression(cleanExpr);
+
+    const result = isPosStyleExpression(cleanExpr)
+      ? evaluatePosExpression(cleanExpr)
+      : evaluateExpression(cleanExpr);
     if (!isFinite(result)) return '0.00';
     
     return result.toLocaleString('en-US', {
