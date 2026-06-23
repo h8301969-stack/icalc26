@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useRef, useLayoutEffect } from 'react';
+import React, { useState, useMemo, useRef, useLayoutEffect, useEffect } from 'react';
+import { safeEvaluate } from './utils/calculator';
 import CalcButton from './components/CalcButton';
 import HistoryPanel from './components/HistoryPanel';
 import SettingsPanel from './components/SettingsPanel';
@@ -30,6 +31,7 @@ const AppContent: React.FC = () => {
     cartItems,
     actionLogs,
     runningTotal,
+    saveCurrentInvoiceAndStartNew,
   } = useInvoice(expression, items, settings.currency);
 
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -39,15 +41,34 @@ const AppContent: React.FC = () => {
   
   const gestures = useSwipeGesture(() => setIsHistoryOpen(true));
   const { showPrompt, handleInstall, handleDismiss } = usePWAPrompt();
-  const displayContentRef = useRef<HTMLDivElement>(null);
-  const [displayFontSize, setDisplayFontSize] = useState(20); 
+  const displayContentRef = useRef<HTMLPreElement>(null);
+  const expressionScrollRef = useRef<HTMLDivElement>(null);
+  const [displayFontSize] = useState(20);
 
   useLayoutEffect(() => {
     if (!displayContentRef.current) return;
-    // ... (keep layout logic here or move to useFontSize)
+    // font-size layout hook (reserved)
+  }, [expression]);
+
+  // Break expression into lines of 10 chars each
+  const formattedExpression = useMemo(() => {
+    if (expression === '0') return '0';
+    return expression.match(/.{1,10}/g)?.join('\n') ?? expression;
+  }, [expression]);
+
+  // Auto-scroll expression to bottom so latest chars are always visible
+  useEffect(() => {
+    const el = expressionScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [expression]);
   
   const isAnyModalOpen = isHistoryOpen || isSettingsOpen || isPOSOpen;
+
+  const handleNewInvoice = () => {
+    saveCurrentInvoiceAndStartNew();
+    clearExpression();
+    triggerHaptic(1);
+  };
 
   // Keyboard support for accessibility
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -109,32 +130,71 @@ const AppContent: React.FC = () => {
           }}
         >
           <div className="absolute top-[1%] left-1/2 -translate-x-1/2 z-50">
-            <input 
-              type="text" 
-              placeholder="Search" 
+            <input
+              type="text"
+              placeholder="Search"
               className={`w-32 py-1.5 px-4 text-center text-sm rounded-full outline-none border transition-all ${isLight ? 'bg-white/60 border-black/5 focus:bg-white/80 text-black placeholder-black/30' : 'bg-black/20 border-white/10 focus:bg-black/40 text-white placeholder-white/30'}`}
+              style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 8px 28px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)' }}
             />
           </div>
 
-          <div className="flex justify-end p-4 absolute top-4 left-0 right-0 z-50 pointer-events-none">
+          <div className="flex justify-end gap-2 p-4 absolute top-4 left-0 right-0 z-50 pointer-events-none">
+            <button onClick={handleNewInvoice} className={`pointer-events-auto p-3 rounded-2xl ${isLight ? 'bg-black/5 hover:bg-black/10' : 'bg-white/10 hover:bg-white/20'}`} title="New Invoice"><Icons.Plus size={22} /></button>
             <button onClick={() => { setIsSettingsOpen(true); triggerHaptic(); }} className={`pointer-events-auto p-3 rounded-2xl ${isLight ? 'bg-black/5 hover:bg-black/10' : 'bg-white/10 hover:bg-white/20'}`}><Icons.Settings size={22} /></button>
           </div>
           
-          <div className="flex-1 flex flex-col justify-end items-center py-4 px-4 overflow-hidden min-h-0">
+          {/* ── Display area ─────────────────────────────────────── */}
+          <div
+            className="flex-1 flex flex-col items-center px-4 overflow-hidden min-h-0"
+            style={{ paddingTop: '13%' }}
+          >
+            {/* Live result — 40px bold, full opacity, just below search bar */}
+            <div
+              className="w-full text-center font-black tracking-tighter"
+              style={{ fontSize: 40, lineHeight: 1.1, transition: 'opacity 0.15s' }}
+              role="status"
+              aria-live="polite"
+              aria-label={`Result: ${safeEvaluate(expression)}`}
+            >
+              {expression === '0' ? '0' : safeEvaluate(expression)}
+            </div>
+
+            {/* Flexible gap pushes expression to the bottom */}
+            <div style={{ flex: 1 }} />
+
             {calcError && (
-              <div className="text-sm text-red-500 mb-2 text-center truncate max-w-full" role="alert">
+              <div className="text-sm text-red-500 mb-1 text-center truncate max-w-full" role="alert">
                 {calcError}
               </div>
             )}
-            <div 
-              ref={displayContentRef} 
-              style={{ fontSize: `${displayFontSize}px` }} 
-              className="font-light tracking-tighter break-all w-full text-center"
-              role="status"
-              aria-live="polite"
-              aria-label={`Display: ${expression}`}
+
+            {/* Expression — full opacity, 10 chars/line, 4 lines then scrollable */}
+            <div
+              ref={expressionScrollRef}
+              className="no-scrollbar w-full text-center"
+              style={{
+                height: `${displayFontSize * 1.45 * 4}px`,   // 4 visible lines
+                overflowY: 'auto',
+                paddingBottom: '0.25rem',
+                scrollBehavior: 'smooth',
+              }}
+              aria-label={`Expression: ${expression}`}
             >
-              {expression === '0' ? <span className="opacity-20">0</span> : expression}
+              <pre
+                ref={displayContentRef}
+                style={{
+                  fontFamily:    'inherit',
+                  fontSize:      `${displayFontSize}px`,
+                  fontWeight:    300,
+                  letterSpacing: '-0.03em',
+                  lineHeight:    1.45,
+                  whiteSpace:    'pre-wrap',
+                  margin:        0,
+                  textAlign:     'center',
+                }}
+              >
+                {expression === '0' ? <span style={{ opacity: 0.3 }}>0</span> : formattedExpression}
+              </pre>
             </div>
           </div>
 

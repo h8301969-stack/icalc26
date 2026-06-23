@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --loader esbuild-register/loader utils/calculator.test.ts || echo 'For TS tests, install esbuild-register (npm i -D esbuild-register) or use: npx tsx utils/calculator.test.ts'"
+    "test": "node --loader esbuild-register/loader utils/calculator.test.ts || echo 'For TS tests, install esbuild-register (npm i -D esbuild-register) or use: npx tsx utils/calculator.test.ts'",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",
@@ -19,9 +20,13 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@typescript-eslint/eslint-plugin": "^8.62.0",
+    "@typescript-eslint/parser": "^8.62.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.24",
     "esbuild-register": "^3.6.0",
+    "eslint": "^8.57.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",

@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icons } from '../constants';
 import { CartLineItem, InvoiceActionLog } from '../types';
 import { formatPosLineItemDisplay } from '../utils/posExpression';
 
+/* ─────────────────────────── types ─────────────────────────── */
 interface HistoryPanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -16,6 +17,21 @@ interface HistoryPanelProps {
   runningTotal: string;
 }
 
+interface InvoiceCard {
+  id: string;
+  name: string;
+  items: CartLineItem[];
+  logs: InvoiceActionLog[];
+  total: string;
+  isCurrent: boolean;
+}
+
+/* ─────────────────────────── carousel config ─────────────────────────── */
+const PEEK_OFFSET  = 72;   // px — how much of the next card peeks from the right
+const DRAG_FACTOR  = 1.0;  // drag sensitivity
+const SWIPE_THRESHOLD = 40; // px — minimum drag to commit to next card
+
+/* ─────────────────────────── component ─────────────────────────── */
 const HistoryPanel: React.FC<HistoryPanelProps> = ({
   isOpen,
   onClose,
@@ -28,21 +44,99 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   actionLogs,
   runningTotal,
 }) => {
-  React.useEffect(() => {
+  /* ── build invoice card list ── */
+  const cards = useMemo<InvoiceCard[]>(() => {
+    // Group action logs by their invoiceName
+    const grouped = new Map<string, InvoiceActionLog[]>();
+    for (const log of actionLogs) {
+      const key = log.invoiceName;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(log);
+    }
+
+    const built: InvoiceCard[] = [];
+
+    // Past sessions (unique invoice names other than current)
+    const pastNames = [...grouped.keys()].filter(k => k !== invoiceName);
+    for (const name of pastNames) {
+      const logs = grouped.get(name)!;
+      built.push({
+        id: `past-${name}`,
+        name,
+        items: logs.map(l => ({ price: l.price, quantity: l.quantity })),
+        logs,
+        total: logs.reduce((s, l) => s + l.price * l.quantity, 0).toFixed(2),
+        isCurrent: false,
+      });
+    }
+
+    // Always place the current invoice as the FIRST card (front)
+    built.unshift({
+      id: 'current',
+      name: invoiceName,
+      items: cartItems,
+      logs: grouped.get(invoiceName) ?? [],
+      total: runningTotal,
+      isCurrent: true,
+    });
+
+    return built;
+  }, [actionLogs, cartItems, invoiceName, runningTotal]);
+
+  /* ── carousel state ── */
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [dragDelta, setDragDelta] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartX = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Reset to front card whenever panel opens
+  useEffect(() => {
+    if (isOpen) setActiveIdx(0);
+  }, [isOpen]);
+
+  /* ── keyboard ── */
+  useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight') setActiveIdx(i => Math.min(i + 1, cards.length - 1));
+      if (e.key === 'ArrowLeft')  setActiveIdx(i => Math.max(i - 1, 0));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, cards.length]);
 
-  const levitateClass = isLight
-    ? 'bg-white shadow-[0_12px_36px_rgba(0,0,0,0.08)]'
-    : 'bg-white/5 shadow-[0_0_36px_rgba(255,255,255,0.05)]';
+  /* ── drag / swipe handlers ── */
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    dragStartX.current = e.clientX;
+    setIsDragging(true);
+    setDragDelta(0);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
 
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isDragging) return;
+    const raw = (e.clientX - dragStartX.current) * DRAG_FACTOR;
+    setDragDelta(raw);
+  }, [isDragging]);
+
+  const onPointerUp = useCallback(() => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    if (dragDelta < -SWIPE_THRESHOLD) {
+      setActiveIdx(i => Math.min(i + 1, cards.length - 1));
+    } else if (dragDelta > SWIPE_THRESHOLD) {
+      setActiveIdx(i => Math.max(i - 1, 0));
+    }
+    setDragDelta(0);
+  }, [isDragging, dragDelta, cards.length]);
+
+  /* ── style helpers ── */
+  const panelBg  = isLight ? 'bg-[#f0f0f5]/96' : 'bg-[#0e0e12]/96';
   const textMuted = isLight ? 'text-zinc-400' : 'text-zinc-500';
 
+  /* ─────────────────────────── render ─────────────────────────── */
   return (
     <div
       className={`fixed inset-0 z-[120] flex flex-col justify-end transition-all duration-300 ${
@@ -51,26 +145,31 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       role="presentation"
       aria-hidden={!isOpen}
     >
+      {/* backdrop */}
       <div
-        className={`absolute inset-0 bg-black/40 backdrop-blur-md transition-opacity duration-300 ${
+        className={`absolute inset-0 bg-black/50 backdrop-blur-xl transition-opacity duration-400 ${
           isOpen ? 'opacity-100' : 'opacity-0'
         }`}
         onClick={onClose}
         aria-hidden="true"
       />
 
+      {/* panel sheet */}
       <div
         className={`
-          relative w-full max-h-[78vh] flex flex-col rounded-t-[28.6px] shadow-[0_-20px_80px_rgba(0,0,0,0.45)] overflow-hidden
-          transition-transform duration-500 cubic-bezier(0.16, 1, 0.3, 1)
+          relative w-full flex flex-col rounded-t-[30px]
+          shadow-[0_-24px_80px_rgba(0,0,0,0.55)]
+          transition-transform duration-500
           ${isOpen ? 'translate-y-0' : 'translate-y-full'}
-          ${isLight ? 'bg-[#f2f2f7]/95 text-black' : 'bg-zinc-900/95 text-white'}
+          ${panelBg}
+          ${isLight ? 'text-black' : 'text-white'}
         `}
         style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="invoice-title"
       >
+        {/* drag pill */}
         <div className="flex justify-center pt-3 pb-1">
           <div
             className={`w-10 h-1 rounded-full ${isLight ? 'bg-black/15' : 'bg-white/20'}`}
@@ -78,106 +177,253 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           />
         </div>
 
-        <div
-          className={`px-6 pb-4 flex items-center justify-between gap-3 border-b ${
-            isLight ? 'border-black/5' : 'border-white/5'
-          }`}
-        >
+        {/* header */}
+        <div className={`px-5 pb-3 flex items-center justify-between gap-3 border-b ${isLight ? 'border-black/6' : 'border-white/6'}`}>
           <input
             id="invoice-title"
             type="text"
             value={invoiceName}
-            onChange={(e) => onInvoiceNameChange(e.target.value)}
+            onChange={e => onInvoiceNameChange(e.target.value)}
             placeholder="Invoice #1"
             aria-label="Invoice name"
-            className={`flex-1 min-w-0 text-2xl font-black tracking-tighter bg-transparent outline-none border-b border-transparent focus:border-current/20 transition-colors placeholder:opacity-30 ${
-              isLight ? 'text-black' : 'text-white'
-            }`}
+            className={`flex-1 min-w-0 text-2xl font-black tracking-tighter bg-transparent outline-none border-b border-transparent focus:border-current/20 transition-colors placeholder:opacity-30 ${isLight ? 'text-black' : 'text-white'}`}
           />
           <button
             onClick={onClose}
             aria-label="Close invoice panel"
-            className={`p-2.5 rounded-full hover:bg-black/5 transition-colors duration-150 shrink-0 ${
-              isLight ? 'text-black' : 'text-white'
-            }`}
+            className={`p-2.5 rounded-full hover:bg-black/8 transition-colors duration-150 shrink-0 ${isLight ? 'text-black' : 'text-white'}`}
           >
-            <Icons.X size={24} />
+            <Icons.X size={22} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 custom-scrollbar">
-          <section aria-label="Live cart">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40">
-                Live Cart
-              </h3>
-              <span className="text-xl font-black tracking-tighter">= {runningTotal}</span>
-            </div>
-
-            {cartItems.length === 0 ? (
-              <div
-                className={`py-10 flex items-center justify-center font-black uppercase tracking-[0.3em] text-[10px] ${textMuted}`}
-                role="status"
-              >
-                Start typing to add items
-              </div>
-            ) : (
-              <div className={`p-5 rounded-[23.4px] space-y-2 ${levitateClass}`}>
-                {cartItems.map((item, idx) => (
-                  <div
-                    key={`${idx}-${item.price}-${item.quantity}`}
-                    className="text-sm font-semibold tracking-tight opacity-80"
-                  >
-                    {formatPosLineItemDisplay(item, currency, item.name)}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section aria-label="Action log">
-            <h3 className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40 mb-3">
-              Action Log
-            </h3>
-
-            {actionLogs.length === 0 ? (
-              <div className={`py-6 text-center text-[10px] font-black uppercase tracking-[0.25em] ${textMuted}`}>
-                Items log here as you complete each line
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {actionLogs.map((log) => (
-                  <div
-                    key={log.id}
-                    className={`p-4 rounded-[18px] flex items-start gap-3 ${levitateClass}`}
-                  >
-                    <div
-                      className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${
-                        isLight ? 'bg-green-500' : 'bg-green-400'
-                      }`}
-                      aria-hidden="true"
-                    />
-                    <p className="text-sm font-semibold tracking-tight opacity-75 leading-snug">
-                      {log.message}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-
+        {/* ───────── iOS App Switcher Carousel ───────── */}
         <div
-          className={`px-6 pt-2 pb-2 border-t ${isLight ? 'border-black/5' : 'border-white/5'}`}
+          ref={containerRef}
+          className="relative overflow-hidden select-none"
+          style={{ height: 360 }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerLeave={onPointerUp}
+          aria-label="Invoice carousel"
+          role="region"
         >
-          <button
-            onClick={onClear}
-            aria-label="Clear invoice cart"
-            className="w-full py-4 rounded-[18.2px] bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all duration-300 font-black uppercase tracking-[0.3em] text-[10px] active:scale-95"
-          >
-            Clear Invoice
-          </button>
+          {cards.map((card, idx) => {
+            const W           = containerRef.current?.clientWidth ?? 360;
+            const relativePos = idx - activeIdx; // 0 = front, +1 = next behind, -1 = previous
+
+            // ── Base resting positions ──────────────────────────────────────────
+            // front card (0) → translateX = 0 (full width)
+            // prev cards (<0) → translateX = W * relativePos (off-screen left)
+            // next cards (>0) → peek from right: each card starts at W - PEEK_OFFSET,
+            //                   with successive cards offset back by (relativePos-1) * PEEK_OFFSET
+            let baseX: number;
+            if (relativePos === 0) {
+              baseX = 0;
+            } else if (relativePos < 0) {
+              baseX = W * relativePos;          // fully off left
+            } else {
+              // relativePos 1 → W - PEEK_OFFSET  (first peek)
+              // relativePos 2 → W - PEEK_OFFSET + 28 (stacks a bit further back)
+              baseX = W - PEEK_OFFSET + (relativePos - 1) * 28;
+            }
+
+            // Add live drag offset so cards move together
+            const translateX = baseX + dragDelta;
+
+            // Scale: front card = 1, next cards slightly smaller, prev hidden
+            const scale   = relativePos === 0 ? 1
+                          : relativePos > 0    ? Math.max(0.84, 1 - relativePos * 0.05)
+                          : 0.92;
+
+            // Opacity: front = 1, stacked cards taper; past cards fade quickly
+            const opacity = relativePos === 0  ? 1
+                          : relativePos === 1  ? 0.78
+                          : relativePos === 2  ? 0.52
+                          : relativePos > 2    ? 0.28
+                          : Math.max(0, 1 + relativePos * 0.4); // negative (prev)
+
+            // Blur: front = 0, stacked right cards get blur, prev cards invisible
+            const blurPx  = relativePos <= 0  ? 0
+                          : relativePos === 1  ? 3
+                          : relativePos * 6;
+
+            // zIndex: front on top, stacked cards decrease, prev cards hide beneath
+            const zIndex  = relativePos <= 0
+              ? 100 + relativePos          // prev cards go under front
+              : 100 - relativePos;         // next cards go under front too
+
+            const isVisible = relativePos >= -1 && relativePos <= 4;
+
+            return (
+              <div
+                key={card.id}
+                aria-label={`Invoice card: ${card.name}`}
+                style={{
+                  position:  'absolute',
+                  inset:     '16px 0',
+                  left:      16,
+                  right:     16,
+                  transform: `translateX(${translateX}px) scale(${scale})`,
+                  transformOrigin: 'top center',
+                  opacity:   isVisible ? opacity : 0,
+                  zIndex,
+                  filter:    blurPx > 0 ? `blur(${blurPx}px)` : 'none',
+                  transition: isDragging
+                    ? 'none'
+                    : 'transform 0.48s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease, filter 0.4s ease',
+                  borderRadius: 22,
+                  overflow: 'hidden',
+                  cursor: relativePos !== 0 ? 'pointer' : 'default',
+                  pointerEvents: relativePos !== 0 ? 'auto' : 'none',
+                }}
+                onClick={() => relativePos !== 0 && setActiveIdx(idx)}
+              >
+                {/* card glass surface */}
+                <div
+                  style={{
+                    position:       'absolute',
+                    inset:          0,
+                    background:     isLight
+                      ? 'rgba(255,255,255,0.7)'
+                      : 'rgba(28,28,36,0.72)',
+                    backdropFilter: 'blur(28px) saturate(180%)',
+                    WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+                    borderRadius:   22,
+                    border:         isLight
+                      ? '1px solid rgba(0,0,0,0.06)'
+                      : '1px solid rgba(255,255,255,0.09)',
+                    boxShadow:      isLight
+                      ? '0 8px 40px rgba(0,0,0,0.12)'
+                      : '0 8px 40px rgba(0,0,0,0.5)',
+                  }}
+                />
+
+                {/* card content */}
+                <div
+                  style={{
+                    position:   'relative',
+                    zIndex:     1,
+                    height:     '100%',
+                    display:    'flex',
+                    flexDirection: 'column',
+                    padding:    '18px 18px 14px',
+                    gap:        10,
+                    pointerEvents: relativePos === 0 ? 'auto' : 'none',
+                  }}
+                >
+                  {/* card header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                    <div>
+                      <div
+                        style={{
+                          fontSize:      10,
+                          fontWeight:    900,
+                          letterSpacing: '0.28em',
+                          textTransform: 'uppercase',
+                          opacity:       0.38,
+                          marginBottom:  2,
+                        }}
+                      >
+                        {card.isCurrent ? 'Current' : 'Saved'}
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                        {card.name}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', opacity: 0.38 }}>
+                        Total
+                      </div>
+                      <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: '-0.04em' }}>
+                        {currency} {card.total}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* divider */}
+                  <div style={{ height: 1, background: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.07)', borderRadius: 1 }} />
+
+                  {/* items list */}
+                  <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {card.items.length === 0 ? (
+                      <div
+                        className={textMuted}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 900, letterSpacing: '0.3em', textTransform: 'uppercase', opacity: 0.5 }}
+                      >
+                        No items yet
+                      </div>
+                    ) : (
+                      card.items.map((item, i) => (
+                        <div
+                          key={i}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em', opacity: 0.82 }}
+                        >
+                          <span>{formatPosLineItemDisplay(item, currency)}</span>
+                          <span style={{ opacity: 0.55, fontSize: 11 }}>
+                            {currency} {(item.price * item.quantity).toFixed(2)}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* card footer — only on front card */}
+                  {card.isCurrent && relativePos === 0 && (
+                    <button
+                      onClick={e => { e.stopPropagation(); onClear(); }}
+                      style={{
+                        marginTop:     4,
+                        padding:       '10px 0',
+                        borderRadius:  14,
+                        background:    'rgba(239, 68, 68, 0.10)',
+                        color:         '#ef4444',
+                        fontSize:      10,
+                        fontWeight:    900,
+                        letterSpacing: '0.28em',
+                        textTransform: 'uppercase',
+                        border:        'none',
+                        cursor:        'pointer',
+                        transition:    'background 0.2s',
+                      }}
+                      onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.18)')}
+                      onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.10)')}
+                      aria-label="Clear current invoice"
+                    >
+                      Clear Invoice
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
+
+        {/* pagination dots */}
+        {cards.length > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 6, paddingBottom: 14, paddingTop: 2 }}>
+            {cards.map((_, i) => (
+              <button
+                key={i}
+                aria-label={`Go to card ${i + 1}`}
+                onClick={() => setActiveIdx(i)}
+                style={{
+                  width:        i === activeIdx ? 20 : 6,
+                  height:       6,
+                  borderRadius: 3,
+                  background:   i === activeIdx
+                    ? (isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.7)')
+                    : (isLight ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.22)'),
+                  border:       'none',
+                  cursor:       'pointer',
+                  transition:   'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                  padding:      0,
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
