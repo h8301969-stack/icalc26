@@ -13,7 +13,7 @@ async function getAvailablePort(ports: number[]) {
       server.once('listening', () => {
         server.close(() => resolve(true));
       });
-      server.listen(port, '0.0.0.0');
+      server.listen(port, '127.0.0.1');
     });
     if (isAvailable) return port;
   }
@@ -27,7 +27,7 @@ export default defineConfig(async ({ mode }) => {
       server: {
         port:5173,
         strictPort: true,
-        host: '127.0.0.1',
+        host: '127.0.0',
       },
       plugins: [react()],
       // No env injection needed — all features are client-side only.
