@@ -27,7 +27,7 @@ export default defineConfig(async ({ mode }) => {
       server: {
         port:5173,
         strictPort: true,
-        host: '127.0.0',
+        host: '127.0.0.1',
       },
       plugins: [react()],
       // No env injection needed — all features are client-side only.
