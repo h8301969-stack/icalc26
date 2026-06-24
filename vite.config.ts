@@ -25,7 +25,7 @@ export default defineConfig(async ({ mode }) => {
     const port = await getAvailablePort(allowedPorts);
     return {
       server: {
-        port,
+        port:5173,
         strictPort: true,
         host: '0.0.0.0',
       },
