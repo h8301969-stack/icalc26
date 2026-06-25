@@ -139,7 +139,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   /* ─────────────────────────── render ─────────────────────────── */
   return (
     <div
-      className={`fixed inset-0 z-[120] flex flex-col justify-end transition-all duration-300 ${
+      className={`fixed inset-0 z-120 flex items-center justify-center transition-all duration-300 p-4 ${
         isOpen ? 'pointer-events-auto' : 'pointer-events-none'
       }`}
       role="presentation"
@@ -147,38 +147,36 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     >
       {/* backdrop */}
       <div
-        className={`absolute inset-0 bg-black/50 backdrop-blur-xl transition-opacity duration-400 ${
+        className={`absolute inset-0 bg-black/50 backdrop-blur-3xl transition-opacity duration-400 ${
           isOpen ? 'opacity-100' : 'opacity-0'
         }`}
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* panel sheet */}
+      {/* popup modal */}
       <div
         className={`
-          relative w-full flex flex-col rounded-t-[30px]
-          shadow-[0_-24px_80px_rgba(0,0,0,0.55)]
-          transition-transform duration-500
-          ${isOpen ? 'translate-y-0' : 'translate-y-full'}
+          relative flex flex-col rounded-[32px] overflow-hidden
+          shadow-[0_24px_80px_rgba(0,0,0,0.55)]
+          transition-all duration-500
+          ${isOpen ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-8'}
           ${panelBg}
           ${isLight ? 'text-black' : 'text-white'}
         `}
-        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        style={{ 
+          height: '65vh',
+          maxHeight: '800px',
+          minHeight: '400px',
+          aspectRatio: '9/16' // Portrait like iOS app switcher
+        }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="invoice-title"
       >
-        {/* drag pill */}
-        <div className="flex justify-center pt-3 pb-1">
-          <div
-            className={`w-10 h-1 rounded-full ${isLight ? 'bg-black/15' : 'bg-white/20'}`}
-            aria-hidden="true"
-          />
-        </div>
 
         {/* header */}
-        <div className={`px-5 pb-3 flex items-center justify-between gap-3 border-b ${isLight ? 'border-black/6' : 'border-white/6'}`}>
+        <div className={`px-5 pt-5 pb-3 flex items-center justify-between gap-3 border-b ${isLight ? 'border-black/6' : 'border-white/6'}`}>
           <input
             id="invoice-title"
             type="text"
@@ -200,8 +198,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         {/* ───────── iOS App Switcher Carousel ───────── */}
         <div
           ref={containerRef}
-          className="relative overflow-hidden select-none"
-          style={{ height: 360 }}
+          className="relative overflow-hidden select-none flex-1"
+          style={{ minHeight: 300 }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}

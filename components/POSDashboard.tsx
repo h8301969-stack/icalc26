@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { HistoryItem, InvoiceActionLog } from '../types';
 import { Icons } from '../constants';
 import { InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS';
+import SettingsPanel from './SettingsPanel';
 
 interface POSDashboardProps {
   history: HistoryItem[];
@@ -38,6 +39,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [isRestocking, setIsRestocking] = useState(false);
   const [isEditingImage, setIsEditingImage] = useState(false);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isThemeAnimating, setIsThemeAnimating] = useState(false);
+  const [isSettingsAnimating, setIsSettingsAnimating] = useState(false);
+  const [isCloseAnimating, setIsCloseAnimating] = useState(false);
   
   const [sortOption, setSortOption] = useState<'a-z' | 'high-stock' | 'low-stock'>('a-z');
   const [filterOption, setFilterOption] = useState<'all' | '24h' | '48h' | '3d' | '7d' | '14d' | 'custom'>('all');
@@ -188,17 +193,17 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const textColorClass = isLight ? 'text-zinc-900' : 'text-zinc-100';
 
   return (
-    <div className={`fixed inset-0 z-[200] flex flex-col transition-all duration-200 cubic-bezier(0.16, 1, 0.3, 1) ${isOpen ? 'translate-y-0 opacity-100 pointer-events-auto animate-insight-pop' : 'translate-y-full opacity-0 pointer-events-none'}`}>
+    <div className={`fixed inset-0 z-200 flex flex-col ${isOpen ? 'opacity-100 pointer-events-auto animate-insight-pop' : 'opacity-0 pointer-events-none transition-opacity duration-300'}`}>
       <div className={`relative w-full h-full flex flex-col transition-all duration-200 backdrop-blur-[44px] ${isLight ? 'bg-white/95' : 'bg-[#050505]/95'} ${isAddingItem || isRestocking || isEditingImage ? 'blur-2xl scale-[0.98]' : ''}`}>
         
         {/* DASHBOARD HEADER PORTION WITH THEME-INVERTED FIXED BAR */}
         {!inventoryExpanded && !purchasesExpanded && (
-          <div className="relative pt-8 px-6 pb-6 overflow-hidden flex-shrink-0 z-[60]">
+          <div className="relative pt-8 px-6 pb-6 overflow-hidden shrink-0 z-60">
              <div className="w-12 h-1 bg-zinc-500/20 rounded-full mx-auto mb-6 cursor-pointer" onClick={onClose} />
              
              {/* THE THEME-INVERTED HEADER BAR */}
              <div className={`
-               w-full rounded-[23.4px] p-8 shadow-[0_32px_80px_rgba(0,0,0,0.25)] transition-all duration-500
+               w-full rounded-xl p-8 shadow-[0_32px_80px_rgba(0,0,0,0.25)] transition-all duration-500
                ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-zinc-900'}
              `}>
                <div className="flex justify-between items-start">
@@ -208,25 +213,37 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     
                     <div className="mt-4 flex items-center gap-3">
                       <div className="text-xl font-black tracking-tight leading-none">{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                      <div className={`w-[1px] h-4 ${isLight ? 'bg-white/20' : 'bg-zinc-900/20'}`} />
+                      <div className={`w-px h-4 ${isLight ? 'bg-white/20' : 'bg-zinc-900/20'}`} />
                       <div className="text-[9px] font-bold opacity-30 uppercase tracking-[0.2em]">Live Session</div>
                     </div>
                  </div>
 
-                 <div className="flex items-center gap-3">
-                   <button 
-                     onClick={() => updateSettings('themeMode', isLight ? 'dark' : 'light')} 
-                     className={`p-4 rounded-2xl transition-all duration-150 active:scale-90 ${isLight ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900'}`}
-                   >
-                     {isLight ? <Icons.Moon size={22} /> : <Icons.Sun size={22} />}
-                   </button>
-                   <button 
-                     onClick={onClose} 
-                     className={`p-4 rounded-2xl transition-all duration-150 active:scale-90 ${isLight ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900'}`}
-                   >
-                     <Icons.X size={24} />
-                   </button>
-                 </div>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => { updateSettings('themeMode', isLight ? 'dark' : 'light'); setIsThemeAnimating(true); }} 
+                      onAnimationEnd={() => setIsThemeAnimating(false)}
+                      className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 ${isThemeAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-black/40 border-white/5 hover:bg-black/60 text-white shadow-[0_0_15px_rgba(255,255,255,0.65)] hover:shadow-[0_0_22px_rgba(255,255,255,0.85)] hover:scale-105' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-900 shadow-[0_8px_20px_rgba(0,0,0,0.28)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.42)] hover:scale-105'}`}
+                      title="Toggle Theme"
+                    >
+                      {isLight ? <Icons.Moon size={16} /> : <Icons.Sun size={16} />}
+                    </button>
+                    <button 
+                      onClick={() => { setIsSettingsOpen(true); setIsSettingsAnimating(true); }} 
+                      onAnimationEnd={() => setIsSettingsAnimating(false)}
+                      className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 ${isSettingsAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-black/40 border-white/5 hover:bg-black/60 text-white shadow-[0_0_15px_rgba(255,255,255,0.65)] hover:shadow-[0_0_22px_rgba(255,255,255,0.85)] hover:scale-105' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-900 shadow-[0_8px_20px_rgba(0,0,0,0.28)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.42)] hover:scale-105'}`}
+                      title="Settings"
+                    >
+                      <Icons.Settings size={16} />
+                    </button>
+                    <button 
+                      onClick={() => { onClose(); setIsCloseAnimating(true); }} 
+                      onAnimationEnd={() => setIsCloseAnimating(false)}
+                      className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 ${isCloseAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-black/40 border-white/5 hover:bg-black/60 text-white shadow-[0_0_15px_rgba(255,255,255,0.65)] hover:shadow-[0_0_22px_rgba(255,255,255,0.85)] hover:scale-105' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-900 shadow-[0_8px_20px_rgba(0,0,0,0.28)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.42)] hover:scale-105'}`}
+                      title="Close"
+                    >
+                      <Icons.X size={16} />
+                    </button>
+                  </div>
                </div>
              </div>
           </div>
@@ -245,7 +262,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   { label: 'Avg Customer', val: formatCurrency(stats.avgPerCustomer.toFixed(2)) },
                   { label: 'Invoices Today', val: stats.invoicesToday }
                 ].map((card, idx) => (
-                  <div key={idx} className={`p-7 rounded-[23.4px] ${levitateClass}`}>
+                  <div key={idx} className={`p-7 rounded-xl ${levitateClass}`}>
                     <p className="text-[9px] font-black uppercase tracking-[0.3em] opacity-30 mb-2">{card.label}</p>
                     <p className="text-2xl font-black tracking-tight" style={{ color: accentColor }}>{card.val}</p>
                   </div>
@@ -253,9 +270,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
 
               {/* INVENTORY MASTER CARD - TEXTS FITTED MARGINALLY */}
-              <div onClick={() => setInventoryExpanded(true)} className={`col-span-2 aspect-[16/10] rounded-[33.8px] ${levitateClass} relative overflow-hidden group cursor-pointer active:scale-[0.98]`}>
+              <div onClick={() => setInventoryExpanded(true)} className={`col-span-2 aspect-16/10 rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer active:scale-[0.98]`}>
                 <img src="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&q=80" alt="" className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-70 dark:opacity-50" />
-                <div className="absolute inset-x-0 bottom-0 h-[65%] bg-gradient-to-t from-black/95 via-black/30 to-transparent pointer-events-none" />
+                <div className="absolute inset-x-0 bottom-0 h-[65%] bg-linear-to-t from-black/95 via-black/30 to-transparent pointer-events-none" />
                 <div className="absolute inset-0 p-8 flex flex-col justify-between">
                   <div className="flex items-center gap-5 translate-y-2">
                     <div className="p-4 rounded-[13px] bg-orange-500/20 text-orange-500 backdrop-blur-3xl shadow-2xl border border-white/10"><Icons.Scientific size={28} /></div>
@@ -279,7 +296,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
 
               {/* ACTION LOGS */}
-              <div className={`col-span-2 p-10 rounded-[36.4px] ${levitateClass}`}>
+              <div className={`col-span-2 p-10 rounded-2xl ${levitateClass}`}>
                 <div className="flex justify-between items-center mb-8">
                    <div className="space-y-1">
                       <h3 className={`text-2xl font-black tracking-tighter ${textColorClass}`}>Action Logs</h3>
@@ -399,16 +416,16 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     aria-label={`Inventory item ${idx + 1}: ${item.name}, stock ${item.stock} units, price ¢${item.price}`}
                     onClick={() => setSelectedItem(item)}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedItem(item); } }}
-                    className={`group rounded-[26px] overflow-hidden cursor-pointer ${levitateClass} relative focus:outline-none focus:ring-2 focus:ring-white/40`}
+                    className={`group rounded-xl overflow-hidden cursor-pointer ${levitateClass} relative focus:outline-none focus:ring-2 focus:ring-white/40`}
                   >
                     <div className="relative aspect-square overflow-hidden bg-zinc-100 dark:bg-zinc-800">
                       <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
-                      <div className="absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none" aria-hidden="true" />
+                      <div className="absolute inset-x-0 bottom-0 h-[42%] bg-linear-to-t from-black/95 via-black/40 to-transparent pointer-events-none" aria-hidden="true" />
                       <div className="absolute bottom-3 left-3 right-3 flex flex-col pointer-events-none" aria-hidden="true">
                          <div className="flex flex-col items-start gap-0.5">
                            <div className="flex-1 min-w-0">
                              <h4 className="text-[11px] font-black tracking-tight leading-tight truncate text-white">{item.name}</h4>
-                             <p className="text-[8px] font-black uppercase text-white/50 tracking-[0.1em] truncate">{item.category}</p>
+                             <p className="text-[8px] font-black uppercase text-white/50 tracking-widest truncate">{item.category}</p>
                            </div>
                            <span className="text-[10px] font-black text-white whitespace-nowrap">¢{item.price}</span>
                          </div>
@@ -433,7 +450,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Transaction Archive</h3>
-              <div className={`rounded-[33.8px] overflow-hidden ${levitateClass}`} role="list" aria-label="Transaction records">
+              <div className={`rounded-2xl overflow-hidden ${levitateClass}`} role="list" aria-label="Transaction records">
                 {purchases.map((p, idx) => (
                   <div 
                     key={p.id} 
@@ -465,10 +482,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
       {/* PLUS / QUICK ACTIONS MENU */}
       {showPlusMenu && (
-        <div className="fixed inset-0 z-[300] flex items-end justify-center p-6" role="presentation" aria-hidden={!showPlusMenu}>
+        <div className="fixed inset-0 z-300 flex items-end justify-center p-6" role="presentation" aria-hidden={!showPlusMenu}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-2xl cursor-pointer" onClick={() => setShowPlusMenu(false)} aria-hidden="true" />
           <div 
-            className={`relative w-full max-w-xs rounded-[36.4px] p-6 transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${levitateClass} shadow-[0_100px_200px_rgba(0,0,0,0.8)]`}
+            className={`relative w-full max-w-xs rounded-2xl p-6 transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${levitateClass} shadow-[0_100px_200px_rgba(0,0,0,0.8)]`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="plus-menu-title"
@@ -501,10 +518,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
       {/* RESTOCK + ADD ITEM MODAL (shared overlay) */}
       {(isRestocking || isAddingItem) && (
-        <div className="fixed inset-0 z-[350] flex items-center justify-center p-6" role="presentation" aria-hidden={!(isRestocking || isAddingItem)}>
+        <div className="fixed inset-0 z-350 flex items-center justify-center p-6" role="presentation" aria-hidden={!(isRestocking || isAddingItem)}>
           <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl cursor-pointer" onClick={() => { setIsRestocking(false); setIsAddingItem(false); }} aria-hidden="true" />
           <div 
-            className={`relative w-full max-w-sm rounded-[41.6px] p-12 transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${levitateClass} shadow-[0_128px_256px_rgba(0,0,0,1)]`}
+            className={`relative w-full max-w-sm rounded-2xl p-12 transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${levitateClass} shadow-[0_128px_256px_rgba(0,0,0,1)]`}
             role="dialog"
             aria-modal="true"
             aria-labelledby={isRestocking ? "restock-title" : "add-item-title"}
@@ -562,17 +579,17 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
       {/* ITEM DETAIL MODAL */}
       {selectedItem && !isRestocking && !isAddingItem && !isEditingImage && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center p-6 animate-insight-pop" role="presentation" aria-hidden={!selectedItem}>
+        <div className="fixed inset-0 z-400 flex items-center justify-center p-6 animate-insight-pop" role="presentation" aria-hidden={!selectedItem}>
           <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl cursor-pointer" onClick={() => setSelectedItem(null)} aria-hidden="true" />
           <div 
-            className={`relative w-full max-w-sm rounded-[36.4px] overflow-hidden transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${levitateClass} shadow-[0_128px_256px_rgba(0,0,0,1)]`}
+            className={`relative w-full max-w-sm rounded-2xl overflow-hidden transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${levitateClass} shadow-[0_128px_256px_rgba(0,0,0,1)]`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="item-detail-title"
           >
             <div className="h-56 relative group">
               <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" aria-hidden="true" />
+              <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent" aria-hidden="true" />
               <button onClick={() => setSelectedItem(null)} aria-label="Close item detail" className="absolute top-6 right-6 p-4 rounded-full bg-black/30 backdrop-blur-3xl text-white shadow-xl active:scale-90 transition-all"><Icons.X size={20} /></button>
             </div>
             <div className={`p-10 space-y-8 ${textColorClass}`}>
@@ -589,7 +606,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           </div>
         </div>
       )}
-
+      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={{ themeMode: isLight ? 'light' : 'dark' }} updateSettings={updateSettings} />
       <style>{`
         @keyframes fade-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes insight-pop { from { opacity: 0; transform: scale(0.9) translateY(60px); } to { opacity: 1; transform: scale(1) translateY(0); } }

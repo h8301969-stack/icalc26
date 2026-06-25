@@ -73,10 +73,7 @@ const CalcButton: React.FC<CalcButtonProps> = ({
   };
 
   const handlePointerUp = () => {
-    if (isPressed) {
-      setIsPressed(false);
-      onClick();
-    }
+    setIsPressed(false);
   };
 
   const handlePointerLeave = () => {
@@ -99,21 +96,6 @@ const CalcButton: React.FC<CalcButtonProps> = ({
       ? { boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.1)' : '0 4px 20px rgba(255,255,255,0.1)' }
       : {};
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setIsPressed(true);
-    }
-  };
-
-  const handleKeyUp = (e: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setIsPressed(false);
-      onClick();
-    }
-  };
-
   return (
     <div className={`flex items-center justify-center ${wide ? 'col-span-2' : ''} w-full h-full p-1`}>
       <button
@@ -122,8 +104,7 @@ const CalcButton: React.FC<CalcButtonProps> = ({
         onPointerUp={handlePointerUp}
         onPointerEnter={() => setIsHovered(true)}
         onPointerLeave={handlePointerLeave}
-        onKeyDown={handleKeyDown}
-        onKeyUp={handleKeyUp}
+        onClick={onClick}
         aria-label={ariaLabel || (typeof label === 'string' ? `${label}${variant === 'primary' ? ' (operation)' : ''}` : undefined)}
         aria-pressed={isPressed}
         type="button"
@@ -138,28 +119,29 @@ const CalcButton: React.FC<CalcButtonProps> = ({
           rounded-full text-xl font-medium transition-all duration-150 overflow-hidden
           ${wide ? 'px-8 justify-start h-full w-full' : 'aspect-square'}
           ${getVariantStyles()}
-          ${isPressed ? 'scale-90 brightness-110' : 'scale-100'}
         `}
       >
-        <div 
-          className={`absolute inset-0 opacity-0 transition-opacity duration-200 pointer-events-none bg-gradient-to-tr from-transparent via-white/20 to-transparent -translate-x-full ${isHovered ? 'opacity-100 translate-x-full' : ''}`} 
-          style={{ transitionProperty: 'transform, opacity', transitionDuration: '0.2s' }}
-        />
-        <div className={`absolute inset-0 opacity-10 bg-gradient-to-br from-white to-transparent pointer-events-none`} />
-        {ripples.map((ripple) => (
-          <span
-            key={ripple.id}
-            className={`absolute rounded-full pointer-events-none animate-ripple ${isLight ? 'bg-black/10' : 'bg-white/30'}`}
-            style={{
-              left: ripple.x,
-              top: ripple.y,
-              width: '20px',
-              height: '20px',
-              transform: 'translate(-50%, -50%)',
-            }}
+        <div className={`absolute inset-0 w-full h-full transition-transform duration-150 flex items-center justify-center ${wide ? 'px-8 justify-start' : ''} ${isPressed ? 'scale-90 brightness-110' : 'scale-100'}`}>
+          <div 
+            className={`absolute inset-0 opacity-0 transition-opacity duration-200 pointer-events-none bg-linear-to-tr from-transparent via-white/20 to-transparent -translate-x-full ${isHovered ? 'opacity-100 translate-x-full' : ''}`} 
+            style={{ transitionProperty: 'transform, opacity', transitionDuration: '0.2s' }}
           />
-        ))}
-        <span className="relative z-10 select-none">{label}</span>
+          <div className={`absolute inset-0 opacity-10 bg-linear-to-br from-white to-transparent pointer-events-none`} />
+          {ripples.map((ripple) => (
+            <span
+              key={ripple.id}
+              className={`absolute rounded-full pointer-events-none animate-ripple ${isLight ? 'bg-black/10' : 'bg-white/30'}`}
+              style={{
+                left: ripple.x,
+                top: ripple.y,
+                width: '20px',
+                height: '20px',
+                transform: 'translate(-50%, -50%)',
+              }}
+            />
+          ))}
+          <span className="relative z-10 select-none">{label}</span>
+        </div>
         <style>{`
           @keyframes ripple {
             from { transform: translate(-50%, -50%) scale(0); opacity: 0.5; }

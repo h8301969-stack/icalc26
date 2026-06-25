@@ -38,6 +38,9 @@ const AppContent: React.FC = () => {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPOSOpen, setIsPOSOpen] = useState(false);
+  const [isPlusAnimating, setIsPlusAnimating] = useState(false);
+  const [isHomeAnimating, setIsHomeAnimating] = useState(false);
+  const [isSettingsAnimating, setIsSettingsAnimating] = useState(false);
   
   const gestures = useSwipeGesture(() => setIsHistoryOpen(true));
   const { showPrompt, handleInstall, handleDismiss } = usePWAPrompt();
@@ -62,12 +65,13 @@ const AppContent: React.FC = () => {
     if (el) el.scrollTop = el.scrollHeight;
   }, [expression]);
   
-  const isAnyModalOpen = isHistoryOpen || isSettingsOpen || isPOSOpen;
+  const isAnyModalOpen = isHistoryOpen || isPOSOpen;
 
   const handleNewInvoice = () => {
     saveCurrentInvoiceAndStartNew();
     clearExpression();
     triggerHaptic(1);
+    setIsPlusAnimating(true);
   };
 
   // Keyboard support for accessibility
@@ -109,7 +113,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className={`relative flex items-center justify-center h-[100dvh] w-full overflow-hidden font-sans transition-colors duration-200 ${isLight ? 'bg-[#f2f2f7]' : 'bg-black'}`}
+    <div className={`relative flex items-center justify-center h-dvh w-full overflow-hidden font-sans transition-colors duration-200 ${isLight ? 'bg-[#f2f2f7]' : 'bg-black'}`}
          {...gestures} onKeyDown={handleKeyDown}
          role="main"
          aria-label="Calculator Application">
@@ -121,7 +125,7 @@ const AppContent: React.FC = () => {
 
       <div className={`fixed inset-0 z-20 flex items-center justify-center transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) ${isUnlocked ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'}`}>
         <div 
-          className={`relative w-[94%] h-[96%] sm:w-[90vw] sm:h-[90vh] max-w-[430px] max-h-[932px] flex flex-col rounded-[26px] overflow-hidden transition-all duration-500 ${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-[var(--glass-blur,24px)] ${isAnyModalOpen ? 'blur-xl opacity-40 scale-[0.92]' : 'opacity-100'}`}
+          className={`relative w-[94%] h-[96%] sm:w-[90vw] sm:h-[90vh] max-w-[430px] max-h-[932px] flex flex-col rounded-[26px] overflow-hidden transition-all duration-500 ${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px) ${isAnyModalOpen ? 'blur-xl opacity-40 scale-[0.92]' : 'opacity-100'}`}
           style={{
             paddingTop: 'max(1rem, env(safe-area-inset-top))',
             paddingRight: 'max(1rem, env(safe-area-inset-right))',
@@ -129,18 +133,44 @@ const AppContent: React.FC = () => {
             paddingLeft: 'max(1rem, env(safe-area-inset-left))'
           }}
         >
-          <div className="absolute top-[1%] left-1/2 -translate-x-1/2 z-50">
+          <div className="flex justify-between items-center px-4 pt-4 pb-2 z-50 relative pointer-events-none">
+            <button 
+              onClick={handleNewInvoice} 
+              onAnimationEnd={() => setIsPlusAnimating(false)}
+              className={`pointer-events-auto h-8 w-8 rounded-full flex items-center justify-center transition-all ${isPlusAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`} 
+              style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 8px 28px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)' }}
+              title="New Invoice"
+            >
+              <Icons.Plus size={16} />
+            </button>
+            
             <input
               type="text"
               placeholder="Search"
-              className={`w-32 py-1.5 px-4 text-center text-sm rounded-full outline-none border transition-all ${isLight ? 'bg-white/60 border-black/5 focus:bg-white/80 text-black placeholder-black/30' : 'bg-black/20 border-white/10 focus:bg-black/40 text-white placeholder-white/30'}`}
+              className={`w-[193px] pointer-events-auto py-1.5 px-4 text-center text-sm rounded-full outline-none border transition-all ${isLight ? 'bg-white/60 border-black/5 focus:bg-white/80 text-black placeholder-black/30' : 'bg-black/20 border-white/10 focus:bg-black/40 text-white placeholder-white/30'}`}
               style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 8px 28px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)' }}
             />
-          </div>
 
-          <div className="flex justify-end gap-2 p-4 absolute top-4 left-0 right-0 z-50 pointer-events-none">
-            <button onClick={handleNewInvoice} className={`pointer-events-auto p-3 rounded-2xl ${isLight ? 'bg-black/5 hover:bg-black/10' : 'bg-white/10 hover:bg-white/20'}`} title="New Invoice"><Icons.Plus size={22} /></button>
-            <button onClick={() => { setIsSettingsOpen(true); triggerHaptic(); }} className={`pointer-events-auto p-3 rounded-2xl ${isLight ? 'bg-black/5 hover:bg-black/10' : 'bg-white/10 hover:bg-white/20'}`}><Icons.Settings size={22} /></button>
+            <div className="flex items-center gap-1.5 pointer-events-auto">
+              <button 
+                onClick={() => { setIsPOSOpen(true); triggerHaptic(); setIsHomeAnimating(true); }} 
+                onAnimationEnd={() => setIsHomeAnimating(false)}
+                className={`h-8 w-8 rounded-full flex items-center justify-center transition-all ${isHomeAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`} 
+                style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 8px 28px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)' }}
+                title="Dashboard"
+              >
+                <Icons.Home size={16} />
+              </button>
+              <button 
+                onClick={() => { setIsSettingsOpen(true); triggerHaptic(); setIsSettingsAnimating(true); }} 
+                onAnimationEnd={() => setIsSettingsAnimating(false)}
+                className={`h-8 w-8 rounded-full flex items-center justify-center transition-all ${isSettingsAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`} 
+                style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 8px 28px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)' }}
+                title="Settings"
+              >
+                <Icons.Settings size={16} />
+              </button>
+            </div>
           </div>
           
           {/* ── Display area ─────────────────────────────────────── */}
@@ -151,7 +181,7 @@ const AppContent: React.FC = () => {
             {/* Live result — 40px bold, full opacity, just below search bar */}
             <div
               className="w-full text-center font-black tracking-tighter"
-              style={{ fontSize: 40, lineHeight: 1.1, transition: 'opacity 0.15s' }}
+              style={{ fontSize: 35, lineHeight: 1.1, transition: 'opacity 0.15s' }}
               role="status"
               aria-live="polite"
               aria-label={`Result: ${safeEvaluate(expression)}`}
@@ -173,7 +203,7 @@ const AppContent: React.FC = () => {
               ref={expressionScrollRef}
               className="no-scrollbar w-full text-center"
               style={{
-                height: `${displayFontSize * 1.45 * 4}px`,   // 4 visible lines
+                height: `${displayFontSize * 1.25 * 4}px`,   // 4 visible lines
                 overflowY: 'auto',
                 paddingBottom: '0.25rem',
                 scrollBehavior: 'smooth',
@@ -187,7 +217,7 @@ const AppContent: React.FC = () => {
                   fontSize:      `${displayFontSize}px`,
                   fontWeight:    300,
                   letterSpacing: '-0.03em',
-                  lineHeight:    1.45,
+                  lineHeight:    1.25,
                   whiteSpace:    'pre-wrap',
                   margin:        0,
                   textAlign:     'center',
@@ -198,11 +228,14 @@ const AppContent: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex-none flex justify-between gap-2 mb-2 px-4 mx-2 py-1.5 rounded-[15.6px] bg-current/5">
-              <button onClick={handleUndo} className="flex-1 py-3 flex justify-center hover:bg-white/10 rounded-xl"><Icons.Undo size={18} /></button>
-              <button onClick={handleRedo} className="flex-1 py-3 flex justify-center hover:bg-white/10 rounded-xl"><Icons.Redo size={18} /></button>
-              <button onClick={() => setIsPOSOpen(true)} className="flex-1 py-3 flex justify-center hover:bg-white/10 rounded-xl"><Icons.Trends size={18} /></button>
-              <button onClick={() => { triggerHaptic(); setExpression(prev => prev.slice(0, -1) || '0'); }} className="flex-1 py-3 flex justify-center hover:bg-white/10 rounded-xl"><Icons.Delete size={18} /></button>
+          <div 
+            className={`flex-none flex justify-between gap-2 mb-2 px-4 mx-2 py-1.5 rounded-full border transition-all ${isLight ? 'bg-white/60 border-black/5 text-black' : 'bg-black/20 border-white/10 text-white'}`}
+            style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 8px 28px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)' }}
+          >
+              <button onClick={handleUndo} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Undo"><Icons.Undo size={16} /></button>
+              <button onClick={handleRedo} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Redo"><Icons.Redo size={16} /></button>
+              <button onClick={() => setIsPOSOpen(true)} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Trends"><Icons.Trends size={16} /></button>
+              <button onClick={() => { triggerHaptic(); setExpression(prev => prev.slice(0, -1) || '0'); }} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Delete"><Icons.Delete size={16} /></button>
           </div>
 
           <div className="flex-[1.3] grid grid-cols-4 grid-rows-5 gap-2 px-4 pb-4 min-h-0">
@@ -224,6 +257,7 @@ const AppContent: React.FC = () => {
             <CalcButton label="." onClick={() => inputChar('.')} isLight={isLight} />
             <CalcButton label="=" onClick={finalize} variant="primary" accentColor={settings.accentColor} isLight={isLight} ariaLabel="Equals" />
           </div>
+          <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} updateSettings={(k, v) => updateSettings({ [k]: v })} />
         </div>
       </div>
 
@@ -242,7 +276,6 @@ const AppContent: React.FC = () => {
         actionLogs={actionLogs}
         runningTotal={runningTotal}
       />
-      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} updateSettings={(k, v) => updateSettings({ [k]: v })} />
       <POSDashboard
         history={history}
         items={items}
@@ -265,10 +298,10 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => (
   <ErrorBoundary
     fallback={(error, retry) => (
-      <div className="flex items-center justify-center h-[100dvh] w-full bg-black p-4">
+      <div className="flex items-center justify-center h-dvh w-full bg-black p-4">
         <div className="max-w-md text-center text-white">
           <h1 className="text-2xl font-bold mb-4">⚠️ App Error</h1>
-          <p className="text-gray-300 mb-6 font-mono text-sm break-words">
+          <p className="text-gray-300 mb-6 font-mono text-sm wrap-break-word">
             {error.message}
           </p>
           <button
