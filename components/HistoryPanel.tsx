@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icons } from '../constants';
 import { CartLineItem, InvoiceActionLog } from '../types';
 import { formatPosLineItemDisplay } from '../utils/posExpression';
+import { printerInstance } from '../utils/bluetoothPrinter';
+
 
 /* ─────────────────────────── types ─────────────────────────── */
 interface HistoryPanelProps {
@@ -293,8 +295,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                       ? '1px solid rgba(0,0,0,0.06)'
                       : '1px solid rgba(255,255,255,0.09)',
                     boxShadow:      isLight
-                      ? '0 8px 40px rgba(0,0,0,0.12)'
-                      : '0 8px 40px rgba(0,0,0,0.5)',
+                      ? '0 12px 32px rgba(0,0,0,0.12)'
+                      : '0 0 20px rgba(255,255,255,0.18)',
                   }}
                 />
 
@@ -367,30 +369,70 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                     )}
                   </div>
 
-                  {/* card footer — only on front card */}
-                  {card.isCurrent && relativePos === 0 && (
-                    <button
-                      onClick={e => { e.stopPropagation(); onClear(); }}
-                      style={{
-                        marginTop:     4,
-                        padding:       '10px 0',
-                        borderRadius:  14,
-                        background:    'rgba(239, 68, 68, 0.10)',
-                        color:         '#ef4444',
-                        fontSize:      10,
-                        fontWeight:    900,
-                        letterSpacing: '0.28em',
-                        textTransform: 'uppercase',
-                        border:        'none',
-                        cursor:        'pointer',
-                        transition:    'background 0.2s',
-                      }}
-                      onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.18)')}
-                      onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.10)')}
-                      aria-label="Clear current invoice"
-                    >
-                      Clear Invoice
-                    </button>
+                  {/* card footer — print and clear buttons */}
+                  {relativePos === 0 && (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            const numericTotal = parseFloat(card.total) || 0;
+                            await printerInstance.printInvoiceImage(card.name, card.items, numericTotal, currency);
+                          } catch (err: any) {
+                            alert(err.message || 'Failed to print');
+                          }
+                        }}
+                        style={{
+                          flex:          1,
+                          padding:       '10px 0',
+                          borderRadius:  14,
+                          background:    isLight ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.08)',
+                          color:         isLight ? '#000000' : '#ffffff',
+                          fontSize:      10,
+                          fontWeight:    900,
+                          letterSpacing: '0.28em',
+                          textTransform: 'uppercase',
+                          border:        'none',
+                          cursor:        'pointer',
+                          transition:    'background 0.2s',
+                          display:       'flex',
+                          alignItems:    'center',
+                          justifyContent: 'center',
+                          gap:           6
+                        }}
+                        onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)')}
+                        onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)')}
+                        aria-label="Print invoice"
+                      >
+                        <Icons.Printer size={12} />
+                        Print
+                      </button>
+
+                      {card.isCurrent && (
+                        <button
+                          onClick={e => { e.stopPropagation(); onClear(); }}
+                          style={{
+                            flex:          1,
+                            padding:       '10px 0',
+                            borderRadius:  14,
+                            background:    'rgba(239, 68, 68, 0.10)',
+                            color:         '#ef4444',
+                            fontSize:      10,
+                            fontWeight:    900,
+                            letterSpacing: '0.28em',
+                            textTransform: 'uppercase',
+                            border:        'none',
+                            cursor:        'pointer',
+                            transition:    'background 0.2s',
+                          }}
+                          onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.18)')}
+                          onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.10)')}
+                          aria-label="Clear current invoice"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

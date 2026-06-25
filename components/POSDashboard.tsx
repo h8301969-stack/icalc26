@@ -88,6 +88,21 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     return { totalRev, monthlyRev, dailyRev, avgPerCustomer, invoicesToday, stockLevel, criticalItems };
   }, [purchases, items]);
 
+  const latestPurchaseItems = useMemo(() => {
+    if (purchases.length === 0) return [];
+    const latestRecord = purchases[0]; 
+    if (!latestRecord) return [];
+    return [{
+      id: latestRecord.id,
+      name: latestRecord.itemName,
+      price: latestRecord.total / latestRecord.quantity,
+      quantity: latestRecord.quantity
+    }];
+  }, [purchases]);
+
+  const latestPurchaseTotal = purchases.length > 0 ? purchases[0].total : 0;
+  const latestPurchaseName = purchases.length > 0 ? purchases[0].itemName : 'Latest Transaction';
+
   const systemLogs = useMemo(() => {
     const dayAgo = Date.now() - 86400000;
     const inventoryLogs = items
@@ -187,8 +202,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   };
 
   const levitateClass = isLight 
-    ? 'bg-white shadow-[0_24px_56px_rgba(0,0,0,0.12)] hover:shadow-[0_48px_96px_rgba(0,0,0,0.18)] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)' 
-    : 'bg-[#151518] shadow-[0_0_56px_rgba(0,132,255,0.2)] hover:shadow-[0_0_128px_rgba(0,132,255,0.7)] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)';
+    ? 'bg-white shadow-[0_16px_36px_rgba(0,0,0,0.12)] hover:shadow-[0_24px_48px_rgba(0,0,0,0.16)] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)' 
+    : 'bg-[#151518] shadow-[0_0_20px_rgba(255,255,255,0.18)] hover:shadow-[0_0_35px_rgba(255,255,255,0.35)] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)';
 
   const textColorClass = isLight ? 'text-zinc-900' : 'text-zinc-100';
 
@@ -606,7 +621,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           </div>
         </div>
       )}
-      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={{ themeMode: isLight ? 'light' : 'dark' }} updateSettings={updateSettings} />
+      <SettingsPanel 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+        settings={{ themeMode: isLight ? 'light' : 'dark' }} 
+        updateSettings={updateSettings} 
+        cartItems={latestPurchaseItems}
+        runningTotal={latestPurchaseTotal}
+        invoiceName={latestPurchaseName}
+      />
       <style>{`
         @keyframes fade-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes insight-pop { from { opacity: 0; transform: scale(0.9) translateY(60px); } to { opacity: 1; transform: scale(1) translateY(0); } }
