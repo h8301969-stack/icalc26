@@ -276,7 +276,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                   borderRadius: 22,
                   overflow: 'hidden',
                   cursor: relativePos !== 0 ? 'pointer' : 'default',
-                  pointerEvents: relativePos !== 0 ? 'auto' : 'none',
+                  pointerEvents: relativePos === 0 ? 'auto' : 'none',
                 }}
                 onClick={() => relativePos !== 0 && setActiveIdx(idx)}
               >

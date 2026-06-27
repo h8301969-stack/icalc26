@@ -22,8 +22,8 @@ const AppContent: React.FC = () => {
   const { history, saveResult } = useHistory();
   const { items, setItems, purchases, setPurchases } = usePOS(history);
   const { 
-    expression, setExpression, calcError, inputChar, 
-    toggleSign, finalize, handleUndo, handleRedo, clearExpression 
+    expression, calcError, inputChar, 
+    toggleSign, finalize, handleUndo, handleRedo, clearExpression, deleteLast 
   } = useCalculator(saveResult, triggerHaptic);
   const {
     invoiceName,
@@ -74,6 +74,48 @@ const AppContent: React.FC = () => {
     setIsPlusAnimating(true);
   };
 
+  // Declarative keypad definition (clean, no repetition)
+  type KeyDef = {
+    label: string;
+    action: string;
+    variant?: 'primary' | 'secondary';
+    wide?: boolean;
+    ariaLabel?: string;
+  };
+
+  const keypad: KeyDef[] = [
+    { label: 'AC', action: 'AC', variant: 'secondary', ariaLabel: 'All Clear' },
+    { label: '+/-', action: '±', variant: 'secondary', ariaLabel: 'Toggle positive or negative sign' },
+    { label: '%', action: '%', variant: 'secondary', ariaLabel: 'Percent' },
+    { label: '÷', action: '/', variant: 'primary', ariaLabel: 'Divide' },
+
+    { label: '7', action: '7' },
+    { label: '8', action: '8' },
+    { label: '9', action: '9' },
+    { label: '×', action: '*', variant: 'primary', ariaLabel: 'Multiply' },
+
+    { label: '4', action: '4' },
+    { label: '5', action: '5' },
+    { label: '6', action: '6' },
+    { label: '-', action: '-', variant: 'primary', ariaLabel: 'Subtract' },
+
+    { label: '1', action: '1' },
+    { label: '2', action: '2' },
+    { label: '3', action: '3' },
+    { label: '+', action: '+', variant: 'primary', ariaLabel: 'Add' },
+
+    { label: '0', action: '0', wide: true },
+    { label: '.', action: '.' },
+    { label: '=', action: '=', variant: 'primary', ariaLabel: 'Equals' },
+  ];
+
+  const handleKeypad = (action: string) => {
+    if (action === 'AC') return clearExpression();
+    if (action === '±') return toggleSign();
+    if (action === '=') return finalize();
+    inputChar(action);
+  };
+
   // Keyboard support for accessibility
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (isAnyModalOpen) return; // Disable when modals are open
@@ -102,12 +144,12 @@ const AppContent: React.FC = () => {
     }
     // Backspace for delete
     else if (key === 'Backspace') {
-      setExpression(prev => prev.slice(0, -1) || '0');
+      deleteLast();
       e.preventDefault();
     }
     // Escape for clear
     else if (key === 'Escape') {
-      setExpression('0');
+      clearExpression();
       e.preventDefault();
     }
   };
@@ -235,27 +277,23 @@ const AppContent: React.FC = () => {
               <button onClick={handleUndo} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Undo"><Icons.Undo size={16} /></button>
               <button onClick={handleRedo} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Redo"><Icons.Redo size={16} /></button>
               <button onClick={() => setIsPOSOpen(true)} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Trends"><Icons.Trends size={16} /></button>
-              <button onClick={() => { triggerHaptic(); setExpression(prev => prev.slice(0, -1) || '0'); }} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Delete"><Icons.Delete size={16} /></button>
+              <button onClick={deleteLast} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Delete"><Icons.Delete size={16} /></button>
           </div>
 
+          {/* Keypad — declarative config for clean maintainable buttons + actions */}
           <div className="flex-[1.3] grid grid-cols-4 grid-rows-5 gap-2 px-4 pb-4 min-h-0">
-            <CalcButton label="AC" onClick={clearExpression} variant="secondary" isLight={isLight} ariaLabel="All Clear" />
-            <CalcButton label="+/-" onClick={toggleSign} variant="secondary" isLight={isLight} ariaLabel="Toggle positive or negative sign" />
-            <CalcButton label="%" onClick={() => inputChar('%')} variant="secondary" isLight={isLight} ariaLabel="Percent" />
-            <CalcButton label="÷" onClick={() => inputChar('/')} variant="primary" accentColor={settings.accentColor} isLight={isLight} ariaLabel="Divide" />
-            
-            {[7,8,9].map(n => <CalcButton key={n} label={n.toString()} onClick={() => inputChar(n.toString())} isLight={isLight} />)}
-            <CalcButton label="×" onClick={() => inputChar('*')} variant="primary" accentColor={settings.accentColor} isLight={isLight} ariaLabel="Multiply" />
-            
-            {[4,5,6].map(n => <CalcButton key={n} label={n.toString()} onClick={() => inputChar(n.toString())} isLight={isLight} />)}
-            <CalcButton label="-" onClick={() => inputChar('-')} variant="primary" accentColor={settings.accentColor} isLight={isLight} ariaLabel="Subtract" />
-            
-            {[1,2,3].map(n => <CalcButton key={n} label={n.toString()} onClick={() => inputChar(n.toString())} isLight={isLight} />)}
-            <CalcButton label="+" onClick={() => inputChar('+')} variant="primary" accentColor={settings.accentColor} isLight={isLight} ariaLabel="Add" />
-            
-            <CalcButton label="0" onClick={() => inputChar('0')} wide isLight={isLight} />
-            <CalcButton label="." onClick={() => inputChar('.')} isLight={isLight} />
-            <CalcButton label="=" onClick={finalize} variant="primary" accentColor={settings.accentColor} isLight={isLight} ariaLabel="Equals" />
+            {keypad.map((btn, idx) => (
+              <CalcButton
+                key={idx}
+                label={btn.label}
+                onClick={() => handleKeypad(btn.action)}
+                variant={btn.variant}
+                wide={btn.wide}
+                accentColor={settings.accentColor}
+                isLight={isLight}
+                ariaLabel={btn.ariaLabel}
+              />
+            ))}
           </div>
           <SettingsPanel 
             isOpen={isSettingsOpen} 
@@ -275,7 +313,6 @@ const AppContent: React.FC = () => {
         onClose={() => setIsHistoryOpen(false)}
         onClear={() => {
           clearExpression();
-          triggerHaptic();
         }}
         isLight={isLight}
         currency={settings.currency}

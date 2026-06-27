@@ -11,9 +11,9 @@ export const useCalculator = (
   const [redoStack, setRedoStack] = useState<string[]>([]);
   const [calcError, setCalcError] = useState<string | null>(null);
 
-  const pushToUndo = useCallback((val: string) => { 
-    setUndoStack(prev => [...prev, val].slice(-50)); 
-    setRedoStack([]); 
+  const pushToUndo = useCallback((val: string) => {
+    setUndoStack(prev => [...prev, val].slice(-50));
+    setRedoStack([]);
   }, []);
 
   const runningResult = useMemo(() => {
@@ -27,19 +27,52 @@ export const useCalculator = (
     }
   }, [expression]);
 
-  const inputChar = useCallback((char: string) => {
-    triggerHaptic(); 
+  const inputChar = useCallback((raw: string) => {
+    triggerHaptic();
     pushToUndo(expression);
-    if (isResultMode && !['+', '*', '/'].includes(char)) { 
-      setExpression(char === '*' ? '0×' : char === '/' ? '0÷' : char); 
-      setIsResultMode(false); 
-      return; 
+
+    // Normalize incoming symbols
+    let char = raw;
+    if (char === '×') char = '*';
+    if (char === '÷') char = '/';
+
+    const ops = ['+', '-', '*', '/', '%'] as const;
+    const isOp = (ops as readonly string[]).includes(char);
+
+    if (isResultMode) {
+      setIsResultMode(false);
+      if (isOp) {
+        // chain operation from current result
+        const sym = char === '*' ? '×' : char === '/' ? '÷' : char;
+        setExpression(prev => prev + sym);
+        return;
+      }
+      // fresh start for digit / decimal
+      if (char === '.') {
+        setExpression('0.');
+      } else {
+        setExpression(char);
+      }
+      return;
     }
+
     setIsResultMode(false);
     setExpression(prev => {
-      const iosChar = char === '*' ? '×' : char === '/' ? '÷' : char;
-      if (prev === '0' && !['+', '×', '÷', '.'].includes(iosChar)) return iosChar;
-      return prev + iosChar;
+      const sym = char === '*' ? '×' : char === '/' ? '÷' : char;
+      if (prev === '0' && !['+', '×', '÷', '.', '%'].includes(sym)) {
+        return sym;
+      }
+      // replace trailing operator with new one (except allowing minus for negatives)
+      const last = prev.slice(-1);
+      const lastIsOp = ['+', '-', '×', '÷', '*', '/', '%'].includes(last);
+      if (isOp && lastIsOp) {
+        if (char === '-' && !['-', '×', '÷', '+', '/', '%'].includes(prev.slice(-2, -1))) {
+          // allow minus for starting negative term after op? keep simple: append
+        } else {
+          return prev.slice(0, -1) + sym;
+        }
+      }
+      return prev + sym;
     });
   }, [expression, isResultMode, triggerHaptic, pushToUndo]);
 
@@ -48,12 +81,12 @@ export const useCalculator = (
     pushToUndo(expression);
 
     if (isResultMode || expression === '0') {
+      setIsResultMode(false);
       if (expression.startsWith('-')) {
         setExpression(expression.slice(1) || '0');
       } else if (expression !== '0') {
         setExpression('-' + expression);
       }
-      setIsResultMode(false);
       return;
     }
 
@@ -67,7 +100,10 @@ export const useCalculator = (
     let lastNum = match[2] || '0';
     if (lastNum === '' || lastNum === '-') lastNum = '0';
     const toggled = lastNum.startsWith('-') ? lastNum.slice(1) : '-' + lastNum;
-    let newExpr = (prefix + toggled).replace(/([+\-*/%×÷])\-/g, '$1-').replace(/--/g, '-').replace(/\+\-/g, '-');
+    let newExpr = (prefix + toggled)
+      .replace(/([+\-*/%×÷])\-/g, '$1-')
+      .replace(/--/g, '-')
+      .replace(/\+\-/g, '-');
     setExpression(newExpr || '0');
   }, [expression, isResultMode, triggerHaptic, pushToUndo]);
 
@@ -80,25 +116,39 @@ export const useCalculator = (
     setExpression(finalRes);
   }, [expression, runningResult, triggerHaptic, onEvaluate, pushToUndo]);
 
-  const handleUndo = useCallback(() => { 
-    if (undoStack.length === 0) return; 
-    triggerHaptic(); 
-    const current = expression; 
-    const prev = undoStack[undoStack.length - 1]; 
-    setRedoStack(old => [...old, current]); 
-    setUndoStack(old => old.slice(0, -1)); 
-    setExpression(prev); 
+  const handleUndo = useCallback(() => {
+    if (undoStack.length === 0) return;
+    triggerHaptic();
+    const current = expression;
+    const prev = undoStack[undoStack.length - 1];
+    setRedoStack(old => [...old, current]);
+    setUndoStack(old => old.slice(0, -1));
+    setExpression(prev);
+    setIsResultMode(false);
   }, [undoStack, expression, triggerHaptic]);
 
-  const handleRedo = useCallback(() => { 
-    if (redoStack.length === 0) return; 
-    triggerHaptic(); 
-    const current = expression; 
-    const next = redoStack[redoStack.length - 1]; 
-    setUndoStack(old => [...old, current]); 
-    setRedoStack(old => old.slice(0, -1)); 
-    setExpression(next); 
+  const handleRedo = useCallback(() => {
+    if (redoStack.length === 0) return;
+    triggerHaptic();
+    const current = expression;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack(old => [...old, current]);
+    setRedoStack(old => old.slice(0, -1));
+    setExpression(next);
+    setIsResultMode(false);
   }, [redoStack, expression, triggerHaptic]);
+
+  const clearExpression = useCallback(() => {
+    triggerHaptic();
+    setExpression('0');
+    setIsResultMode(false);
+  }, [triggerHaptic]);
+
+  const deleteLast = useCallback(() => {
+    triggerHaptic();
+    setExpression(prev => prev.slice(0, -1) || '0');
+    setIsResultMode(false);
+  }, [triggerHaptic]);
 
   return {
     expression,
@@ -109,6 +159,7 @@ export const useCalculator = (
     finalize,
     handleUndo,
     handleRedo,
-    clearExpression: () => { triggerHaptic(); setExpression('0'); }
+    clearExpression,
+    deleteLast,
   };
 };
