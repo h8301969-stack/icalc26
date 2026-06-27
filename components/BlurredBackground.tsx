@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 
 interface BlurredBackgroundProps {
   isLight: boolean;
-  wallpapers: { image: string; header: string; subHeader: string }[];
+  wallpapers: { image: string }[];
   isUnlocked?: boolean;
+  result?: string;
 }
 
-const BlurredBackground: React.FC<BlurredBackgroundProps> = ({ isLight, wallpapers, isUnlocked = true }) => {
+const BlurredBackground: React.FC<BlurredBackgroundProps> = ({ isLight, wallpapers, isUnlocked = true, result }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
 
   useEffect(() => {
@@ -39,6 +40,18 @@ const BlurredBackground: React.FC<BlurredBackgroundProps> = ({ isLight, wallpape
       }`} />
       
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/20" />
+
+      {/* Familiar live result rendered on the blurred background (bottom portion) */}
+      {result && result !== '0.00' && result !== '0' && (
+        <div className="absolute inset-x-0 bottom-[6%] z-[1] flex justify-center pointer-events-none select-none">
+          <div
+            className={`text-[clamp(72px,22vw,160px)] font-black tracking-[-0.04em] leading-none opacity-[0.055] ${isLight ? 'text-black' : 'text-white'}`}
+            aria-hidden="true"
+          >
+            {result}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

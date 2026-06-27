@@ -3,6 +3,7 @@ import { safeEvaluate } from './utils/calculator';
 import CalcButton from './components/CalcButton';
 import HistoryPanel from './components/HistoryPanel';
 import SettingsPanel from './components/SettingsPanel';
+import SearchPanel from './components/SearchPanel';
 import BlurredBackground from './components/BlurredBackground';
 import POSDashboard from './components/POSDashboard';
 import WallpaperOverlay from './components/WallpaperOverlay';
@@ -25,6 +26,8 @@ const AppContent: React.FC = () => {
     expression, calcError, inputChar, 
     toggleSign, finalize, handleUndo, handleRedo, clearExpression, deleteLast 
   } = useCalculator(saveResult, triggerHaptic);
+
+  const displayResult = expression === '0' ? '0' : safeEvaluate(expression);
   const {
     invoiceName,
     setInvoiceName,
@@ -41,6 +44,10 @@ const AppContent: React.FC = () => {
   const [isPlusAnimating, setIsPlusAnimating] = useState(false);
   const [isHomeAnimating, setIsHomeAnimating] = useState(false);
   const [isSettingsAnimating, setIsSettingsAnimating] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchAnchorRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   
   const gestures = useSwipeGesture(() => setIsHistoryOpen(true));
   const { showPrompt, handleInstall, handleDismiss } = usePWAPrompt();
@@ -65,7 +72,27 @@ const AppContent: React.FC = () => {
     if (el) el.scrollTop = el.scrollHeight;
   }, [expression]);
   
-  const isAnyModalOpen = isHistoryOpen || isPOSOpen;
+  const isAnyModalOpen = isHistoryOpen || isPOSOpen || isSearchOpen;
+  const isCardDimmed = isHistoryOpen || isPOSOpen;
+
+  const closeSearch = () => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    searchInputRef.current?.blur();
+  };
+
+  const handleSearchInvoiceSelect = (name: string) => {
+    setInvoiceName(name);
+    closeSearch();
+    triggerHaptic();
+    setIsHistoryOpen(true);
+  };
+
+  const handleSearchInventorySelect = () => {
+    closeSearch();
+    triggerHaptic();
+    setIsPOSOpen(true);
+  };
 
   const handleNewInvoice = () => {
     saveCurrentInvoiceAndStartNew();
@@ -118,9 +145,15 @@ const AppContent: React.FC = () => {
 
   // Keyboard support for accessibility
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (isAnyModalOpen) return; // Disable when modals are open
-
     const key = e.key;
+
+    if (key === 'Escape' && isSearchOpen) {
+      closeSearch();
+      e.preventDefault();
+      return;
+    }
+
+    if (isAnyModalOpen) return;
     
     // Numbers
     if (/^\d$/.test(key)) {
@@ -147,7 +180,6 @@ const AppContent: React.FC = () => {
       deleteLast();
       e.preventDefault();
     }
-    // Escape for clear
     else if (key === 'Escape') {
       clearExpression();
       e.preventDefault();
@@ -159,7 +191,7 @@ const AppContent: React.FC = () => {
          {...gestures} onKeyDown={handleKeyDown}
          role="main"
          aria-label="Calculator Application">
-      <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} />
+      <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} result={displayResult} />
 
       {!isUnlocked && (
         <WallpaperOverlay isLight={isLight} accentColor={settings.accentColor} onEnter={() => { triggerHaptic(2); setIsUnlocked(true); }} />
@@ -167,7 +199,7 @@ const AppContent: React.FC = () => {
 
       <div className={`fixed inset-0 z-20 flex items-center justify-center transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) ${isUnlocked ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'}`}>
         <div 
-          className={`relative w-[94%] h-[96%] sm:w-[90vw] sm:h-[90vh] max-w-[430px] max-h-[932px] flex flex-col rounded-[26px] overflow-hidden transition-all duration-500 ${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px) ${isAnyModalOpen ? 'blur-xl opacity-40 scale-[0.92]' : 'opacity-100'}`}
+          className={`relative w-[94%] h-[96%] sm:w-[90vw] sm:h-[90vh] max-w-[430px] max-h-[932px] flex flex-col rounded-[26px] overflow-hidden transition-all duration-500 ${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px) ${isCardDimmed ? 'blur-xl opacity-40 scale-[0.92]' : 'opacity-100'}`}
           style={{
             paddingTop: 'max(1rem, env(safe-area-inset-top))',
             paddingRight: 'max(1rem, env(safe-area-inset-right))',
@@ -175,25 +207,84 @@ const AppContent: React.FC = () => {
             paddingLeft: 'max(1rem, env(safe-area-inset-left))'
           }}
         >
-          <div className="flex justify-between items-center px-4 pt-4 pb-2 z-50 relative pointer-events-none">
+          {isSearchOpen && (
+            <div
+              className="absolute inset-x-0 bottom-0 z-40 bg-black/25 backdrop-blur-xl transition-all duration-300 pointer-events-none"
+              style={{ top: '3.25rem' }}
+              aria-hidden="true"
+            />
+          )}
+
+          <div
+            className="flex items-center pb-2 z-50 relative pointer-events-none shrink-0"
+            style={{
+              paddingTop: 'max(0.2rem, calc(1rem - 1.5%))',
+              paddingLeft: 'max(0.2rem, calc(1rem - 1%))',
+              paddingRight: 'max(0.2rem, calc(1rem - 1%))',
+              gap: 'max(0.15rem, calc(0.625rem - 0.8%))',
+            }}
+          >
             <button 
               onClick={handleNewInvoice} 
               onAnimationEnd={() => setIsPlusAnimating(false)}
-              className={`pointer-events-auto h-8 w-8 rounded-full flex items-center justify-center transition-all ${isPlusAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`} 
+              className={`pointer-events-auto h-8 w-8 shrink-0 rounded-full flex items-center justify-center transition-all duration-300 ${isPlusAnimating ? 'animate-plus-trigger' : ''} ${isSearchOpen ? 'blur-[2px] opacity-35' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`} 
               style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 0 12px rgba(255,255,255,0.6), 0 0 4px rgba(255,255,255,0.3)' }}
               title="New Invoice"
             >
               <Icons.Plus size={16} />
             </button>
             
-            <input
-              type="text"
-              placeholder="Search"
-              className={`w-[193px] pointer-events-auto py-1.5 px-4 text-center text-sm rounded-full outline-none border transition-all ${isLight ? 'bg-white/60 border-black/5 focus:bg-white/80 text-black placeholder-black/30' : 'bg-black/20 border-white/10 focus:bg-black/40 text-white placeholder-white/30'}`}
-              style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 0 12px rgba(255,255,255,0.6), 0 0 4px rgba(255,255,255,0.3)' }}
-            />
+            <div
+              ref={searchAnchorRef}
+              className={`relative flex-1 min-w-0 z-[60] pointer-events-auto ${isSearchOpen ? 'isolate' : ''}`}
+            >
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setIsSearchOpen(true)}
+                placeholder="Search"
+                aria-label="Search invoices and inventory"
+                aria-expanded={isSearchOpen}
+                aria-controls="search-results-panel"
+                className={`w-full py-1.5 px-4 text-center text-sm rounded-full outline-none border transition-all duration-300 blur-0 ${
+                  isSearchOpen
+                    ? 'bg-zinc-600 border-zinc-500/60 text-white placeholder-white/50 shadow-lg opacity-100'
+                    : isLight
+                      ? 'bg-white/60 border-black/5 text-black placeholder-black/30'
+                      : 'bg-black/20 border-white/10 text-white placeholder-white/30'
+                }`}
+                style={
+                  isSearchOpen
+                    ? {
+                        boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
+                        WebkitTextFillColor: '#ffffff',
+                        caretColor: '#ffffff',
+                      }
+                    : { boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 0 12px rgba(255,255,255,0.6), 0 0 4px rgba(255,255,255,0.3)' }
+                }
+              />
+              <SearchPanel
+                isOpen={isSearchOpen}
+                query={searchQuery}
+                onClose={closeSearch}
+                isLight={isLight}
+                currency={settings.currency}
+                invoiceName={invoiceName}
+                runningTotal={runningTotal}
+                actionLogs={actionLogs}
+                inventory={items}
+                onSelectInvoice={handleSearchInvoiceSelect}
+                onSelectInventory={handleSearchInventorySelect}
+                anchorRef={searchAnchorRef}
+              />
+            </div>
  
-            <div className="flex items-center gap-1.5 pointer-events-auto">
+            <div
+              className={`flex items-center shrink-0 pointer-events-auto transition-all duration-300 ${isSearchOpen ? 'blur-[2px] opacity-35' : ''}`}
+              style={{ gap: 'max(0.1rem, calc(0.375rem - 0.8%))' }}
+            >
               <button 
                 onClick={() => { setIsPOSOpen(true); triggerHaptic(); setIsHomeAnimating(true); }} 
                 onAnimationEnd={() => setIsHomeAnimating(false)}
@@ -217,21 +308,10 @@ const AppContent: React.FC = () => {
           
           {/* ── Display area ─────────────────────────────────────── */}
           <div
-            className="flex-1 flex flex-col items-center px-4 overflow-hidden min-h-0 pointer-events-none"
-            style={{ paddingTop: '13%' }}
+            className={`flex-1 flex flex-col items-center px-4 overflow-hidden min-h-0 pointer-events-none transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+            style={{ paddingTop: '18%' }}
           >
-            {/* Live result — 40px bold, full opacity, just below search bar */}
-            <div
-              className="w-full text-center font-black tracking-tighter"
-              style={{ fontSize: 35, lineHeight: 1.1, transition: 'opacity 0.15s' }}
-              role="status"
-              aria-live="polite"
-              aria-label={`Result: ${safeEvaluate(expression)}`}
-            >
-              {expression === '0' ? '0' : safeEvaluate(expression)}
-            </div>
-
-            {/* Flexible gap pushes expression to the bottom */}
+            {/* Flexible space above expression (result now lives on the blurred background below) */}
             <div style={{ flex: 1 }} />
 
             {calcError && (
@@ -271,7 +351,7 @@ const AppContent: React.FC = () => {
           </div>
 
           <div 
-            className={`flex-none flex justify-between gap-2 mb-2 px-4 mx-2 py-1.5 rounded-full border transition-all ${isLight ? 'bg-white/60 border-black/5 text-black' : 'bg-black/20 border-white/10 text-white'}`}
+            className={`flex-none flex justify-between gap-2 mb-2 px-4 mx-2 py-1.5 rounded-full border transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white/60 border-black/5 text-black' : 'bg-black/20 border-white/10 text-white'}`}
             style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 8px 28px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)' }}
           >
               <button onClick={handleUndo} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Undo"><Icons.Undo size={16} /></button>
@@ -281,7 +361,7 @@ const AppContent: React.FC = () => {
           </div>
 
           {/* Keypad — declarative config for clean maintainable buttons + actions */}
-          <div className="relative z-10 flex-[1.3] grid grid-cols-4 grid-rows-5 gap-2 px-4 pb-4 min-h-0 overflow-hidden">
+          <div className={`relative z-10 flex-[1.3] grid grid-cols-4 grid-rows-5 gap-2 px-4 pb-4 min-h-0 overflow-hidden transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}>
             {keypad.map((btn, idx) => (
               <CalcButton
                 key={idx}

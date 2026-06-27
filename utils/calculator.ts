@@ -113,31 +113,3 @@ export const isValidPartialExpression = (expr: string): boolean => {
   }
 };
 
-/**
- * Handles complex toggle sign logic for expression strings
- */
-export const toggleExpressionSign = (expression: string): string => {
-  if (expression === '0') return '0';
-  
-  // Regex to find the last number or parenthesized group
-  const match = expression.match(/([+\-×÷(]|^)(-?\d*\.?\d*)$/);
-  if (!match) return expression;
-
-  const prefix = expression.slice(0, match.index! + (match[1] ? match[1].length : 0));
-  const lastNum = match[2] || '';
-
-  if (lastNum === '' && prefix.endsWith('(')) {
-     return expression; // Don't negate empty parens yet
-  }
-
-  const toggled = lastNum.startsWith('-') ? lastNum.slice(1) : '-' + lastNum;
-  
-  // Cleanup double negatives or operator clashes
-  const result = prefix + toggled;
-  return result
-    .replace(/\+-/g, '-')
-    .replace(/--/g, '+')
-    .replace(/×-/g, '×-')
-    .replace(/÷-/g, '÷-')
-    .replace(/\(-/g, '(-');
-};
