@@ -170,7 +170,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       dateAdded: now.toLocaleDateString(),
       supplier: 'Generic Systems',
       lastStocked: now.toISOString(),
-      image: newItemImageUrl || 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=400&q=80',
+      image: newItemImageUrl || '/assets/autoswipe/pos3.png',
       activities: [{ id: Math.random().toString(), type: 'restock', action: 'Initial entry created', time: 'Just now', timestamp: Date.now() }]
     };
     setItems(prev => [newItem, ...prev]);
@@ -288,7 +288,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
               {/* INVENTORY MASTER CARD - TEXTS FITTED MARGINALLY */}
               <div onClick={() => setInventoryExpanded(true)} className={`col-span-2 aspect-16/10 rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer active:scale-[0.98]`}>
-                <img src="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&q=80" alt="" className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-70 dark:opacity-50" />
+                <img src="/assets/autoswipe/pos4.png" alt="" className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-70 dark:opacity-50" />
                 <div className="absolute inset-x-0 bottom-0 h-[65%] bg-linear-to-t from-black/95 via-black/30 to-transparent pointer-events-none" />
                 <div className="absolute inset-0 p-8 flex flex-col justify-between">
                   <div className="flex items-center gap-5 translate-y-2">

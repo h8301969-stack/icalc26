@@ -63,7 +63,7 @@ A modern, accessible, PWA-ready calculator with a premium glassmorphic UI, full 
 ## Production Notes
 - All math is pure client-side with deterministic results and explicit error types (`CalculationError`).
 - Persistent state uses `localStorage` (history, settings, POS inventory/purchases).
-- External wallpaper images are loaded from Unsplash (CDN) — consider self-hosting for fully offline/air-gapped deployments.
+- Wallpaper backgrounds use bundled local assets for full offline support.
 
 ## License
 MIT (or your preferred license). Built for reliability, accessibility, and delight.

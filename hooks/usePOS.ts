@@ -45,7 +45,7 @@ const INITIAL_INVENTORY: InventoryItem[] = [
     dateAdded: '2025-01-10', 
     supplier: 'Synapse Tech', 
     lastStocked: new Date(Date.now() - 3600000 * 2).toISOString(),
-    image: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&q=80',
+    image: '/assets/autoswipe/pos1.png',
     activities: [
       { id: '1a', type: 'restock', action: 'Restocked 10 units', time: '2h ago', timestamp: Date.now() - 3600000 * 2 },
     ]
@@ -60,7 +60,7 @@ const INITIAL_INVENTORY: InventoryItem[] = [
     dateAdded: '2025-02-14', 
     supplier: 'Lumina Corp', 
     lastStocked: new Date(Date.now() - 3600000 * 48).toISOString(),
-    image: 'https://images.unsplash.com/photo-1509223197845-458d87318791?w=400&q=80',
+    image: '/assets/autoswipe/pos2.png',
     activities: [
       { id: '2b', type: 'restock', action: 'Restocked 5 units', time: '2 days ago', timestamp: Date.now() - 3600000 * 48 },
     ]
