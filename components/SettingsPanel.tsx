@@ -1,13 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Icons } from '../constants';
 import { printerInstance } from '../utils/bluetoothPrinter';
 import { CartLineItem } from '../types';
 
+interface SettingsSlice {
+  themeMode: 'light' | 'dark';
+}
+
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  settings: any;
-  updateSettings: (key: string, value: any) => void;
+  settings: SettingsSlice;
+  updateSettings: (key: string, value: unknown) => void;
   cartItems?: CartLineItem[];
   runningTotal?: number;
   invoiceName?: string;
@@ -18,7 +22,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   isOpen, 
   onClose, 
   settings,
-  updateSettings,
+  updateSettings: _updateSettings,
   cartItems = [],
   runningTotal = 0,
   invoiceName = 'Walk-in Customer',
@@ -32,6 +36,33 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [paperWidth, setPaperWidth] = useState<'58mm' | '25mm'>('58mm');
   const [printSuccess, setPrintSuccess] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const lastFocusedRef = useRef<HTMLElement | null>(null);
+
+  const handleClose = useCallback(() => {
+    const panel = panelRef.current;
+    const active = document.activeElement as HTMLElement | null;
+    if (panel?.contains(active)) {
+      active.blur();
+    }
+    onClose();
+  }, [onClose]);
+
+  useEffect(() => {
+    if (isOpen) {
+      lastFocusedRef.current = document.activeElement as HTMLElement | null;
+      const id = requestAnimationFrame(() => closeRef.current?.focus({ preventScroll: true }));
+      return () => cancelAnimationFrame(id);
+    }
+
+    const panel = panelRef.current;
+    const active = document.activeElement as HTMLElement | null;
+    if (panel?.contains(active)) {
+      active.blur();
+    }
+    lastFocusedRef.current?.focus?.({ preventScroll: true });
+  }, [isOpen]);
 
   // Sync paper width configuration from printer instance
   useEffect(() => {
@@ -46,8 +77,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       const connectedName = await printerInstance.scanAndConnect();
       setPrinterName(connectedName);
       setPaperWidth(printerInstance.paperWidth);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to connect to printer.');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to connect to printer.');
       setPrinterName(null);
     } finally {
       setIsConnecting(false);
@@ -88,26 +119,29 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       await printerInstance.printInvoice(titleToPrint, itemsToPrint, totalToPrint, currency);
       setPrintSuccess(true);
       setTimeout(() => setPrintSuccess(false), 3000);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to print invoice.');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to print invoice.');
     }
   };
 
   return (
     <div 
+      ref={panelRef}
+      inert={!isOpen ? true : undefined}
       className={`
         absolute inset-0 z-50 flex flex-col transition-transform duration-300 cubic-bezier(0.16, 1, 0.3, 1)
-        ${isOpen ? 'translate-x-0' : 'translate-x-full'}
+        ${isOpen ? 'translate-x-0 pointer-events-auto' : 'translate-x-full pointer-events-none'}
         ${isLight ? 'bg-[#f2f2f7] text-zinc-900' : 'bg-[#1c1c1e] text-white'}
       `}
       role="dialog"
-      aria-modal="true"
+      aria-modal={isOpen}
       aria-labelledby="settings-title"
     >
       <div className="p-8 pb-4 flex items-center justify-between border-b border-current/5">
         <h2 id="settings-title" className="text-2xl font-black tracking-tight">Settings</h2>
         <button 
-          onClick={onClose} 
+          ref={closeRef}
+          onClick={handleClose} 
           aria-label="Close settings panel"
           className={`p-2.5 rounded-full ${isLight ? 'bg-zinc-200 hover:bg-zinc-300' : 'bg-white/10 hover:bg-white/20'}`}
         >

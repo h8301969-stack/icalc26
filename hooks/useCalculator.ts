@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback } from 'react';
-import { safeEvaluate, CalculationError } from '../utils/calculator';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { safeEvaluate, evaluateExpression, CalculationError } from '../utils/calculator';
+import { evaluatePosExpression, isPosStyleExpression } from '../utils/posExpression';
 
 export const useCalculator = (
   onEvaluate: (expr: string, res: string) => void,
@@ -17,13 +18,29 @@ export const useCalculator = (
   }, []);
 
   const runningResult = useMemo(() => {
-    try {
+    if (expression === '0' || !expression) return '0.00';
+    return safeEvaluate(expression, 2);
+  }, [expression]);
+
+  useEffect(() => {
+    if (expression === '0' || !expression) {
       setCalcError(null);
-      if (expression === '0' || !expression) return '0.00';
-      return safeEvaluate(expression, 2);
+      return;
+    }
+    try {
+      const cleanExpr = expression.replace(/[+\-*/%×÷x(]+$/i, '');
+      if (!cleanExpr || cleanExpr === '0') {
+        setCalcError(null);
+        return;
+      }
+      if (isPosStyleExpression(cleanExpr)) {
+        evaluatePosExpression(cleanExpr);
+      } else {
+        evaluateExpression(cleanExpr);
+      }
+      setCalcError(null);
     } catch (err) {
-      if (err instanceof CalculationError) setCalcError(err.message);
-      return '0.00';
+      setCalcError(err instanceof CalculationError ? err.message : 'Invalid expression');
     }
   }, [expression]);
 
@@ -100,10 +117,10 @@ export const useCalculator = (
     let lastNum = match[2] || '0';
     if (lastNum === '' || lastNum === '-') lastNum = '0';
     const toggled = lastNum.startsWith('-') ? lastNum.slice(1) : '-' + lastNum;
-    let newExpr = (prefix + toggled)
-      .replace(/([+\-*/%×÷])\-/g, '$1-')
+    const newExpr = (prefix + toggled)
+      .replace(/([+\-*/%×÷])-/g, '$1-')
       .replace(/--/g, '-')
-      .replace(/\+\-/g, '-');
+      .replace(/\+-/g, '-');
     setExpression(newExpr || '0');
   }, [expression, isResultMode, triggerHaptic, pushToUndo]);
 

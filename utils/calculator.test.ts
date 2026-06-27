@@ -1,436 +1,351 @@
 /**
  * Production-grade tests for calculator
- * Tests operator precedence, edge cases, and error handling
- * 
  * Run with: npm test
- * Or manually for debugging: node -r esbuild-register utils/calculator.test.ts
  */
 
+import { describe, it, expect } from 'vitest';
 import { evaluateExpression, safeEvaluate, CalculationError, isValidPartialExpression } from './calculator';
 
-// Simple test framework for manual running
-interface TestResult {
-  passed: number;
-  failed: number;
-  errors: string[];
-}
-
-const results: TestResult = { passed: 0, failed: 0, errors: [] };
-
-function assert(condition: boolean, message: string) {
-  if (!condition) {
-    results.failed++;
-    results.errors.push(message);
-    throw new Error(message);
-  }
-}
-
-function assertEqual(actual: any, expected: any, message?: string) {
-  const msg = message || `Expected ${expected}, got ${actual}`;
-  assert(actual === expected, msg);
-}
-
-function assertClose(actual: number, expected: number, tolerance: number = 0.01) {
-  assert(
-    Math.abs(actual - expected) <= tolerance,
-    `Expected ~${expected}, got ${actual} (tolerance: ${tolerance})`
-  );
-}
-
-function assertThrows(fn: () => void, ErrorType?: any) {
-  try {
-    fn();
-    assert(false, 'Expected function to throw an error');
-  } catch (err) {
-    if (ErrorType && !(err instanceof ErrorType)) {
-      assert(false, `Expected ${ErrorType.name}, got ${err instanceof Error ? err.constructor.name : typeof err}`);
-    }
-  }
-}
-
-function test(name: string, fn: () => void) {
-  try {
-    fn();
-    results.passed++;
-    console.log(`✓ ${name}`);
-  } catch (err) {
-    console.error(`✗ ${name}: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-function describe(name: string, tests: () => void) {
-  console.log(`\n${name}`);
-  tests();
-}
-
-// ============= TESTS =============
-
 describe('Basic Operations', () => {
-  test('Addition: 2 + 3 = 5', () => {
-    assertEqual(evaluateExpression('2+3'), 5);
+  it('Addition: 2 + 3 = 5', () => {
+    expect(evaluateExpression('2+3')).toBe(5);
   });
 
-  test('Addition with spaces: 10 + 5 = 15', () => {
-    assertEqual(evaluateExpression('10 + 5'), 15);
+  it('Addition with spaces: 10 + 5 = 15', () => {
+    expect(evaluateExpression('10 + 5')).toBe(15);
   });
 
-  test('Subtraction: 5 - 2 = 3', () => {
-    assertEqual(evaluateExpression('5-2'), 3);
+  it('Subtraction: 5 - 2 = 3', () => {
+    expect(evaluateExpression('5-2')).toBe(3);
   });
 
-  test('Subtraction: 10 - 3 = 7', () => {
-    assertEqual(evaluateExpression('10 - 3'), 7);
+  it('Subtraction: 10 - 3 = 7', () => {
+    expect(evaluateExpression('10 - 3')).toBe(7);
   });
 
-  test('Multiplication: 2 * 3 = 6', () => {
-    assertEqual(evaluateExpression('2*3'), 6);
+  it('Multiplication: 2 * 3 = 6', () => {
+    expect(evaluateExpression('2*3')).toBe(6);
   });
 
-  test('Multiplication: 10 * 5 = 50', () => {
-    assertEqual(evaluateExpression('10 * 5'), 50);
+  it('Multiplication: 10 * 5 = 50', () => {
+    expect(evaluateExpression('10 * 5')).toBe(50);
   });
 
-  test('Division: 6 / 2 = 3', () => {
-    assertEqual(evaluateExpression('6/2'), 3);
+  it('Division: 6 / 2 = 3', () => {
+    expect(evaluateExpression('6/2')).toBe(3);
   });
 
-  test('Division: 10 / 4 = 2.5', () => {
-    assertEqual(evaluateExpression('10/4'), 2.5);
+  it('Division: 10 / 4 = 2.5', () => {
+    expect(evaluateExpression('10/4')).toBe(2.5);
   });
 
-  test('Modulo: 10 % 3 = 1', () => {
-    assertEqual(evaluateExpression('10%3'), 1);
+  it('Modulo: 10 % 3 = 1', () => {
+    expect(evaluateExpression('10%3')).toBe(1);
   });
 
-  test('Modulo: 7 % 3 = 1', () => {
-    assertEqual(evaluateExpression('7%3'), 1);
+  it('Modulo: 7 % 3 = 1', () => {
+    expect(evaluateExpression('7%3')).toBe(1);
   });
 });
 
 describe('Operator Precedence', () => {
-  test('2 + 3 * 4 = 14 (not 20)', () => {
-    assertEqual(evaluateExpression('2+3*4'), 14);
+  it('2 + 3 * 4 = 14 (not 20)', () => {
+    expect(evaluateExpression('2+3*4')).toBe(14);
   });
 
-  test('1 + 2 * 3 + 4 = 11', () => {
-    assertEqual(evaluateExpression('1+2*3+4'), 11);
+  it('1 + 2 * 3 + 4 = 11', () => {
+    expect(evaluateExpression('1+2*3+4')).toBe(11);
   });
 
-  test('10 - 6 / 2 = 7 (not 2)', () => {
-    assertEqual(evaluateExpression('10-6/2'), 7);
+  it('10 - 6 / 2 = 7 (not 2)', () => {
+    expect(evaluateExpression('10-6/2')).toBe(7);
   });
 
-  test('20 - 8 / 4 = 18', () => {
-    assertEqual(evaluateExpression('20-8/4'), 18);
+  it('20 - 8 / 4 = 18', () => {
+    expect(evaluateExpression('20-8/4')).toBe(18);
   });
 
-  test('10 - 5 - 2 = 3 (left associative)', () => {
-    assertEqual(evaluateExpression('10-5-2'), 3);
+  it('10 - 5 - 2 = 3 (left associative)', () => {
+    expect(evaluateExpression('10-5-2')).toBe(3);
   });
 
-  test('20 / 4 / 2 = 2.5 (left associative)', () => {
-    assertEqual(evaluateExpression('20/4/2'), 2.5);
+  it('20 / 4 / 2 = 2.5 (left associative)', () => {
+    expect(evaluateExpression('20/4/2')).toBe(2.5);
   });
 
-  test('2 + 3 * 4 - 5 = 9', () => {
-    assertEqual(evaluateExpression('2+3*4-5'), 9);
+  it('2 + 3 * 4 - 5 = 9', () => {
+    expect(evaluateExpression('2+3*4-5')).toBe(9);
   });
 
-  test('100 / 10 + 5 * 2 = 20', () => {
-    assertEqual(evaluateExpression('100/10+5*2'), 20);
+  it('100 / 10 + 5 * 2 = 20', () => {
+    expect(evaluateExpression('100/10+5*2')).toBe(20);
   });
 });
 
 describe('Parentheses', () => {
-  test('(2 + 3) * 4 = 20 (not 14)', () => {
-    assertEqual(evaluateExpression('(2+3)*4'), 20);
+  it('(2 + 3) * 4 = 20 (not 14)', () => {
+    expect(evaluateExpression('(2+3)*4')).toBe(20);
   });
 
-  test('2 * (3 + 4) = 14', () => {
-    assertEqual(evaluateExpression('2*(3+4)'), 14);
+  it('2 * (3 + 4) = 14', () => {
+    expect(evaluateExpression('2*(3+4)')).toBe(14);
   });
 
-  test('((2 + 3) * 4) = 20', () => {
-    assertEqual(evaluateExpression('((2+3)*4)'), 20);
+  it('((2 + 3) * 4) = 20', () => {
+    expect(evaluateExpression('((2+3)*4)')).toBe(20);
   });
 
-  test('(2 * (3 + 4)) + 1 = 15', () => {
-    assertEqual(evaluateExpression('(2*(3+4))+1'), 15);
+  it('(2 * (3 + 4)) + 1 = 15', () => {
+    expect(evaluateExpression('(2*(3+4))+1')).toBe(15);
   });
 
-  test('(10 - 5) * (2 + 3) = 25', () => {
-    assertEqual(evaluateExpression('(10-5)*(2+3)'), 25);
+  it('(10 - 5) * (2 + 3) = 25', () => {
+    expect(evaluateExpression('(10-5)*(2+3)')).toBe(25);
   });
 
-  test('(2 + 3) * (4 + 5) / (1 + 1) = 22.5', () => {
-    assertEqual(evaluateExpression('(2+3)*(4+5)/(1+1)'), 22.5);
+  it('(2 + 3) * (4 + 5) / (1 + 1) = 22.5', () => {
+    expect(evaluateExpression('(2+3)*(4+5)/(1+1)')).toBe(22.5);
   });
 });
 
 describe('Decimals', () => {
-  test('2.5 + 1.5 = 4', () => {
-    assertEqual(evaluateExpression('2.5+1.5'), 4);
+  it('2.5 + 1.5 = 4', () => {
+    expect(evaluateExpression('2.5+1.5')).toBe(4);
   });
 
-  test('10.5 - 0.5 = 10', () => {
-    assertEqual(evaluateExpression('10.5-0.5'), 10);
+  it('10.5 - 0.5 = 10', () => {
+    expect(evaluateExpression('10.5-0.5')).toBe(10);
   });
 
-  test('1 / 3 ≈ 0.333', () => {
-    assertClose(evaluateExpression('1/3'), 0.333, 0.01);
+  it('1 / 3 ≈ 0.333', () => {
+    expect(evaluateExpression('1/3')).toBeCloseTo(0.333, 2);
   });
 
-  test('10 / 3 ≈ 3.333', () => {
-    assertClose(evaluateExpression('10/3'), 3.333, 0.01);
+  it('10 / 3 ≈ 3.333', () => {
+    expect(evaluateExpression('10/3')).toBeCloseTo(3.333, 2);
   });
 
-  test('1.5 + 2.5 * 3.0 = 9', () => {
-    assertEqual(evaluateExpression('1.5+2.5*3.0'), 9);
+  it('1.5 + 2.5 * 3.0 = 9', () => {
+    expect(evaluateExpression('1.5+2.5*3.0')).toBe(9);
   });
 });
 
 describe('iOS Symbol Support (× and ÷)', () => {
-  test('2 × 3 = 6', () => {
-    assertEqual(evaluateExpression('2×3'), 6);
+  it('2 × 3 = 6', () => {
+    expect(evaluateExpression('2×3')).toBe(6);
   });
 
-  test('2 × 3 + 4 = 10', () => {
-    assertEqual(evaluateExpression('2×3+4'), 10);
+  it('2 × 3 + 4 = 10', () => {
+    expect(evaluateExpression('2×3+4')).toBe(10);
   });
 
-  test('6 ÷ 2 = 3', () => {
-    assertEqual(evaluateExpression('6÷2'), 3);
+  it('6 ÷ 2 = 3', () => {
+    expect(evaluateExpression('6÷2')).toBe(3);
   });
 
-  test('10 ÷ 2 + 5 = 10', () => {
-    assertEqual(evaluateExpression('10÷2+5'), 10);
+  it('10 ÷ 2 + 5 = 10', () => {
+    expect(evaluateExpression('10÷2+5')).toBe(10);
   });
 
-  test('(2 + 3) × 4 = 20', () => {
-    assertEqual(evaluateExpression('(2+3)×4'), 20);
+  it('(2 + 3) × 4 = 20', () => {
+    expect(evaluateExpression('(2+3)×4')).toBe(20);
   });
 
-  test('20 ÷ (2 + 2) = 5', () => {
-    assertEqual(evaluateExpression('20÷(2+2)'), 5);
+  it('20 ÷ (2 + 2) = 5', () => {
+    expect(evaluateExpression('20÷(2+2)')).toBe(5);
   });
 });
 
 describe('Error Handling', () => {
-  test('Division by zero throws error', () => {
-    assertThrows(() => evaluateExpression('10/0'), CalculationError);
+  it('Division by zero throws error', () => {
+    expect(() => evaluateExpression('10/0')).toThrow(CalculationError);
   });
 
-  test('5 / (2 - 2) throws error (division by zero)', () => {
-    assertThrows(() => evaluateExpression('5/(2-2)'), CalculationError);
+  it('5 / (2 - 2) throws error (division by zero)', () => {
+    expect(() => evaluateExpression('5/(2-2)')).toThrow(CalculationError);
   });
 
-  test('Modulo by zero throws error', () => {
-    assertThrows(() => evaluateExpression('10%0'), CalculationError);
+  it('Modulo by zero throws error', () => {
+    expect(() => evaluateExpression('10%0')).toThrow(CalculationError);
   });
 
-  test('Empty expression throws error', () => {
-    assertThrows(() => evaluateExpression(''), CalculationError);
+  it('Empty expression throws error', () => {
+    expect(() => evaluateExpression('')).toThrow(CalculationError);
   });
 
-  test('Whitespace-only expression throws error', () => {
-    assertThrows(() => evaluateExpression('   '), CalculationError);
+  it('Whitespace-only expression throws error', () => {
+    expect(() => evaluateExpression('   ')).toThrow(CalculationError);
   });
 
-  test('Expression starting with + throws error', () => {
-    assertThrows(() => evaluateExpression('+5'), CalculationError);
+  it('Expression starting with + throws error', () => {
+    expect(() => evaluateExpression('+5')).toThrow(CalculationError);
   });
 
-  test('Expression ending with operator throws error', () => {
-    assertThrows(() => evaluateExpression('5+'), CalculationError);
+  it('Expression ending with operator throws error', () => {
+    expect(() => evaluateExpression('5+')).toThrow(CalculationError);
   });
 
-  test('Double operator throws error', () => {
-    assertThrows(() => evaluateExpression('5++3'), CalculationError);
+  it('Double operator throws error', () => {
+    expect(() => evaluateExpression('5++3')).toThrow(CalculationError);
   });
 
-  test('Mismatched closing parenthesis throws error', () => {
-    assertThrows(() => evaluateExpression('(2+3'), CalculationError);
+  it('Mismatched closing parenthesis throws error', () => {
+    expect(() => evaluateExpression('(2+3')).toThrow(CalculationError);
   });
 
-  test('Extra closing parenthesis throws error', () => {
-    assertThrows(() => evaluateExpression('2+3)'), CalculationError);
+  it('Extra closing parenthesis throws error', () => {
+    expect(() => evaluateExpression('2+3)')).toThrow(CalculationError);
   });
 
-  test('Double closing parenthesis throws error', () => {
-    assertThrows(() => evaluateExpression('((2+3)'), CalculationError);
+  it('Double closing parenthesis throws error', () => {
+    expect(() => evaluateExpression('((2+3)')).toThrow(CalculationError);
   });
 
-  test('Double decimal throws error', () => {
-    assertThrows(() => evaluateExpression('2..5+3'), CalculationError);
+  it('Double decimal throws error', () => {
+    expect(() => evaluateExpression('2..5+3')).toThrow(CalculationError);
   });
 
-  test('Invalid character throws error', () => {
-    assertThrows(() => evaluateExpression('2a+3'), CalculationError);
+  it('Invalid character throws error', () => {
+    expect(() => evaluateExpression('2a+3')).toThrow(CalculationError);
   });
 
-  test('Special character throws error', () => {
-    assertThrows(() => evaluateExpression('2&3'), CalculationError);
+  it('Special character throws error', () => {
+    expect(() => evaluateExpression('2&3')).toThrow(CalculationError);
   });
 });
 
 describe('Edge Cases', () => {
-  test('0 + 5 = 5', () => {
-    assertEqual(evaluateExpression('0+5'), 5);
+  it('0 + 5 = 5', () => {
+    expect(evaluateExpression('0+5')).toBe(5);
   });
 
-  test('0 - 5 = -5', () => {
-    assertEqual(evaluateExpression('0-5'), -5);
+  it('0 - 5 = -5', () => {
+    expect(evaluateExpression('0-5')).toBe(-5);
   });
 
-  test('0 * 100 = 0', () => {
-    assertEqual(evaluateExpression('0*100'), 0);
+  it('0 * 100 = 0', () => {
+    expect(evaluateExpression('0*100')).toBe(0);
   });
 
-  test('0 / 5 = 0', () => {
-    assertEqual(evaluateExpression('0/5'), 0);
+  it('0 / 5 = 0', () => {
+    expect(evaluateExpression('0/5')).toBe(0);
   });
 
-  test('Negative number: -5 + 3 = -2', () => {
-    assertEqual(evaluateExpression('-5+3'), -2);
+  it('Negative number: -5 + 3 = -2', () => {
+    expect(evaluateExpression('-5+3')).toBe(-2);
   });
 
-  test('Parenthesized negative: (-5) + 3 = -2', () => {
-    assertEqual(evaluateExpression('(-5)+3'), -2);
+  it('Parenthesized negative: (-5) + 3 = -2', () => {
+    expect(evaluateExpression('(-5)+3')).toBe(-2);
   });
 
-  test('Negative multiplication: 5 * -2 = -10', () => {
-    assertEqual(evaluateExpression('5*-2'), -10);
+  it('Negative multiplication: 5 * -2 = -10', () => {
+    expect(evaluateExpression('5*-2')).toBe(-10);
   });
 
-  test('Expression with spaces: 2 + 3 = 5', () => {
-    assertEqual(evaluateExpression('2 + 3'), 5);
+  it('Expression with spaces: 2 + 3 = 5', () => {
+    expect(evaluateExpression('2 + 3')).toBe(5);
   });
 
-  test('Expression with leading/trailing spaces: "  2+3  " = 5', () => {
-    assertEqual(evaluateExpression('  2+3  '), 5);
+  it('Expression with leading/trailing spaces: "  2+3  " = 5', () => {
+    expect(evaluateExpression('  2+3  ')).toBe(5);
   });
 
-  test('Expression with multiple spaces: 2  +  3 = 5', () => {
-    assertEqual(evaluateExpression('2  +  3'), 5);
+  it('Expression with multiple spaces: 2  +  3 = 5', () => {
+    expect(evaluateExpression('2  +  3')).toBe(5);
   });
 
-  test('Very large number: 999999999 + 1 = 1000000000', () => {
-    assertEqual(evaluateExpression('999999999+1'), 1000000000);
+  it('Very large number: 999999999 + 1 = 1000000000', () => {
+    expect(evaluateExpression('999999999+1')).toBe(1000000000);
   });
 
-  test('Very small decimal: 0.001 + 0.002 ≈ 0.003', () => {
-    assertClose(evaluateExpression('0.001+0.002'), 0.003, 0.0001);
+  it('Very small decimal: 0.001 + 0.002 ≈ 0.003', () => {
+    expect(evaluateExpression('0.001+0.002')).toBeCloseTo(0.003, 3);
   });
 });
 
 describe('safeEvaluate - Safe Evaluation', () => {
-  test('safeEvaluate("2+3") = "5.00"', () => {
-    assertEqual(safeEvaluate('2+3'), '5.00');
+  it('safeEvaluate("2+3") = "5.00"', () => {
+    expect(safeEvaluate('2+3')).toBe('5.00');
   });
 
-  test('safeEvaluate("10/3") = "3.33"', () => {
-    assertEqual(safeEvaluate('10/3'), '3.33');
+  it('safeEvaluate("10/3") = "3.33"', () => {
+    expect(safeEvaluate('10/3')).toBe('3.33');
   });
 
-  test('safeEvaluate("10/0") returns "0.00" safely', () => {
-    assertEqual(safeEvaluate('10/0'), '0.00');
+  it('safeEvaluate("10/0") returns "0.00" safely', () => {
+    expect(safeEvaluate('10/0')).toBe('0.00');
   });
 
-  test('safeEvaluate("invalid") returns "0.00" safely', () => {
-    assertEqual(safeEvaluate('invalid'), '0.00');
+  it('safeEvaluate("invalid") returns "0.00" safely', () => {
+    expect(safeEvaluate('invalid')).toBe('0.00');
   });
 
-  test('safeEvaluate("1/3", 4) = "0.3333"', () => {
-    assertEqual(safeEvaluate('1/3', 4), '0.3333');
+  it('safeEvaluate("1/3", 4) = "0.3333"', () => {
+    expect(safeEvaluate('1/3', 4)).toBe('0.3333');
   });
 
-  test('safeEvaluate("10/3", 1) = "3.3"', () => {
-    assertEqual(safeEvaluate('10/3', 1), '3.3');
+  it('safeEvaluate("10/3", 1) = "3.3"', () => {
+    expect(safeEvaluate('10/3', 1)).toBe('3.3');
   });
 
-  test('safeEvaluate("") = "0.00"', () => {
-    assertEqual(safeEvaluate(''), '0.00');
+  it('safeEvaluate("") = "0.00"', () => {
+    expect(safeEvaluate('')).toBe('0.00');
   });
 
-  test('safeEvaluate("0") = "0.00"', () => {
-    assertEqual(safeEvaluate('0'), '0.00');
+  it('safeEvaluate("0") = "0.00"', () => {
+    expect(safeEvaluate('0')).toBe('0.00');
   });
 });
 
 describe('isValidPartialExpression - Validation', () => {
-  test('isValidPartialExpression("5") = true', () => {
-    assert(isValidPartialExpression('5'), 'Should validate single number');
+  it('isValidPartialExpression("5") = true', () => {
+    expect(isValidPartialExpression('5')).toBe(true);
   });
 
-  test('isValidPartialExpression("2+3") = true', () => {
-    assert(isValidPartialExpression('2+3'), 'Should validate complete expression');
+  it('isValidPartialExpression("2+3") = true', () => {
+    expect(isValidPartialExpression('2+3')).toBe(true);
   });
 
-  test('isValidPartialExpression("2+3*4") = true', () => {
-    assert(isValidPartialExpression('2+3*4'), 'Should validate complex expression');
+  it('isValidPartialExpression("2+3*4") = true', () => {
+    expect(isValidPartialExpression('2+3*4')).toBe(true);
   });
 
-  test('isValidPartialExpression("2+") = false', () => {
-    assert(!isValidPartialExpression('2+'), 'Should reject expression ending with operator');
+  it('isValidPartialExpression("2+") = false', () => {
+    expect(isValidPartialExpression('2+')).toBe(false);
   });
 
-  test('isValidPartialExpression("5*") = false', () => {
-    assert(!isValidPartialExpression('5*'), 'Should reject expression ending with operator');
+  it('isValidPartialExpression("5*") = false', () => {
+    expect(isValidPartialExpression('5*')).toBe(false);
   });
 
-  test('isValidPartialExpression("") = true', () => {
-    assert(isValidPartialExpression(''), 'Should allow empty input');
+  it('isValidPartialExpression("") = true', () => {
+    expect(isValidPartialExpression('')).toBe(true);
   });
 
-  test('isValidPartialExpression("0") = true', () => {
-    assert(isValidPartialExpression('0'), 'Should allow zero');
+  it('isValidPartialExpression("0") = true', () => {
+    expect(isValidPartialExpression('0')).toBe(true);
   });
 });
 
 describe('Real-world Scenarios', () => {
-  test('Shopping bill: 10.50 + 5.25 + 3.99 ≈ 19.74', () => {
-    assertClose(evaluateExpression('10.50+5.25+3.99'), 19.74, 0.01);
+  it('Shopping bill: 10.50 + 5.25 + 3.99 ≈ 19.74', () => {
+    expect(evaluateExpression('10.50+5.25+3.99')).toBeCloseTo(19.74, 2);
   });
 
-  test('Tip calculation: 100 * 0.20 = 20', () => {
-    assertEqual(evaluateExpression('100*0.20'), 20);
+  it('Tip calculation: 100 * 0.20 = 20', () => {
+    expect(evaluateExpression('100*0.20')).toBe(20);
   });
 
-  test('Compound: (50 + 30) * 2 / 4 = 40', () => {
-    assertEqual(evaluateExpression('(50+30)*2/4'), 40);
+  it('Compound: (50 + 30) * 2 / 4 = 40', () => {
+    expect(evaluateExpression('(50+30)*2/4')).toBe(40);
   });
 
-  test('Discount: 100 - (100 * 0.15) = 85', () => {
-    assertEqual(evaluateExpression('100-(100*0.15)'), 85);
+  it('Discount: 100 - (100 * 0.15) = 85', () => {
+    expect(evaluateExpression('100-(100*0.15)')).toBe(85);
   });
 
-  test('Complex: (5 + 3) * (4 - 1) / 2 = 12', () => {
-    assertEqual(evaluateExpression('(5+3)*(4-1)/2'), 12);
+  it('Complex: (5 + 3) * (4 - 1) / 2 = 12', () => {
+    expect(evaluateExpression('(5+3)*(4-1)/2')).toBe(12);
   });
 });
-
-// ============= RESULTS =============
-
-console.log(`\n${'='.repeat(50)}`);
-console.log(`Tests Passed: ${results.passed}`);
-console.log(`Tests Failed: ${results.failed}`);
-if (results.errors.length > 0) {
-  console.log(`\nFailures:`);
-  results.errors.forEach(err => console.log(`  - ${err}`));
-}
-console.log(`${'='.repeat(50)}\n`);
-
-export default results;
-
-// Partial expression validation
-test('Valid partial: "2+3"', () => {
-  const valid = isValidPartialExpression('2+3');
-  if (!valid) throw new Error('Should be valid');
-});
-
-test('Invalid partial: "2+" (ends with operator)', () => {
-  const valid = isValidPartialExpression('2+');
-  if (valid) throw new Error('Should be invalid');
-});
-
-console.log('\n✅ Calculator tests complete');

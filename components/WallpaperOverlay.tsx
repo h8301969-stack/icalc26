@@ -8,7 +8,7 @@ interface WallpaperOverlayProps {
   accentColor: string;
 }
 
-const WallpaperOverlay: React.FC<WallpaperOverlayProps> = ({ onEnter, isLight, accentColor }) => {
+const WallpaperOverlay: React.FC<WallpaperOverlayProps> = ({ onEnter, isLight, accentColor: _accentColor }) => {
   const [time, setTime] = useState(new Date());
   const [isEntering, setIsEntering] = useState(false);
 

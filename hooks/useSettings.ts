@@ -36,7 +36,7 @@ export const useSettings = () => {
 
   const triggerHaptic = useCallback((multiplier: number = 1) => {
     if (!settings.hapticFeedback || !('vibrate' in navigator)) return;
-    let duration = settings.hapticIntensity === 'soft' ? 5 : settings.hapticIntensity === 'medium' ? 15 : 30;
+    const duration = settings.hapticIntensity === 'soft' ? 5 : settings.hapticIntensity === 'medium' ? 15 : 30;
     navigator.vibrate(duration * multiplier);
   }, [settings.hapticFeedback, settings.hapticIntensity]);
 

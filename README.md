@@ -1,5 +1,3 @@
-
-
 # iCalc 26 — Glassmorphic Production Calculator
 
 A modern, accessible, PWA-ready calculator with a premium glassmorphic UI, full operator precedence math engine, POS inventory dashboard, history, settings, and keyboard support.
@@ -28,43 +26,41 @@ A modern, accessible, PWA-ready calculator with a premium glassmorphic UI, full 
    ```bash
    npm run dev
    ```
-   The app auto-selects an available port from [3000, 3002–3005] and opens on `0.0.0.0`.
+   The app runs on port 5173 at `127.0.0.1`.
 
-3. Run the test suite (manual runner, no Jest required):
+3. Run the test suite:
    ```bash
    npm test
    ```
-   Or directly:
+   Watch mode: `npm run test:watch`
+
+4. Lint:
    ```bash
-   npx --yes tsx utils/calculator.test.ts
+   npm run lint
    ```
 
-4. Build for production:
+5. Build for production:
    ```bash
    npm run build
    ```
    Then serve the `dist/` folder with any static host.
 
 ## PWA & Installation
-- The app registers a service worker (`sw.js`) for offline caching of core assets.
+- The app registers a service worker (`sw.js`) for offline caching of the app shell and hashed build assets.
 - On supported browsers (Chrome/Edge on desktop or Android), an install prompt appears after interaction.
 - Add to Home Screen on iOS via Safari's share sheet for a native-like experience.
 
 ## Project Structure (Key Files)
 - `App.tsx` — Main orchestrator (state, keyboard, panels, live preview).
 - `utils/calculator.ts` — Tokenizer + recursive-descent Parser + `safeEvaluate`.
-- `utils/calculator.test.ts` — 81 comprehensive tests.
+- `utils/calculator.test.ts` — 81 comprehensive Vitest tests.
 - `components/` — `CalcButton`, `HistoryPanel`, `SettingsPanel`, `POSDashboard`, `ErrorBoundary`, etc.
+- `hooks/` — `useCalculator`, `useHistory`, `usePOS`, `useSettings`, `useInvoice`, and shared `storage`.
 - `constants.tsx` — Icons, themes, wallpaper slides.
 - `sw.js`, `manifest.json` — PWA assets.
-- `vite.config.ts` — Custom port selection + React plugin.
-
-## Legacy / Deprecated Files
-- `Calc.tsx` — Legacy component (no longer imported; kept for reference only).
-- `geminiService.ts` — Previously used for AI features; fully removed from active code.
+- `vite.config.ts` — Dev server, React plugin, and Vitest config.
 
 ## Production Notes
-- No external AI or PDF dependencies remain.
 - All math is pure client-side with deterministic results and explicit error types (`CalculationError`).
 - Persistent state uses `localStorage` (history, settings, POS inventory/purchases).
 - External wallpaper images are loaded from Unsplash (CDN) — consider self-hosting for fully offline/air-gapped deployments.

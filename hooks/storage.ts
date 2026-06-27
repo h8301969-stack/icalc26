@@ -1,9 +1,14 @@
+export type StorageKey =
+  | 'calc_history'
+  | 'calc_settings'
+  | 'icalc-history'
+  | 'icalc-settings'
+  | 'icalc-pos-inventory'
+  | 'icalc-pos-sales'
+  | string;
+
 export const storage = {
-  /**
-   * Retrieves an item from localStorage and parses it.
-   * Returns the defaultValue if the item doesn't exist or parsing fails.
-   */
-  get: <T>(key: string, defaultValue: T): T => {
+  get: <T>(key: StorageKey, defaultValue: T): T => {
     try {
       const item = localStorage.getItem(key);
       return item ? (JSON.parse(item) as T) : defaultValue;
@@ -16,7 +21,7 @@ export const storage = {
   /**
    * Stringifies and saves an item to localStorage.
    */
-  set: <T>(key: string, value: T): void => {
+  set: <T>(key: StorageKey, value: T): void => {
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch (error) {

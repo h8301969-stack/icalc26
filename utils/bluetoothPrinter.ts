@@ -77,7 +77,7 @@ export class BLEPrinter {
       this.isConnected = true;
 
       return device.name || 'Thermal Printer';
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.isConnected = false;
       throw err;
     }

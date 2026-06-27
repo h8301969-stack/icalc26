@@ -11,12 +11,30 @@ export const usePWAPrompt = () => {
   const [isInstalled, setIsInstalled] = useState(false);
 
   useEffect(() => {
-    // Check if app is already installed (can be added to home screen)
     const checkIfInstalled = () => {
-      // Check if running as standalone (installed PWA)
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
       const isFullscreen = window.matchMedia('(display-mode: fullscreen)').matches;
       setIsInstalled(isStandalone || isFullscreen);
+    };
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      const event = e as BeforeInstallPromptEvent;
+      setDeferredPrompt(event);
+      setTimeout(() => {
+        setShowPrompt((prev) => {
+          const installed =
+            window.matchMedia('(display-mode: standalone)').matches ||
+            window.matchMedia('(display-mode: fullscreen)').matches;
+          return installed ? prev : true;
+        });
+      }, 1000);
+    };
+
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      setShowPrompt(false);
+      setDeferredPrompt(null);
     };
 
     checkIfInstalled();
@@ -29,41 +47,15 @@ export const usePWAPrompt = () => {
     };
   }, []);
 
-  const handleBeforeInstallPrompt = (e: Event) => {
-    // Prevent the mini-infobar from appearing on mobile
-    e.preventDefault();
-    const event = e as BeforeInstallPromptEvent;
-    setDeferredPrompt(event);
-    // Show prompt after a small delay on app load
-    setTimeout(() => {
-      if (!isInstalled) {
-        setShowPrompt(true);
-      }
-    }, 1000);
-  };
-
-  const handleAppInstalled = () => {
-    setIsInstalled(true);
-    setShowPrompt(false);
-    setDeferredPrompt(null);
-    console.log('PWA was installed');
-  };
-
   const handleInstall = async () => {
     if (!deferredPrompt) return;
 
     try {
       await deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
-      
-      if (outcome === 'accepted') {
-        console.log('User accepted the install prompt');
-      } else {
-        console.log('User dismissed the install prompt');
-        // Show prompt again on next app open
+      if (outcome !== 'accepted') {
         setShowPrompt(false);
       }
-      
       setDeferredPrompt(null);
     } catch (err) {
       console.error('Error handling install prompt:', err);
@@ -72,7 +64,6 @@ export const usePWAPrompt = () => {
 
   const handleDismiss = () => {
     setShowPrompt(false);
-    // Prompt will show again on next app load
   };
 
   return {

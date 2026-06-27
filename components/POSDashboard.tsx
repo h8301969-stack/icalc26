@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { HistoryItem, InvoiceActionLog } from '../types';
 import { Icons } from '../constants';
 import { InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS';
@@ -16,11 +16,14 @@ interface POSDashboardProps {
   isLight: boolean;
   accentColor: string;
   formatCurrency: (val: string) => string;
-  updateSettings: (key: string, value: any) => void;
+  updateSettings: (key: string, value: unknown) => void;
 }
 
+type SortOption = 'a-z' | 'high-stock' | 'low-stock';
+type FilterOption = 'all' | '24h' | '48h' | '3d' | '7d' | '14d' | 'custom';
+
 const POSDashboard: React.FC<POSDashboardProps> = ({
-  history,
+  history: _history,
   items,
   setItems,
   purchases,
@@ -37,15 +40,14 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [purchasesExpanded, setPurchasesExpanded] = useState(false);
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [isRestocking, setIsRestocking] = useState(false);
-  const [isEditingImage, setIsEditingImage] = useState(false);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isThemeAnimating, setIsThemeAnimating] = useState(false);
   const [isSettingsAnimating, setIsSettingsAnimating] = useState(false);
   const [isCloseAnimating, setIsCloseAnimating] = useState(false);
   
-  const [sortOption, setSortOption] = useState<'a-z' | 'high-stock' | 'low-stock'>('a-z');
-  const [filterOption, setFilterOption] = useState<'all' | '24h' | '48h' | '3d' | '7d' | '14d' | 'custom'>('all');
+  const [sortOption, setSortOption] = useState<SortOption>('a-z');
+  const [filterOption, setFilterOption] = useState<FilterOption>('all');
   const [customDateStart, setCustomDateStart] = useState('');
   const [customDateEnd, setCustomDateEnd] = useState('');
 
@@ -209,7 +211,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   return (
     <div className={`fixed inset-0 z-200 flex flex-col ${isOpen ? 'opacity-100 pointer-events-auto animate-insight-pop' : 'opacity-0 pointer-events-none transition-opacity duration-300'}`}>
-      <div className={`relative w-full h-full flex flex-col transition-all duration-200 backdrop-blur-[44px] ${isLight ? 'bg-white/95' : 'bg-[#050505]/95'} ${isAddingItem || isRestocking || isEditingImage ? 'blur-2xl scale-[0.98]' : ''}`}>
+      <div className={`relative w-full h-full flex flex-col transition-all duration-200 backdrop-blur-[44px] ${isLight ? 'bg-white/95' : 'bg-[#050505]/95'} ${isAddingItem || isRestocking ? 'blur-2xl scale-[0.98]' : ''}`}>
         
         {/* DASHBOARD HEADER PORTION WITH THEME-INVERTED FIXED BAR */}
         {!inventoryExpanded && !purchasesExpanded && (
@@ -372,7 +374,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
                       <select 
                         value={sortOption} 
-                        onChange={(e) => setSortOption(e.target.value as any)} 
+                        onChange={(e) => setSortOption(e.target.value as SortOption)} 
                         aria-label="Sort inventory"
                         className={`p-3 rounded-xl font-black text-[9px] uppercase tracking-widest border-none outline-none min-w-[120px] ${isLight ? 'bg-white shadow-sm' : 'bg-white/10 text-white'}`}
                       >
@@ -384,7 +386,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                         {['all', '24h', '48h', '3d', '7d', 'custom'].map((opt) => (
                           <button 
                             key={opt} 
-                            onClick={() => setFilterOption(opt as any)} 
+                            onClick={() => setFilterOption(opt as FilterOption)} 
                             aria-pressed={filterOption === opt}
                             className={`px-3 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${filterOption === opt ? (isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black') : (isLight ? 'bg-white shadow-sm' : 'bg-white/5 text-white/40')}`}
                           >
@@ -593,7 +595,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       )}
 
       {/* ITEM DETAIL MODAL */}
-      {selectedItem && !isRestocking && !isAddingItem && !isEditingImage && (
+      {selectedItem && !isRestocking && !isAddingItem && (
         <div className="fixed inset-0 z-400 flex items-center justify-center p-6 animate-insight-pop" role="presentation" aria-hidden={!selectedItem}>
           <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl cursor-pointer" onClick={() => setSelectedItem(null)} aria-hidden="true" />
           <div 

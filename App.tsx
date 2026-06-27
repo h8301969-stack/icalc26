@@ -217,7 +217,7 @@ const AppContent: React.FC = () => {
           
           {/* ── Display area ─────────────────────────────────────── */}
           <div
-            className="flex-1 flex flex-col items-center px-4 overflow-hidden min-h-0"
+            className="flex-1 flex flex-col items-center px-4 overflow-hidden min-h-0 pointer-events-none"
             style={{ paddingTop: '13%' }}
           >
             {/* Live result — 40px bold, full opacity, just below search bar */}
@@ -281,7 +281,7 @@ const AppContent: React.FC = () => {
           </div>
 
           {/* Keypad — declarative config for clean maintainable buttons + actions */}
-          <div className="flex-[1.3] grid grid-cols-4 grid-rows-5 gap-2 px-4 pb-4 min-h-0">
+          <div className="relative z-10 flex-[1.3] grid grid-cols-4 grid-rows-5 gap-2 px-4 pb-4 min-h-0 overflow-hidden">
             {keypad.map((btn, idx) => (
               <CalcButton
                 key={idx}

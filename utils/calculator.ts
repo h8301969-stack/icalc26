@@ -66,9 +66,18 @@ export const evaluateExpression = (input: string): number => {
 };
 
 const tokenize = (str: string): string[] => {
+  if (/\.\./.test(str)) throw new CalculationError('Invalid decimal format');
+
+  const compact = str.replace(/\s+/g, '');
   const regex = /\d*\.?\d+|[+\-*/%()]/g;
   const matches = str.match(regex);
   if (!matches) throw new CalculationError('No valid tokens found');
+
+  const reconstructed = matches.join('');
+  if (reconstructed !== compact) {
+    throw new CalculationError('Invalid character in expression');
+  }
+
   return matches;
 };
 
@@ -115,7 +124,7 @@ export const toggleExpressionSign = (expression: string): string => {
   if (!match) return expression;
 
   const prefix = expression.slice(0, match.index! + (match[1] ? match[1].length : 0));
-  let lastNum = match[2] || '';
+  const lastNum = match[2] || '';
 
   if (lastNum === '' && prefix.endsWith('(')) {
      return expression; // Don't negate empty parens yet
@@ -124,11 +133,11 @@ export const toggleExpressionSign = (expression: string): string => {
   const toggled = lastNum.startsWith('-') ? lastNum.slice(1) : '-' + lastNum;
   
   // Cleanup double negatives or operator clashes
-  let result = prefix + toggled;
+  const result = prefix + toggled;
   return result
-    .replace(/\+\-/g, '-')
-    .replace(/\-\-/g, '+')
-    .replace(/×\-/g, '×-')
-    .replace(/÷\-/g, '÷-')
-    .replace(/\(\-/g, '(-');
+    .replace(/\+-/g, '-')
+    .replace(/--/g, '+')
+    .replace(/×-/g, '×-')
+    .replace(/÷-/g, '÷-')
+    .replace(/\(-/g, '(-');
 };

@@ -117,7 +117,7 @@ const CalcButton: React.FC<CalcButtonProps> = ({
         className={`
           relative flex items-center justify-center 
           rounded-full text-xl font-medium transition-all duration-150 overflow-hidden
-          ${wide ? 'px-8 justify-start h-full w-full' : 'aspect-square'}
+          ${wide ? 'px-8 justify-start h-full w-full' : 'h-full max-h-full aspect-square'}
           ${getVariantStyles()}
         `}
       >
