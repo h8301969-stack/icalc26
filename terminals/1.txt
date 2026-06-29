@@ -3,7 +3,7 @@ pid: 14344
 cwd: "C:\Users\user\Desktop\icalc26"
 command: "cd \"C:\\Users\\user\\Desktop\\icalc26\"; npm run build"
 started_at: 2026-06-29T00:26:32.971Z
-running_for_ms: 4585002  
+running_for_ms: 9300000  
 ---
 
 > icalc-26-new@0.0.0 build

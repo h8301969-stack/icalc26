@@ -4,6 +4,7 @@ interface InvoiceDragHandleProps {
   isLight: boolean;
   onDragOpen: () => void;
   disabled?: boolean;
+  edgePinned?: boolean;
 }
 
 const DRAG_THRESHOLD = 32;
@@ -12,6 +13,7 @@ const InvoiceDragHandle: React.FC<InvoiceDragHandleProps> = ({
   isLight,
   onDragOpen,
   disabled = false,
+  edgePinned = false,
 }) => {
   const [offset, setOffset] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -40,12 +42,17 @@ const InvoiceDragHandle: React.FC<InvoiceDragHandleProps> = ({
 
   return (
     <div
-      className={`shrink-0 flex flex-col items-center justify-center py-2 touch-none select-none ${
+      className={`flex flex-col items-center justify-center touch-none select-none ${
+        edgePinned
+          ? 'absolute bottom-0 left-0 right-0 z-30 pt-1'
+          : 'shrink-0 py-2'
+      } ${
         disabled ? 'opacity-30 pointer-events-none' : 'cursor-grab active:cursor-grabbing pointer-events-auto'
       }`}
       style={{
         transform: `translateY(${offset * 0.4}px)`,
         transition: dragging ? 'none' : 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+        paddingBottom: edgePinned ? 'max(0.15rem, env(safe-area-inset-bottom))' : undefined,
       }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

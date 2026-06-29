@@ -539,14 +539,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
       <div
         ref={stageRef}
-        className={`relative select-none transition-all duration-500 overflow-visible ${
+        className={`relative modal-portrait-6-13 select-none transition-all duration-500 overflow-visible ${
           isOpen ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-[42vh]'
         }`}
         style={{
-          width: 'min(94vw, 430px)',
-          height: viewMode === 'list' ? 'min(65vh, 720px)' : '65vh',
-          maxHeight: '800px',
-          minHeight: '400px',
           touchAction: viewMode === 'carousel' ? 'pan-x' : 'auto',
         }}
         onPointerDown={onPointerDown}

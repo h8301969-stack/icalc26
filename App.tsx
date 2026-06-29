@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useLayoutEffect, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useLayoutEffect, useEffect, useCallback } from 'react';
 import { safeEvaluate } from './utils/calculator';
 import CalcButton from './components/CalcButton';
 import HistoryPanel from './components/HistoryPanel';
@@ -32,9 +32,15 @@ const AppContent: React.FC = () => {
   } = useCalculator(saveResult, triggerHaptic);
 
   const displayResult = expression === '0' ? '0' : safeEvaluate(expression);
+  const liveResultParts = useMemo(() => {
+    const formatted = formatCurrency(displayResult);
+    if (settings.currency === 'GHS') {
+      return { amount: formatted.replace(/ghs$/i, ''), suffix: 'ghs' };
+    }
+    return { amount: formatted, suffix: '' };
+  }, [displayResult, formatCurrency, settings.currency]);
   const showLiveResult = displayResult !== '0' && displayResult !== '0.00';
-  const liveResultSpringRef = useRef(displayResult);
-  const [liveResultSpringKey, setLiveResultSpringKey] = useState(0);
+  const isDraggingCursor = useRef(false);
   const {
     invoiceName,
     setInvoiceName,
@@ -76,7 +82,7 @@ const AppContent: React.FC = () => {
   }, [expressionLineCount]);
 
   const displayFontSize = baseDisplayFontSize * expressionFontScale;
-  const liveResultFontSize = displayFontSize * 1.5;
+  const liveResultFontSize = displayFontSize * 1.2;
   const expressionLineHeight = 1.25;
   const visibleExpressionLines = 4;
 
@@ -98,12 +104,14 @@ const AppContent: React.FC = () => {
     if (el) el.scrollTop = el.scrollHeight;
   }, [expression]);
 
-  useEffect(() => {
-    if (showLiveResult && displayResult !== liveResultSpringRef.current) {
-      setLiveResultSpringKey((k) => k + 1);
-    }
-    liveResultSpringRef.current = displayResult;
-  }, [displayResult, showLiveResult]);
+  const mapClientXToCursorPos = useCallback((clientX: number) => {
+    const container = expressionScrollRef.current;
+    if (!container || expression === '0') return 0;
+    const rect = container.getBoundingClientRect();
+    const clickX = clientX - rect.left;
+    const containerWidth = rect.width * 0.84;
+    return Math.max(0, Math.min(expression.length, Math.round((clickX / containerWidth) * (maxCharsPerLine || 10) * 1.1)));
+  }, [expression, maxCharsPerLine]);
 
   // Keep movable blinker (cursor) within expression bounds
   useEffect(() => {
@@ -272,11 +280,11 @@ const AppContent: React.FC = () => {
               : disableCard
                 ? 'w-[97%] h-[98%] sm:w-[95vw] sm:h-[96vh]'
                 : 'w-[94%] h-[96%] sm:w-[90vw] sm:h-[90vh] max-w-[430px] max-h-[932px] rounded-[26px]'
-          } ${disableCard ? 'bg-transparent' : `${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px)`} ${isCardDimmed ? 'blur-xl opacity-40 scale-[0.92]' : 'opacity-100'}`}
+          } ${disableCard ? `bg-transparent ${isLight ? 'text-black' : 'text-white'}` : `${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px)`} ${isCardDimmed ? 'blur-xl opacity-40 scale-[0.92]' : 'opacity-100'}`}
           style={{
             paddingTop: 'max(1rem, env(safe-area-inset-top))',
             paddingRight: 'max(1rem, env(safe-area-inset-right))',
-            paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+            paddingBottom: 0,
             paddingLeft: 'max(1rem, env(safe-area-inset-left))'
           }}
         >
@@ -379,8 +387,36 @@ const AppContent: React.FC = () => {
             </div>
           </div>
 
+          {showLiveResult && (
+            <div
+              className={`relative z-40 flex justify-center items-center shrink-0 pointer-events-none select-none overflow-hidden py-0.5 transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+              style={{
+                paddingLeft: edgePadding,
+                paddingRight: edgePadding,
+              }}
+              aria-live="polite"
+              aria-label={`Live result: ${liveResultParts.amount}${liveResultParts.suffix}`}
+            >
+              <div
+                className={`
+                  tracking-[-0.04em] leading-none truncate max-w-full
+                  ${isLight ? 'live-result-green-light' : 'live-result-green'}
+                  animate-live-glow-pulse animate-live-spring-loop
+                `}
+                style={{
+                  fontSize: `${liveResultFontSize}px`,
+                }}
+              >
+                <span style={{ fontWeight: 700 }}>{liveResultParts.amount}</span>
+                {liveResultParts.suffix && (
+                  <span style={{ fontWeight: 300 }}>{liveResultParts.suffix}</span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ── Calculator body (portrait stack / landscape split) ── */}
-          <div className={`flex-1 flex min-h-0 overflow-hidden ${isLandscape ? 'flex-row' : 'flex-col'}`}>
+          <div className={`flex-1 flex min-h-0 overflow-hidden pb-10 ${isLandscape ? 'flex-row' : 'flex-col'}`}>
             {isLandscape && (
               <div
                 className={`relative z-10 shrink-0 grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
@@ -413,11 +449,11 @@ const AppContent: React.FC = () => {
             <div className={`flex flex-col min-h-0 min-w-0 ${isLandscape ? 'flex-1' : 'flex-1'}`}>
               {/* Display area */}
               <div
-                className={`flex-1 flex flex-col items-center overflow-hidden min-h-0 transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+                className={`flex-1 flex flex-col items-center overflow-hidden min-h-0 transition-all duration-300 ${isLight ? 'text-black' : 'text-white'} ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
                 style={{
                   paddingTop: isLandscape
-                    ? (disableCard ? '4%' : showLiveResult ? '6%' : '14%')
-                    : (disableCard ? '4%' : showLiveResult ? '6%' : '18%'),
+                    ? (disableCard ? '4%' : '14%')
+                    : (disableCard ? '4%' : '18%'),
                   paddingLeft: edgePadding,
                   paddingRight: edgePadding,
                 }}
@@ -431,40 +467,11 @@ const AppContent: React.FC = () => {
                 )}
 
                 <div className="relative w-full max-w-full shrink-0">
-                  {showLiveResult && (
-                    <div
-                      className={`absolute top-0 left-0 right-0 z-20 flex justify-center items-center pointer-events-none select-none transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
-                      style={{
-                        height: `${liveResultFontSize * 1.1}px`,
-                        paddingLeft: '8%',
-                        paddingRight: '8%',
-                      }}
-                      aria-live="polite"
-                      aria-label={`Live result: ${displayResult}`}
-                    >
-                      <div
-                        key={liveResultSpringKey}
-                        className={`
-                          tracking-[-0.04em] leading-none truncate max-w-full
-                          ${isLight ? 'text-black/45' : 'text-white/55 live-result-dark'}
-                          animate-live-breathe animate-live-spring
-                        `}
-                        style={{
-                          fontWeight: 500,
-                          fontSize: `${liveResultFontSize}px`,
-                        }}
-                      >
-                        {displayResult}
-                      </div>
-                    </div>
-                  )}
-
                   <div
                   ref={expressionScrollRef}
                   className="no-scrollbar w-full max-w-full text-center cursor-text select-none pointer-events-auto overflow-x-hidden"
                   style={{
                     height: `${displayFontSize * expressionLineHeight * visibleExpressionLines}px`,
-                    marginTop: showLiveResult ? `${liveResultFontSize * 1.1}px` : 0,
                     overflowY: 'auto',
                     paddingBottom: '0.25rem',
                     paddingLeft: '8%',
@@ -474,20 +481,28 @@ const AppContent: React.FC = () => {
                   }}
                   aria-label={`Expression: ${expression}`}
                   onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const clickX = e.clientX - rect.left;
-                    const containerWidth = rect.width * 0.84;
-                    const clickedCharIndex = Math.max(0, Math.min(expression.length, Math.round((clickX / containerWidth) * (maxCharsPerLine || 10) * 1.1)));
-                    setCursorPos(clickedCharIndex);
+                    if (isDraggingCursor.current) return;
+                    setCursorPos(mapClientXToCursorPos(e.clientX));
+                  }}
+                  onPointerMove={(e) => {
+                    if (!isDraggingCursor.current) return;
+                    setCursorPos(mapClientXToCursorPos(e.clientX));
+                  }}
+                  onPointerUp={() => {
+                    isDraggingCursor.current = false;
+                  }}
+                  onPointerCancel={() => {
+                    isDraggingCursor.current = false;
                   }}
                 >
                   <pre
                     ref={displayContentRef}
-                    className="max-w-full overflow-hidden break-all"
+                    className={`max-w-full overflow-hidden break-all ${isLight ? 'text-black' : 'text-white'}`}
                     style={{
                       fontFamily: 'inherit',
                       fontSize: `${displayFontSize}px`,
                       fontWeight: 300,
+                      color: isLight ? '#000000' : '#ffffff',
                       transition: 'font-size 0.2s ease-out',
                       letterSpacing: '-0.03em',
                       lineHeight: 1.25,
@@ -506,12 +521,38 @@ const AppContent: React.FC = () => {
                           <>
                             {before}
                             <span
-                              className="inline-block w-[2px] align-middle animate-blink bg-current"
+                              className="inline-block w-[2px] align-middle animate-blink bg-current cursor-grab active:cursor-grabbing touch-none"
                               style={{
                                 height: `${displayFontSize * 1.05}px`,
                                 marginLeft: '-1px',
                                 marginRight: '-1px',
                                 opacity: 0.9,
+                              }}
+                              role="slider"
+                              aria-label="Move cursor"
+                              aria-valuemin={0}
+                              aria-valuemax={expression.length}
+                              aria-valuenow={pos}
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                                isDraggingCursor.current = true;
+                                e.currentTarget.setPointerCapture(e.pointerId);
+                                setCursorPos(mapClientXToCursorPos(e.clientX));
+                              }}
+                              onPointerMove={(e) => {
+                                if (!isDraggingCursor.current) return;
+                                e.stopPropagation();
+                                setCursorPos(mapClientXToCursorPos(e.clientX));
+                              }}
+                              onPointerUp={(e) => {
+                                e.stopPropagation();
+                                isDraggingCursor.current = false;
+                                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                                  e.currentTarget.releasePointerCapture(e.pointerId);
+                                }
+                              }}
+                              onPointerCancel={(e) => {
+                                isDraggingCursor.current = false;
                               }}
                             />
                             {after}
@@ -573,6 +614,7 @@ const AppContent: React.FC = () => {
           <InvoiceDragHandle
             isLight={isLight}
             disabled={isAnyModalOpen}
+            edgePinned
             onDragOpen={() => {
               triggerHaptic();
               setIsHistoryOpen(true);

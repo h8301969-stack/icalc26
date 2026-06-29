@@ -929,7 +929,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           />
 
           <div
-            className="relative w-full max-w-[min(78vw,340px)] aspect-[6/13] opacity-100 scale-100 translate-y-0 transition-all duration-500"
+            className="relative modal-portrait-6-13 opacity-100 scale-100 translate-y-0 transition-all duration-500"
           >
             <div
               className={`absolute inset-0 flex flex-col rounded-[32px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.55)] ${
