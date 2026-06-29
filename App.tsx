@@ -48,6 +48,8 @@ const AppContent: React.FC = () => {
     actionLogs,
     runningTotal,
     saveCurrentInvoiceAndStartNew,
+    printLogs,
+    recordPrint,
   } = useInvoice(expression, items, settings.currency);
 
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -625,7 +627,10 @@ const AppContent: React.FC = () => {
             isOpen={isSettingsOpen} 
             onClose={() => setIsSettingsOpen(false)} 
             settings={settings} 
-            updateSettings={(k, v) => updateSettings({ [k]: v })}
+            updateSettings={(keyOrPatch, value) => {
+              if (typeof keyOrPatch === 'string') updateSettings({ [keyOrPatch]: value } as Partial<typeof settings>);
+              else updateSettings(keyOrPatch);
+            }}
             onApplyAppearance={() => {
               triggerHaptic();
               setIsSettingsOpen(false);
@@ -634,6 +639,7 @@ const AppContent: React.FC = () => {
             runningTotal={parseFloat(runningTotal) || 0}
             invoiceName={invoiceName}
             currency={settings.currency}
+            onInvoicePrinted={recordPrint}
           />
         </div>
       </div>
@@ -651,6 +657,7 @@ const AppContent: React.FC = () => {
         cartItems={cartItems}
         actionLogs={actionLogs}
         runningTotal={runningTotal}
+        onInvoicePrinted={recordPrint}
       />
       <POSDashboard
         history={history}
@@ -659,12 +666,22 @@ const AppContent: React.FC = () => {
         purchases={purchases}
         setPurchases={setPurchases}
         invoiceActionLogs={actionLogs}
+        invoiceName={invoiceName}
+        cartItems={cartItems}
+        runningTotal={runningTotal}
+        printLogs={printLogs}
+        currency={settings.currency}
         isOpen={isPOSOpen}
         onClose={() => setIsPOSOpen(false)}
         isLight={isLight}
         accentColor={settings.accentColor}
         formatCurrency={formatCurrency}
-        updateSettings={(k, v) => updateSettings({ [k]: v })}
+        settings={settings}
+        updateSettings={(keyOrPatch, value) => {
+          if (typeof keyOrPatch === 'string') updateSettings({ [keyOrPatch]: value } as Partial<typeof settings>);
+          else updateSettings(keyOrPatch);
+        }}
+        onInvoicePrinted={recordPrint}
       />
       <PWAInstallPrompt showPrompt={showPrompt} onInstall={handleInstall} onDismiss={handleDismiss} />
     </div>

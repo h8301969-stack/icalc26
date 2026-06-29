@@ -15,6 +15,7 @@ interface HistoryPanelProps {
   cartItems: CartLineItem[];
   actionLogs: InvoiceActionLog[];
   runningTotal: string;
+  onInvoicePrinted?: (invoiceName: string) => void;
 }
 
 interface InvoiceCard {
@@ -42,6 +43,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   cartItems,
   actionLogs,
   runningTotal,
+  onInvoicePrinted,
 }) => {
   const cards = useMemo<InvoiceCard[]>(() => {
     const grouped = new Map<string, InvoiceActionLog[]>();
@@ -365,6 +367,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                   numericTotal,
                   currency
                 );
+                onInvoicePrinted?.(card.name);
               } catch (err: unknown) {
                 alert(err instanceof Error ? err.message : 'Failed to print');
               }

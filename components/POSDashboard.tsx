@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { HistoryItem, InvoiceActionLog } from '../types';
+import { HistoryItem, InvoiceActionLog, InvoicePrintLog, CartLineItem } from '../types';
+import { formatPosLineItemDisplay } from '../utils/posExpression';
 import { Icons } from '../constants';
 import { InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS';
 import SettingsPanel from './SettingsPanel';
@@ -11,16 +12,40 @@ interface POSDashboardProps {
   purchases: PurchaseRecord[];
   setPurchases: React.Dispatch<React.SetStateAction<PurchaseRecord[]>>;
   invoiceActionLogs: InvoiceActionLog[];
+  invoiceName: string;
+  cartItems: CartLineItem[];
+  runningTotal: string;
+  printLogs: InvoicePrintLog[];
+  currency: string;
   isOpen: boolean;
   onClose: () => void;
   isLight: boolean;
   accentColor: string;
   formatCurrency: (val: string) => string;
-  updateSettings: (key: string, value: unknown) => void;
+  settings: {
+    themeMode: 'light' | 'dark';
+    disableCalculatorCard?: boolean;
+    layoutMode?: 'portrait' | 'landscape';
+    profiles?: import('../types').UserProfile[];
+    activeProfileId?: string;
+    currency?: string;
+  };
+  updateSettings: (keyOrPatch: string | Record<string, unknown>, value?: unknown) => void;
+  onInvoicePrinted?: (invoiceName: string) => void;
 }
 
 type SortOption = 'a-z' | 'high-stock' | 'low-stock';
 type FilterOption = 'all' | '24h' | '48h' | '3d' | '7d' | '14d' | 'custom';
+
+interface InvoiceCard {
+  id: string;
+  name: string;
+  items: CartLineItem[];
+  logs: InvoiceActionLog[];
+  total: string;
+  isCurrent: boolean;
+  latestTimestamp: number;
+}
 
 const POSDashboard: React.FC<POSDashboardProps> = ({
   history: _history,
@@ -28,16 +53,27 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   setItems,
   purchases,
   invoiceActionLogs,
+  invoiceName,
+  cartItems,
+  runningTotal,
+  printLogs,
+  currency,
   isOpen,
   onClose,
   isLight,
   accentColor,
   formatCurrency,
+  settings,
   updateSettings,
+  onInvoicePrinted,
 }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [inventoryExpanded, setInventoryExpanded] = useState(false);
   const [purchasesExpanded, setPurchasesExpanded] = useState(false);
+  const [avgCustomerExpanded, setAvgCustomerExpanded] = useState(false);
+  const [invoicesTodayExpanded, setInvoicesTodayExpanded] = useState(false);
+  const [monthlyRevExpanded, setMonthlyRevExpanded] = useState(false);
+  const [dailySalesExpanded, setDailySalesExpanded] = useState(false);
   const [requestsExpanded, setRequestsExpanded] = useState(false);
   const [restockExpanded, setRestockExpanded] = useState(false);
   const [isAddingItem, setIsAddingItem] = useState(false);
@@ -92,6 +128,14 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           setInventoryExpanded(false);
         } else if (purchasesExpanded) {
           setPurchasesExpanded(false);
+        } else if (avgCustomerExpanded) {
+          setAvgCustomerExpanded(false);
+        } else if (invoicesTodayExpanded) {
+          setInvoicesTodayExpanded(false);
+        } else if (monthlyRevExpanded) {
+          setMonthlyRevExpanded(false);
+        } else if (dailySalesExpanded) {
+          setDailySalesExpanded(false);
         } else {
           onClose();
         }
@@ -99,28 +143,211 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose, showAddRequestPopup, requestsExpanded, restockExpanded, inventoryExpanded, purchasesExpanded]);
+  }, [isOpen, onClose, showAddRequestPopup, requestsExpanded, restockExpanded, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const stats = useMemo(() => {
-    const now = new Date();
-    const todayStart = new Date(new Date().setHours(0,0,0,0)).getTime();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  useEffect(() => {
+    if (!isOpen) {
+      setAvgCustomerExpanded(false);
+      setInvoicesTodayExpanded(false);
+      setMonthlyRevExpanded(false);
+      setDailySalesExpanded(false);
+    }
+  }, [isOpen]);
 
-    const totalRev = purchases.reduce((acc, p) => acc + p.total, 0);
-    const dailyRev = purchases.filter(p => p.timestamp >= todayStart).reduce((acc, p) => acc + p.total, 0);
-    const monthlyRev = purchases.filter(p => p.timestamp >= monthStart).reduce((acc, p) => acc + p.total, 0);
-    const invoicesToday = purchases.filter(p => p.timestamp >= todayStart).length;
-    const avgPerCustomer = purchases.length > 0 ? totalRev / purchases.length : 0;
-    const stockLevel = items.length > 0 ? Math.round(items.reduce((acc, item) => acc + (item.stock / item.threshold) * 100, 0) / items.length) : 0;
-    const criticalItems = items.filter(i => i.stock < i.threshold).length;
+  const invoiceCards = useMemo<InvoiceCard[]>(() => {
+    const grouped = new Map<string, InvoiceActionLog[]>();
+    for (const log of invoiceActionLogs) {
+      if (!grouped.has(log.invoiceName)) grouped.set(log.invoiceName, []);
+      grouped.get(log.invoiceName)!.push(log);
+    }
+
+    const built: InvoiceCard[] = [];
+    const pastNames = [...grouped.keys()].filter((k) => k !== invoiceName);
+
+    for (const name of pastNames) {
+      const logs = grouped.get(name)!;
+      built.push({
+        id: `past-${name}`,
+        name,
+        items: logs.map((l) => ({ price: l.price, quantity: l.quantity, name: l.itemName })),
+        logs,
+        total: logs.reduce((s, l) => s + l.price * l.quantity, 0).toFixed(2),
+        isCurrent: false,
+        latestTimestamp: Math.max(...logs.map((l) => l.timestamp)),
+      });
+    }
+
+    const currentLogs = grouped.get(invoiceName) ?? [];
+    built.unshift({
+      id: 'current',
+      name: invoiceName,
+      items: cartItems,
+      logs: currentLogs,
+      total: runningTotal,
+      isCurrent: true,
+      latestTimestamp: currentLogs.length > 0
+        ? Math.max(...currentLogs.map((l) => l.timestamp))
+        : Date.now(),
+    });
+
+    return built;
+  }, [invoiceActionLogs, cartItems, invoiceName, runningTotal]);
+
+  const todayStart = useMemo(
+    () => new Date(new Date().setHours(0, 0, 0, 0)).getTime(),
+    [currentTime]
+  );
+
+  const monthStart = useMemo(
+    () => new Date(currentTime.getFullYear(), currentTime.getMonth(), 1).getTime(),
+    [currentTime]
+  );
+
+  const stats = useMemo(() => {
+    const invoiceMonthlyRev = invoiceCards
+      .filter((c) => c.latestTimestamp >= monthStart && c.items.length > 0)
+      .reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0);
+    const invoiceDailyRev = invoiceCards
+      .filter((c) => c.latestTimestamp >= todayStart && c.items.length > 0)
+      .reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0);
+    const purchaseMonthlyRev = purchases
+      .filter((p) => p.timestamp >= monthStart)
+      .reduce((acc, p) => acc + p.total, 0);
+    const purchaseDailyRev = purchases
+      .filter((p) => p.timestamp >= todayStart)
+      .reduce((acc, p) => acc + p.total, 0);
+
+    const monthlyRev = invoiceMonthlyRev + purchaseMonthlyRev;
+    const dailyRev = invoiceDailyRev + purchaseDailyRev;
+    const totalRev = invoiceCards.reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0)
+      + purchases.reduce((acc, p) => acc + p.total, 0);
+    const invoicesToday = invoiceCards.filter(
+      (c) => c.latestTimestamp >= todayStart && c.items.length > 0
+    ).length;
+    const customerCount = new Set([
+      ...invoiceActionLogs.map((l) => l.invoiceName),
+      invoiceName,
+    ]).size;
+    const avgPerCustomer = customerCount > 0 ? totalRev / customerCount : 0;
+    const stockLevel = items.length > 0
+      ? Math.round(items.reduce((acc, item) => acc + (item.stock / item.threshold) * 100, 0) / items.length)
+      : 0;
+    const criticalItems = items.filter((i) => i.stock < i.threshold).length;
 
     return { totalRev, monthlyRev, dailyRev, avgPerCustomer, invoicesToday, stockLevel, criticalItems };
-  }, [purchases, items]);
+  }, [invoiceCards, purchases, items, monthStart, todayStart, invoiceActionLogs, invoiceName]);
+
+  const invoicesTodayList = useMemo(() => {
+    return invoiceCards
+      .filter((card) => card.latestTimestamp >= todayStart && card.items.length > 0)
+      .sort((a, b) => b.latestTimestamp - a.latestTimestamp);
+  }, [invoiceCards, todayStart]);
+
+  const customerPrintCounts = useMemo(() => {
+    const printCounts = new Map<string, number>();
+    for (const log of printLogs) {
+      printCounts.set(log.invoiceName, (printCounts.get(log.invoiceName) ?? 0) + 1);
+    }
+
+    const names = new Set<string>([invoiceName, ...invoiceActionLogs.map((l) => l.invoiceName)]);
+    return [...names]
+      .map((name) => ({
+        name,
+        printCount: printCounts.get(name) ?? 0,
+        invoiceNum: parseInt(name.match(/Invoice #(\d+)/)?.[1] ?? '0', 10),
+      }))
+      .sort((a, b) => {
+        if (a.invoiceNum && b.invoiceNum) return a.invoiceNum - b.invoiceNum;
+        return a.name.localeCompare(b.name);
+      });
+  }, [printLogs, invoiceActionLogs, invoiceName]);
+
+  const monthlyRevList = useMemo(() => {
+    const rows: Array<{
+      id: string;
+      name: string;
+      total: number;
+      timestamp: number;
+      items: CartLineItem[];
+      kind: 'invoice' | 'purchase';
+    }> = [];
+
+    invoiceCards
+      .filter((c) => c.latestTimestamp >= monthStart && c.items.length > 0)
+      .forEach((c) => {
+        rows.push({
+          id: c.id,
+          name: c.name,
+          total: parseFloat(c.total) || 0,
+          timestamp: c.latestTimestamp,
+          items: c.items,
+          kind: 'invoice',
+        });
+      });
+
+    purchases
+      .filter((p) => p.timestamp >= monthStart)
+      .forEach((p) => {
+        rows.push({
+          id: p.id,
+          name: p.itemName,
+          total: p.total,
+          timestamp: p.timestamp,
+          items: [{ price: p.price, quantity: p.quantity, name: p.itemName }],
+          kind: 'purchase',
+        });
+      });
+
+    return rows.sort((a, b) => b.timestamp - a.timestamp);
+  }, [invoiceCards, purchases, monthStart]);
+
+  const dailySalesList = useMemo(() => {
+    const rows: Array<{
+      id: string;
+      name: string;
+      total: number;
+      timestamp: number;
+      items: CartLineItem[];
+      kind: 'invoice' | 'purchase';
+    }> = [];
+
+    invoiceCards
+      .filter((c) => c.latestTimestamp >= todayStart && c.items.length > 0)
+      .forEach((c) => {
+        rows.push({
+          id: c.id,
+          name: c.name,
+          total: parseFloat(c.total) || 0,
+          timestamp: c.latestTimestamp,
+          items: c.items,
+          kind: 'invoice',
+        });
+      });
+
+    purchases
+      .filter((p) => p.timestamp >= todayStart)
+      .forEach((p) => {
+        rows.push({
+          id: p.id,
+          name: p.itemName,
+          total: p.total,
+          timestamp: p.timestamp,
+          items: [{ price: p.price, quantity: p.quantity, name: p.itemName }],
+          kind: 'purchase',
+        });
+      });
+
+    return rows.sort((a, b) => b.timestamp - a.timestamp);
+  }, [invoiceCards, purchases, todayStart]);
+
+  const hubCollapsed = !inventoryExpanded && !purchasesExpanded && !requestsExpanded
+    && !restockExpanded && !avgCustomerExpanded && !invoicesTodayExpanded
+    && !monthlyRevExpanded && !dailySalesExpanded;
 
   const latestPurchaseItems = useMemo(() => {
     if (purchases.length === 0) return [];
@@ -290,7 +517,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       <div className={`relative w-full h-full flex flex-col transition-all duration-200 backdrop-blur-[44px] ${isLight ? 'bg-white/95' : 'bg-[#050505]/95'} ${(isAddingItem || isRestocking || showAddRequestPopup) ? 'blur-2xl scale-[0.98]' : ''}`}>
         
         {/* DASHBOARD HEADER PORTION WITH THEME-INVERTED FIXED BAR */}
-        {!inventoryExpanded && !purchasesExpanded && !requestsExpanded && !restockExpanded && (
+        {hubCollapsed && (
           <div className="relative pt-8 px-6 pb-6 overflow-hidden shrink-0 z-60">
              {/* Drag handle removed per request */}
              
@@ -344,18 +571,25 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
         {/* MAIN SCROLLABLE CONTENT */}
         <div className="flex-1 overflow-y-auto px-6 space-y-10 custom-scrollbar pb-16 scroll-smooth">
-          {!inventoryExpanded && !purchasesExpanded && !requestsExpanded && !restockExpanded ? (
+          {hubCollapsed ? (
             <div className="grid grid-cols-2 gap-6 pt-4">
               
               {/* PERFORMANCE MICRO CARDS */}
               <div className="col-span-2 grid grid-cols-2 gap-5">
                 {[
-                  { label: 'Monthly Rev', val: formatCurrency(stats.monthlyRev.toFixed(2)) },
-                  { label: 'Daily Sales', val: formatCurrency(stats.dailyRev.toFixed(2)) },
-                  { label: 'Avg Customer', val: formatCurrency(stats.avgPerCustomer.toFixed(2)) },
-                  { label: 'Invoices Today', val: stats.invoicesToday }
+                  { label: 'Monthly Rev', val: formatCurrency(stats.monthlyRev.toFixed(2)), onClick: () => setMonthlyRevExpanded(true) },
+                  { label: 'Daily Sales', val: formatCurrency(stats.dailyRev.toFixed(2)), onClick: () => setDailySalesExpanded(true) },
+                  { label: 'Avg Customer', val: formatCurrency(stats.avgPerCustomer.toFixed(2)), onClick: () => setAvgCustomerExpanded(true) },
+                  { label: 'Invoices Today', val: stats.invoicesToday, onClick: () => setInvoicesTodayExpanded(true) },
                 ].map((card, idx) => (
-                  <div key={idx} className={`p-7 rounded-xl ${levitateClass}`}>
+                  <div
+                    key={idx}
+                    onClick={card.onClick}
+                    className={`p-7 rounded-xl ${levitateClass} ${card.onClick ? 'cursor-pointer active:scale-[0.98]' : ''}`}
+                    role={card.onClick ? 'button' : undefined}
+                    tabIndex={card.onClick ? 0 : undefined}
+                    onKeyDown={card.onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.onClick!(); } } : undefined}
+                  >
                     <p className="text-[9px] font-black uppercase tracking-[0.3em] opacity-30 mb-2">{card.label}</p>
                     <p className="text-2xl font-black tracking-tight" style={{ color: accentColor }}>{card.val}</p>
                   </div>
@@ -458,6 +692,188 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 </div>
               </div>
 
+            </div>
+          ) : monthlyRevExpanded ? (
+            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Monthly revenue">
+              <button
+                onClick={() => setMonthlyRevExpanded(false)}
+                aria-label="Back to Vision Hub"
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
+              </button>
+              <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Monthly Revenue</h3>
+              <p className="text-sm opacity-50 px-1 -mt-4">{formatCurrency(stats.monthlyRev.toFixed(2))} this month • sorted by date</p>
+              <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
+                {monthlyRevList.length > 0 ? (
+                  monthlyRevList.map((row, idx) => (
+                    <div
+                      key={row.id}
+                      className={`px-8 py-7 ${idx !== monthlyRevList.length - 1 ? 'border-b border-white/10' : ''}`}
+                    >
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50 mb-0.5">
+                            {row.kind === 'invoice' ? 'Invoice' : 'Sale'}
+                          </div>
+                          <div className={`text-lg font-black tracking-tight truncate ${textColorClass}`}>{row.name}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-base font-black" style={{ color: accentColor }}>{formatCurrency(row.total.toFixed(2))}</div>
+                        </div>
+                      </div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 mb-3">
+                        {new Date(row.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      <div className="space-y-1.5">
+                        {row.items.map((item, i) => (
+                          <div key={i} className={`flex items-center justify-between text-sm font-semibold opacity-80 ${textColorClass}`}>
+                            <span>{formatPosLineItemDisplay(item, currency)}</span>
+                            <span className="opacity-55 text-xs">{currency} {(item.price * item.quantity).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-12 text-center">
+                    <p className="text-[11px] font-black uppercase tracking-[2px] opacity-30">No revenue this month</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : dailySalesExpanded ? (
+            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Daily sales">
+              <button
+                onClick={() => setDailySalesExpanded(false)}
+                aria-label="Back to Vision Hub"
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
+              </button>
+              <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Daily Sales</h3>
+              <p className="text-sm opacity-50 px-1 -mt-4">{formatCurrency(stats.dailyRev.toFixed(2))} today • sorted by time</p>
+              <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
+                {dailySalesList.length > 0 ? (
+                  dailySalesList.map((row, idx) => (
+                    <div
+                      key={row.id}
+                      className={`px-8 py-7 ${idx !== dailySalesList.length - 1 ? 'border-b border-white/10' : ''}`}
+                    >
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50 mb-0.5">
+                            {row.kind === 'invoice' ? 'Invoice' : 'Sale'}
+                          </div>
+                          <div className={`text-lg font-black tracking-tight truncate ${textColorClass}`}>{row.name}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-base font-black" style={{ color: accentColor }}>{formatCurrency(row.total.toFixed(2))}</div>
+                        </div>
+                      </div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 mb-3">
+                        {new Date(row.timestamp).toLocaleString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      <div className="space-y-1.5">
+                        {row.items.map((item, i) => (
+                          <div key={i} className={`flex items-center justify-between text-sm font-semibold opacity-80 ${textColorClass}`}>
+                            <span>{formatPosLineItemDisplay(item, currency)}</span>
+                            <span className="opacity-55 text-xs">{currency} {(item.price * item.quantity).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-12 text-center">
+                    <p className="text-[11px] font-black uppercase tracking-[2px] opacity-30">No sales today</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : avgCustomerExpanded ? (
+            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Customer print history">
+              <button
+                onClick={() => setAvgCustomerExpanded(false)}
+                aria-label="Back to Vision Hub"
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
+              </button>
+              <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Customers</h3>
+              <p className="text-sm opacity-50 px-1 -mt-4">Invoice names • print count</p>
+              <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
+                {customerPrintCounts.length > 0 ? (
+                  customerPrintCounts.map((customer, idx) => (
+                    <div
+                      key={customer.name}
+                      className={`px-8 py-7 flex items-center justify-between gap-4 ${idx !== customerPrintCounts.length - 1 ? 'border-b border-white/10' : ''}`}
+                    >
+                      <div className={`font-black tracking-tight text-lg ${textColorClass}`}>{customer.name}</div>
+                      <div className="text-right shrink-0">
+                        <div className="text-[10px] font-black uppercase tracking-widest opacity-40">Printed</div>
+                        <div className="text-2xl font-black" style={{ color: accentColor }}>{customer.printCount}</div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-12 text-center">
+                    <p className="text-[11px] font-black uppercase tracking-[2px] opacity-30">No customers yet</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : invoicesTodayExpanded ? (
+            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Invoices today">
+              <button
+                onClick={() => setInvoicesTodayExpanded(false)}
+                aria-label="Back to Vision Hub"
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
+              </button>
+              <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Invoices Today</h3>
+              <p className="text-sm opacity-50 px-1 -mt-4">Sorted by most recent activity</p>
+              <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
+                {invoicesTodayList.length > 0 ? (
+                  invoicesTodayList.map((card, idx) => (
+                    <div
+                      key={card.id}
+                      className={`px-8 py-7 ${idx !== invoicesTodayList.length - 1 ? 'border-b border-white/10' : ''}`}
+                    >
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50 mb-0.5">
+                            {card.isCurrent ? 'Current' : 'Saved'}
+                          </div>
+                          <div className={`text-lg font-black tracking-tight truncate ${textColorClass}`}>{card.name}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-[10px] font-black uppercase tracking-widest opacity-40">Total</div>
+                          <div className="text-base font-black" style={{ color: accentColor }}>{currency} {card.total}</div>
+                        </div>
+                      </div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 mb-3">
+                        {new Date(card.latestTimestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        {' • '}
+                        {card.items.length} item{card.items.length !== 1 ? 's' : ''}
+                      </div>
+                      <div className="space-y-1.5">
+                        {card.items.map((item, i) => (
+                          <div key={i} className={`flex items-center justify-between text-sm font-semibold opacity-80 ${textColorClass}`}>
+                            <span>{formatPosLineItemDisplay(item, currency)}</span>
+                            <span className="opacity-55 text-xs">{currency} {(item.price * item.quantity).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-12 text-center">
+                    <p className="text-[11px] font-black uppercase tracking-[2px] opacity-30">No invoices today</p>
+                  </div>
+                )}
+              </div>
             </div>
           ) : inventoryExpanded ? (
             <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Asset Hub inventory">
@@ -1092,14 +1508,16 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           </div>
         </div>
       )}
-      <SettingsPanel 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)} 
-        settings={{ themeMode: isLight ? 'light' : 'dark' }} 
-        updateSettings={updateSettings} 
-        cartItems={latestPurchaseItems}
-        runningTotal={latestPurchaseTotal}
-        invoiceName={latestPurchaseName}
+      <SettingsPanel
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        settings={settings}
+        updateSettings={updateSettings}
+        cartItems={cartItems.length > 0 ? cartItems : latestPurchaseItems}
+        runningTotal={cartItems.length > 0 ? (parseFloat(runningTotal) || 0) : latestPurchaseTotal}
+        invoiceName={cartItems.length > 0 ? invoiceName : latestPurchaseName}
+        currency={currency}
+        onInvoicePrinted={onInvoicePrinted}
       />
       <style>{`
         @keyframes fade-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }

@@ -1,0 +1,21 @@
+---
+pid: 5644
+cwd: "C:\Users\user\Desktop\icalc26"
+command: "cd \"C:\\Users\\user\\Desktop\\icalc26\"; npm run build"
+started_at: 2026-06-29T04:06:44.243Z
+running_for_ms: 379996   
+---
+
+> icalc-26-new@0.0.0 build
+> vite build
+
+vite v6.4.3 building for production...
+transforming...
+✓ 54 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/assets/manifest-DNqKmmCT.json    0.76 kB │ gzip:  0.32 kB
+dist/index.html                       1.11 kB │ gzip:  0.59 kB
+dist/assets/index-DXTbhaHz.css       71.80 kB │ gzip: 11.18 kB
+dist/assets/index-DII8pw6d.js       348.81 kB │ gzip: 98.34 kB
+✓ built in 14.22s

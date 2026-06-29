@@ -22,3 +22,15 @@ export interface CartLineItem {
   quantity: number;
   name?: string;
 }
+
+export interface InvoicePrintLog {
+  id: string;
+  invoiceName: string;
+  timestamp: number;
+}
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  avatarUrl: string;
+}

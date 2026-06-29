@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { CartLineItem, InvoiceActionLog } from '../types';
+import { CartLineItem, InvoiceActionLog, InvoicePrintLog } from '../types';
 import { InventoryItem } from './usePOS';
 import { storage } from './storage';
 import {
@@ -18,6 +18,7 @@ const matchInventoryByPrice = (
   inventory.find((item) => Math.abs(item.price - price) < 0.001);
 
 const PAST_LOGS_KEY = 'past_invoice_logs';
+const PRINT_LOGS_KEY = 'invoice_print_logs';
 
 export const useInvoice = (
   expression: string,
@@ -32,6 +33,10 @@ export const useInvoice = (
     storage.get(PAST_LOGS_KEY, [])
   );
 
+  const [printLogs, setPrintLogs] = useState<InvoicePrintLog[]>(() =>
+    storage.get(PRINT_LOGS_KEY, [])
+  );
+
   useEffect(() => {
     storage.set(INVOICE_NAME_KEY, invoiceName);
   }, [invoiceName]);
@@ -39,6 +44,10 @@ export const useInvoice = (
   useEffect(() => {
     storage.set(PAST_LOGS_KEY, pastLogs);
   }, [pastLogs]);
+
+  useEffect(() => {
+    storage.set(PRINT_LOGS_KEY, printLogs);
+  }, [printLogs]);
 
   const cartItems = useMemo((): CartLineItem[] => {
     if (!expression || expression === '0') return [];
@@ -98,13 +107,22 @@ export const useInvoice = (
     setPastLogs([]);
   };
 
+  const recordPrint = (name: string) => {
+    setPrintLogs((prev) => [
+      ...prev,
+      { id: `print-${Date.now()}`, invoiceName: name, timestamp: Date.now() },
+    ]);
+  };
+
   return {
     invoiceName,
     setInvoiceName,
     cartItems,
     actionLogs,
     runningTotal,
+    printLogs,
     saveCurrentInvoiceAndStartNew,
     clearAllInvoices,
+    recordPrint,
   };
 };
