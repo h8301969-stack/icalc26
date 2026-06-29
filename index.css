@@ -7,6 +7,8 @@
   --animate-fade-in: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   --animate-insight-pop: insight-pop 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   --animate-plus-trigger: plus-trigger 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-live-breathe: live-breathe 3.5s ease-in-out infinite;
+  --animate-live-spring: live-spring 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
 
   @keyframes ripple {
     0% { transform: scale(0); opacity: 0.4; }
@@ -25,6 +27,33 @@
     50% { transform: scale(1.35) rotate(90deg); }
     100% { transform: scale(1) rotate(180deg); }
   }
+
+  @keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+
+  @keyframes live-breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.04); }
+  }
+
+  @keyframes live-breathe-opacity {
+    0%, 100% { opacity: 0.055; }
+    50% { opacity: 0.1; }
+  }
+
+  @keyframes live-spring {
+    0% { transform: scale(0.94); }
+    45% { transform: scale(1.06); }
+    70% { transform: scale(0.98); }
+    100% { transform: scale(1); }
+  }
+}
+
+/* Blinking caret for movable expression cursor */
+.animate-blink {
+  animation: blink 1s step-end infinite;
 }
 
 /* Base overrides and glassmorphism helpers */
@@ -60,3 +89,24 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .custom-scrollbar::-webkit-scrollbar { width: 6px; display: block; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.25); border-radius: 30px; }
+
+/* Live result glow + breathing on dark theme */
+.live-result-dark {
+  text-shadow:
+    0 0 24px rgba(255, 255, 255, 0.45),
+    0 0 48px rgba(255, 255, 255, 0.25),
+    0 0 96px rgba(255, 255, 255, 0.12);
+  filter: drop-shadow(0 0 32px rgba(255, 255, 255, 0.18));
+}
+
+.animate-live-breathe {
+  animation: live-breathe 3.5s ease-in-out infinite;
+}
+
+.animate-live-breathe-opacity {
+  animation: live-breathe-opacity 3.5s ease-in-out infinite;
+}
+
+.animate-live-spring {
+  animation: live-spring 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+}

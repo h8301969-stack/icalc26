@@ -20,11 +20,14 @@ import { useInvoice } from './hooks/useInvoice';
 
 const AppContent: React.FC = () => {
   const { settings, updateSettings, triggerHaptic, isLight, formatCurrency } = useSettings();
+  const disableCard = !!settings.disableCalculatorCard;
+  const isLandscape = settings.layoutMode === 'landscape';
   const { history, saveResult } = useHistory();
   const { items, setItems, purchases, setPurchases } = usePOS(history);
   const { 
     expression, calcError, inputChar, 
-    toggleSign, finalize, handleUndo, handleRedo, clearExpression, deleteLast 
+    toggleSign, finalize, handleUndo, handleRedo, clearExpression, deleteLast,
+    cursorPos, setCursorPos
   } = useCalculator(saveResult, triggerHaptic);
 
   const displayResult = expression === '0' ? '0' : safeEvaluate(expression);
@@ -53,24 +56,59 @@ const AppContent: React.FC = () => {
   const { showPrompt, handleInstall, handleDismiss } = usePWAPrompt();
   const displayContentRef = useRef<HTMLPreElement>(null);
   const expressionScrollRef = useRef<HTMLDivElement>(null);
-  const [displayFontSize] = useState(20);
+  const displayFontSize = isLandscape ? 24 : 28;
+  const [maxCharsPerLine, setMaxCharsPerLine] = useState(12);
+  const edgePadding = disableCard ? '8%' : '1rem';
 
   useLayoutEffect(() => {
     if (!displayContentRef.current) return;
     // font-size layout hook (reserved)
   }, [expression]);
 
-  // Break expression into lines of 10 chars each
+  // Dynamic line breaking: reach ~10% edge of the card instead of fixed 10 chars (responsive)
   const formattedExpression = useMemo(() => {
     if (expression === '0') return '0';
-    return expression.match(/.{1,10}/g)?.join('\n') ?? expression;
-  }, [expression]);
+    const chars = Math.max(6, maxCharsPerLine);
+    return expression.match(new RegExp(`.{1,${chars}}`, 'g'))?.join('\n') ?? expression;
+  }, [expression, maxCharsPerLine]);
 
   // Auto-scroll expression to bottom so latest chars are always visible
   useEffect(() => {
     const el = expressionScrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [expression]);
+
+  // Keep movable blinker (cursor) within expression bounds
+  useEffect(() => {
+    if (cursorPos !== null && cursorPos > expression.length) {
+      setCursorPos(expression.length);
+    }
+  }, [expression, cursorPos]);
+
+  // Measure available width for dynamic line length (target ~10% edge margin)
+  useEffect(() => {
+    const measure = () => {
+      const container = expressionScrollRef.current;
+      if (!container) return;
+      // Use ~84% of width for text (8% margin each side)
+      const availWidth = container.clientWidth * 0.84;
+      // Rough char width for the font (non-mono but good avg for this style)
+      const approxCharWidth = displayFontSize * 0.58;
+      const calculated = Math.max(8, Math.floor(availWidth / approxCharWidth));
+      if (calculated !== maxCharsPerLine) setMaxCharsPerLine(calculated);
+    };
+
+    measure();
+
+    const ro = new ResizeObserver(measure);
+    if (expressionScrollRef.current) ro.observe(expressionScrollRef.current);
+
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [displayFontSize, isLandscape, disableCard]);
   
   const isAnyModalOpen = isHistoryOpen || isPOSOpen || isSearchOpen;
   const isCardDimmed = isHistoryOpen || isPOSOpen;
@@ -191,7 +229,7 @@ const AppContent: React.FC = () => {
          {...gestures} onKeyDown={handleKeyDown}
          role="main"
          aria-label="Calculator Application">
-      <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} result={displayResult} />
+      <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} result={displayResult} isLandscape={isLandscape} />
 
       {!isUnlocked && (
         <WallpaperOverlay isLight={isLight} accentColor={settings.accentColor} onEnter={() => { triggerHaptic(2); setIsUnlocked(true); }} />
@@ -199,7 +237,15 @@ const AppContent: React.FC = () => {
 
       <div className={`fixed inset-0 z-20 flex items-center justify-center transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) ${isUnlocked ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'}`}>
         <div 
-          className={`relative w-[94%] h-[96%] sm:w-[90vw] sm:h-[90vh] max-w-[430px] max-h-[932px] flex flex-col rounded-[26px] overflow-hidden transition-all duration-500 ${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px) ${isCardDimmed ? 'blur-xl opacity-40 scale-[0.92]' : 'opacity-100'}`}
+          className={`relative flex flex-col overflow-hidden transition-all duration-500 ${
+            isLandscape
+              ? disableCard
+                ? 'w-[98%] h-[94%] sm:w-[96vw] sm:h-[92vh]'
+                : 'w-[94%] h-[90vh] sm:w-[92vw] max-w-[920px] max-h-[640px] rounded-[26px]'
+              : disableCard
+                ? 'w-[97%] h-[98%] sm:w-[95vw] sm:h-[96vh]'
+                : 'w-[94%] h-[96%] sm:w-[90vw] sm:h-[90vh] max-w-[430px] max-h-[932px] rounded-[26px]'
+          } ${disableCard ? (isLight ? 'bg-transparent' : 'bg-transparent') : (isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white')} backdrop-blur-(--glass-blur,24px) ${isCardDimmed ? 'blur-xl opacity-40 scale-[0.92]' : 'opacity-100'}`}
           style={{
             paddingTop: 'max(1rem, env(safe-area-inset-top))',
             paddingRight: 'max(1rem, env(safe-area-inset-right))',
@@ -306,74 +352,159 @@ const AppContent: React.FC = () => {
             </div>
           </div>
           
-          {/* ── Display area ─────────────────────────────────────── */}
-          <div
-            className={`flex-1 flex flex-col items-center px-4 overflow-hidden min-h-0 pointer-events-none transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
-            style={{ paddingTop: '18%' }}
-          >
-            {/* Flexible space above expression (result now lives on the blurred background below) */}
-            <div style={{ flex: 1 }} />
-
-            {calcError && (
-              <div className="text-sm text-red-500 mb-1 text-center truncate max-w-full" role="alert">
-                {calcError}
+          {/* ── Calculator body (portrait stack / landscape split) ── */}
+          <div className={`flex-1 flex min-h-0 overflow-hidden ${isLandscape ? 'flex-row' : 'flex-col'}`}>
+            {isLandscape && (
+              <div
+                className={`relative z-10 shrink-0 grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+                style={{
+                  width: '52%',
+                  gap: disableCard ? 'max(3px, 1.2%)' : '8px',
+                  paddingLeft: edgePadding,
+                  paddingRight: disableCard ? '4%' : '0.75rem',
+                  paddingBottom: disableCard ? '7%' : '1rem',
+                  paddingTop: disableCard ? '2%' : '0.5rem',
+                }}
+              >
+                {keypad.map((btn, idx) => (
+                  <CalcButton
+                    key={`land-${idx}`}
+                    label={btn.label}
+                    onClick={() => handleKeypad(btn.action)}
+                    variant={btn.variant}
+                    wide={btn.wide}
+                    accentColor={settings.accentColor}
+                    isLight={isLight}
+                    ariaLabel={btn.ariaLabel}
+                    large={disableCard}
+                  />
+                ))}
               </div>
             )}
 
-            {/* Expression — full opacity, 10 chars/line, 4 lines then scrollable */}
-            <div
-              ref={expressionScrollRef}
-              className="no-scrollbar w-full text-center"
-              style={{
-                height: `${displayFontSize * 1.25 * 4}px`,   // 4 visible lines
-                overflowY: 'auto',
-                paddingBottom: '0.25rem',
-                scrollBehavior: 'smooth',
-              }}
-              aria-label={`Expression: ${expression}`}
-            >
-              <pre
-                ref={displayContentRef}
+            <div className={`flex flex-col min-h-0 min-w-0 ${isLandscape ? 'flex-1' : 'flex-1'}`}>
+              {/* Display area */}
+              <div
+                className={`flex-1 flex flex-col items-center overflow-hidden min-h-0 transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
                 style={{
-                  fontFamily:    'inherit',
-                  fontSize:      `${displayFontSize}px`,
-                  fontWeight:    300,
-                  letterSpacing: '-0.03em',
-                  lineHeight:    1.25,
-                  whiteSpace:    'pre-wrap',
-                  margin:        0,
-                  textAlign:     'center',
+                  paddingTop: isLandscape ? (disableCard ? '10%' : '14%') : (disableCard ? '8%' : '18%'),
+                  paddingLeft: edgePadding,
+                  paddingRight: edgePadding,
                 }}
               >
-                {expression === '0' ? <span style={{ opacity: 0.3 }}>0</span> : formattedExpression}
-              </pre>
+                <div style={{ flex: 1 }} />
+
+                {calcError && (
+                  <div className="text-sm text-red-500 mb-1 text-center truncate max-w-full px-[8%]" role="alert">
+                    {calcError}
+                  </div>
+                )}
+
+                <div
+                  ref={expressionScrollRef}
+                  className="no-scrollbar w-full max-w-full text-center cursor-text select-none pointer-events-auto overflow-x-hidden"
+                  style={{
+                    height: `${displayFontSize * 1.25 * (isLandscape ? 3 : 4)}px`,
+                    overflowY: 'auto',
+                    paddingBottom: '0.25rem',
+                    paddingLeft: '8%',
+                    paddingRight: '8%',
+                    boxSizing: 'border-box',
+                    scrollBehavior: 'smooth',
+                  }}
+                  aria-label={`Expression: ${expression}`}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    const containerWidth = rect.width * 0.84;
+                    const clickedCharIndex = Math.max(0, Math.min(expression.length, Math.round((clickX / containerWidth) * (maxCharsPerLine || 10) * 1.1)));
+                    setCursorPos(clickedCharIndex);
+                  }}
+                >
+                  <pre
+                    ref={displayContentRef}
+                    className="max-w-full overflow-hidden break-all"
+                    style={{
+                      fontFamily: 'inherit',
+                      fontSize: `${displayFontSize}px`,
+                      fontWeight: 300,
+                      letterSpacing: '-0.03em',
+                      lineHeight: 1.25,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-all',
+                      margin: 0,
+                      textAlign: 'center',
+                    }}
+                  >
+                    {expression === '0' ? <span style={{ opacity: 0.3 }}>0</span> : (
+                      (() => {
+                        const pos = (cursorPos ?? expression.length);
+                        const before = expression.slice(0, pos);
+                        const after = expression.slice(pos);
+                        return (
+                          <>
+                            {before}
+                            <span
+                              className="inline-block w-[2px] align-middle animate-blink bg-current"
+                              style={{
+                                height: `${displayFontSize * 1.05}px`,
+                                marginLeft: '-1px',
+                                marginRight: '-1px',
+                                opacity: 0.9,
+                              }}
+                            />
+                            {after}
+                          </>
+                        );
+                      })()
+                    )}
+                  </pre>
+                </div>
+              </div>
+
+              {/* Action toolbar */}
+              <div
+                className={`flex-none flex justify-between gap-2 py-1.5 rounded-full border transition-all duration-300 ${isLandscape ? 'mb-2' : 'mb-2 mx-2'} ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white/60 border-black/5 text-black' : 'bg-black/20 border-white/10 text-white'}`}
+                style={{
+                  boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 8px 28px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)',
+                  marginLeft: isLandscape ? edgePadding : undefined,
+                  marginRight: isLandscape ? edgePadding : undefined,
+                  paddingLeft: isLandscape ? '0.75rem' : edgePadding,
+                  paddingRight: isLandscape ? '0.75rem' : edgePadding,
+                }}
+              >
+                <button onClick={handleUndo} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Undo"><Icons.Undo size={16} /></button>
+                <button onClick={handleRedo} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Redo"><Icons.Redo size={16} /></button>
+                <button onClick={() => setIsPOSOpen(true)} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Trends"><Icons.Trends size={16} /></button>
+                <button onClick={deleteLast} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Delete"><Icons.Delete size={16} /></button>
+              </div>
             </div>
-          </div>
 
-          <div 
-            className={`flex-none flex justify-between gap-2 mb-2 px-4 mx-2 py-1.5 rounded-full border transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white/60 border-black/5 text-black' : 'bg-black/20 border-white/10 text-white'}`}
-            style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 8px 28px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)' }}
-          >
-              <button onClick={handleUndo} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Undo"><Icons.Undo size={16} /></button>
-              <button onClick={handleRedo} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Redo"><Icons.Redo size={16} /></button>
-              <button onClick={() => setIsPOSOpen(true)} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Trends"><Icons.Trends size={16} /></button>
-              <button onClick={deleteLast} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Delete"><Icons.Delete size={16} /></button>
-          </div>
-
-          {/* Keypad — declarative config for clean maintainable buttons + actions */}
-          <div className={`relative z-10 flex-[1.3] grid grid-cols-4 grid-rows-5 gap-2 px-4 pb-4 min-h-0 overflow-hidden transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}>
-            {keypad.map((btn, idx) => (
-              <CalcButton
-                key={idx}
-                label={btn.label}
-                onClick={() => handleKeypad(btn.action)}
-                variant={btn.variant}
-                wide={btn.wide}
-                accentColor={settings.accentColor}
-                isLight={isLight}
-                ariaLabel={btn.ariaLabel}
-              />
-            ))}
+            {!isLandscape && (
+              <div
+                className={`relative z-10 flex-[1.3] grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+                style={{
+                  gap: disableCard ? 'max(3px, 1.2%)' : '8px',
+                  paddingLeft: edgePadding,
+                  paddingRight: edgePadding,
+                  paddingBottom: disableCard ? '7%' : '1rem',
+                }}
+              >
+                {keypad.map((btn, idx) => (
+                  <CalcButton
+                    key={`port-${idx}`}
+                    label={btn.label}
+                    onClick={() => handleKeypad(btn.action)}
+                    variant={btn.variant}
+                    wide={btn.wide}
+                    accentColor={settings.accentColor}
+                    isLight={isLight}
+                    ariaLabel={btn.ariaLabel}
+                    large={disableCard}
+                  />
+                ))}
+              </div>
+            )}
           </div>
           <SettingsPanel 
             isOpen={isSettingsOpen} 

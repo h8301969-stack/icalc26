@@ -74,23 +74,7 @@ export const usePOS = (history: HistoryItem[]) => {
   useEffect(() => { storage.set('pos_inventory', items); }, [items]);
   useEffect(() => { storage.set('pos_purchases', purchases); }, [purchases]);
 
-  useEffect(() => {
-    if (history.length > 0) {
-      const latest = history[0];
-      if (!purchases.some(p => p.id === latest.id)) {
-        const newPurchase: PurchaseRecord = {
-          id: latest.id,
-          itemName: 'Retail Sale',
-          quantity: 1,
-          price: parseFloat(latest.result),
-          total: parseFloat(latest.result),
-          date: new Date(latest.timestamp).toLocaleString(),
-          timestamp: latest.timestamp
-        };
-        setPurchases(prev => [newPurchase, ...prev].slice(0, 50));
-      }
-    }
-  }, [history, purchases]);
+  // Auto sales injection from history removed (cleared hardcoded cache sales)
 
   return { items, setItems, purchases, setPurchases };
 };

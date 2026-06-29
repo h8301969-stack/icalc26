@@ -12,6 +12,9 @@ export const useCalculator = (
   const [redoStack, setRedoStack] = useState<string[]>([]);
   const [calcError, setCalcError] = useState<string | null>(null);
 
+  // Movable blinker / cursor position inside the expression (preferred insertion point)
+  const [cursorPos, setCursorPos] = useState(0);
+
   const pushToUndo = useCallback((val: string) => {
     setUndoStack(prev => [...prev, val].slice(-50));
     setRedoStack([]);
@@ -59,39 +62,51 @@ export const useCalculator = (
     if (isResultMode) {
       setIsResultMode(false);
       if (isOp) {
-        // chain operation from current result
         const sym = char === '*' ? '×' : char === '/' ? '÷' : char;
-        setExpression(prev => prev + sym);
+        const newExpr = expression + sym;
+        setExpression(newExpr);
+        setCursorPos(newExpr.length);
         return;
       }
-      // fresh start for digit / decimal
-      if (char === '.') {
-        setExpression('0.');
-      } else {
-        setExpression(char);
-      }
+      const fresh = char === '.' ? '0.' : char;
+      setExpression(fresh);
+      setCursorPos(fresh.length);
       return;
     }
 
     setIsResultMode(false);
     setExpression(prev => {
       const sym = char === '*' ? '×' : char === '/' ? '÷' : char;
+
+      let pos = cursorPos;
+      if (pos < 0 || pos > prev.length) pos = prev.length;
+
+      // Special handling when at '0' start
       if (prev === '0' && !['+', '×', '÷', '.', '%'].includes(sym)) {
-        return sym;
+        const newExpr = sym;
+        setCursorPos(newExpr.length);
+        return newExpr;
       }
-      // replace trailing operator with new one (except allowing minus for negatives)
+
       const last = prev.slice(-1);
       const lastIsOp = ['+', '-', '×', '÷', '*', '/', '%'].includes(last);
-      if (isOp && lastIsOp) {
+
+      if (isOp && lastIsOp && pos === prev.length) {
         if (char === '-' && !['-', '×', '÷', '+', '/', '%'].includes(prev.slice(-2, -1))) {
-          // allow minus for starting negative term after op? keep simple: append
+          // allow
         } else {
-          return prev.slice(0, -1) + sym;
+          const newExpr = prev.slice(0, -1) + sym;
+          setCursorPos(newExpr.length);
+          return newExpr;
         }
       }
-      return prev + sym;
+
+      // Insert at current cursor position (movable blinker support)
+      const newExpr = prev.slice(0, pos) + sym + prev.slice(pos);
+      setCursorPos(pos + 1);
+      return newExpr;
     });
-  }, [expression, isResultMode, triggerHaptic, pushToUndo]);
+  }, [expression, isResultMode, triggerHaptic, pushToUndo, cursorPos]);
 
   const toggleSign = useCallback(() => {
     triggerHaptic();
@@ -131,6 +146,7 @@ export const useCalculator = (
     setIsResultMode(true);
     pushToUndo(expression);
     setExpression(finalRes);
+    setCursorPos(finalRes.length);
   }, [expression, runningResult, triggerHaptic, onEvaluate, pushToUndo]);
 
   const handleUndo = useCallback(() => {
@@ -141,6 +157,7 @@ export const useCalculator = (
     setRedoStack(old => [...old, current]);
     setUndoStack(old => old.slice(0, -1));
     setExpression(prev);
+    setCursorPos(prev.length);
     setIsResultMode(false);
   }, [undoStack, expression, triggerHaptic]);
 
@@ -152,6 +169,7 @@ export const useCalculator = (
     setUndoStack(old => [...old, current]);
     setRedoStack(old => old.slice(0, -1));
     setExpression(next);
+    setCursorPos(next.length);
     setIsResultMode(false);
   }, [redoStack, expression, triggerHaptic]);
 
@@ -159,13 +177,21 @@ export const useCalculator = (
     triggerHaptic();
     setExpression('0');
     setIsResultMode(false);
+    setCursorPos(0);
   }, [triggerHaptic]);
 
   const deleteLast = useCallback(() => {
     triggerHaptic();
-    setExpression(prev => prev.slice(0, -1) || '0');
+    setExpression(prev => {
+      let pos = cursorPos;
+      if (pos === null || pos < 0) pos = prev.length;
+      if (pos === 0) return prev || '0';
+      const newExpr = prev.slice(0, pos - 1) + prev.slice(pos);
+      setCursorPos(Math.max(0, pos - 1));
+      return newExpr || '0';
+    });
     setIsResultMode(false);
-  }, [triggerHaptic]);
+  }, [triggerHaptic, cursorPos]);
 
   return {
     expression,
@@ -178,5 +204,7 @@ export const useCalculator = (
     handleRedo,
     clearExpression,
     deleteLast,
+    cursorPos,
+    setCursorPos,
   };
 };

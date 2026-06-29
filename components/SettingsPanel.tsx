@@ -5,6 +5,8 @@ import { CartLineItem } from '../types';
 
 interface SettingsSlice {
   themeMode: 'light' | 'dark';
+  disableCalculatorCard?: boolean;
+  layoutMode?: 'portrait' | 'landscape';
 }
 
 interface SettingsPanelProps {
@@ -151,6 +153,71 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       
       <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
         
+        {/* Appearance Settings */}
+        <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
+          <div className="flex items-center gap-3 mb-4">
+            <span>{settings.themeMode === 'light' ? <Icons.Sun size={20} /> : <Icons.Moon size={20} />}</span>
+            <h3 className="text-sm font-black uppercase tracking-wider">Appearance</h3>
+          </div>
+
+          <div className="space-y-4">
+            {/* Theme Toggle */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-black">Theme</span>
+              <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
+                <button
+                  onClick={() => _updateSettings('themeMode', 'light')}
+                  className={`px-4 py-1.5 flex items-center gap-1 transition-all ${settings.themeMode === 'light' ? 'bg-black text-white' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
+                >
+                  <Icons.Sun size={14} /> Light
+                </button>
+                <button
+                  onClick={() => _updateSettings('themeMode', 'dark')}
+                  className={`px-4 py-1.5 flex items-center gap-1 transition-all ${settings.themeMode === 'dark' ? 'bg-white text-black' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
+                >
+                  <Icons.Moon size={14} /> Dark
+                </button>
+              </div>
+            </div>
+
+            {/* Layout Mode */}
+            <div className="flex items-center justify-between pt-2 border-t border-white/10">
+              <div className="flex flex-col">
+                <span className="text-sm font-black">Layout</span>
+                <span className="text-[10px] opacity-50">Portrait stack • landscape splits keypad left</span>
+              </div>
+              <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
+                <button
+                  onClick={() => _updateSettings('layoutMode', 'portrait')}
+                  className={`px-3 py-1.5 flex items-center gap-1 transition-all ${(settings.layoutMode ?? 'portrait') === 'portrait' ? 'bg-black text-white' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
+                >
+                  <Icons.Portrait size={14} /> Portrait
+                </button>
+                <button
+                  onClick={() => _updateSettings('layoutMode', 'landscape')}
+                  className={`px-3 py-1.5 flex items-center gap-1 transition-all ${settings.layoutMode === 'landscape' ? 'bg-white text-black' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
+                >
+                  <Icons.Landscape size={14} /> Landscape
+                </button>
+              </div>
+            </div>
+
+            {/* Disable Calculator Card Toggle */}
+            <div className="flex items-center justify-between pt-2 border-t border-white/10">
+              <div className="flex flex-col">
+                <span className="text-sm font-black">Calculator on background</span>
+                <span className="text-[10px] opacity-50">Remove card • fill more space, larger buttons</span>
+              </div>
+              <button
+                onClick={() => _updateSettings('disableCalculatorCard', !settings.disableCalculatorCard)}
+                className={`w-12 h-7 rounded-full relative transition-all ${settings.disableCalculatorCard ? 'bg-emerald-500' : (isLight ? 'bg-zinc-300' : 'bg-white/20')}`}
+              >
+                <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-all ${settings.disableCalculatorCard ? 'left-6' : 'left-0.5'}`} />
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* BLE Printer Configuration Box */}
         <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
           <div className="flex items-center gap-3 mb-4">

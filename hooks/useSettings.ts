@@ -12,7 +12,9 @@ const DEFAULTS = {
   themeMode: 'light' as 'light' | 'dark',
   currency: 'GHS' as 'GHS' | 'USD' | 'EUR' | 'GBP' | 'JPY' | 'NGN',
   customWallpapers: WALLPAPER_SLIDES,
-  uiScale: 1
+  uiScale: 1,
+  disableCalculatorCard: false as boolean,
+  layoutMode: 'portrait' as 'portrait' | 'landscape',
 };
 
 export const useSettings = () => {
