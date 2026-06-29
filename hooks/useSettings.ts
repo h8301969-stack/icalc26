@@ -18,7 +18,10 @@ const DEFAULTS = {
 };
 
 export const useSettings = () => {
-  const [settings, setSettings] = useState<typeof DEFAULTS>(() => storage.get(SETTINGS_KEY, DEFAULTS));
+  const [settings, setSettings] = useState<typeof DEFAULTS>(() => ({
+    ...DEFAULTS,
+    ...storage.get(SETTINGS_KEY, DEFAULTS),
+  }));
 
   useEffect(() => {
     storage.set(SETTINGS_KEY, settings);

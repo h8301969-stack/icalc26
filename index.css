@@ -34,13 +34,8 @@
   }
 
   @keyframes live-breathe {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.04); }
-  }
-
-  @keyframes live-breathe-opacity {
-    0%, 100% { opacity: 0.055; }
-    50% { opacity: 0.1; }
+    0%, 100% { transform: scale(1); opacity: 0.055; }
+    50% { transform: scale(1.04); opacity: 0.09; }
   }
 
   @keyframes live-spring {
@@ -101,10 +96,6 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 
 .animate-live-breathe {
   animation: live-breathe 3.5s ease-in-out infinite;
-}
-
-.animate-live-breathe-opacity {
-  animation: live-breathe-opacity 3.5s ease-in-out infinite;
 }
 
 .animate-live-spring {

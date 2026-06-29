@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useLayoutEffect, useEffect } from 're
 import { safeEvaluate } from './utils/calculator';
 import CalcButton from './components/CalcButton';
 import HistoryPanel from './components/HistoryPanel';
+import InvoiceDragHandle from './components/InvoiceDragHandle';
 import SettingsPanel from './components/SettingsPanel';
 import SearchPanel from './components/SearchPanel';
 import BlurredBackground from './components/BlurredBackground';
@@ -31,6 +32,9 @@ const AppContent: React.FC = () => {
   } = useCalculator(saveResult, triggerHaptic);
 
   const displayResult = expression === '0' ? '0' : safeEvaluate(expression);
+  const showLiveResult = displayResult !== '0' && displayResult !== '0.00';
+  const liveResultSpringRef = useRef(displayResult);
+  const [liveResultSpringKey, setLiveResultSpringKey] = useState(0);
   const {
     invoiceName,
     setInvoiceName,
@@ -56,9 +60,25 @@ const AppContent: React.FC = () => {
   const { showPrompt, handleInstall, handleDismiss } = usePWAPrompt();
   const displayContentRef = useRef<HTMLPreElement>(null);
   const expressionScrollRef = useRef<HTMLDivElement>(null);
-  const displayFontSize = isLandscape ? 24 : 28;
+  const baseDisplayFontSize = isLandscape ? 32 : 36;
   const [maxCharsPerLine, setMaxCharsPerLine] = useState(12);
   const edgePadding = disableCard ? '8%' : '1rem';
+
+  const expressionLineCount = useMemo(() => {
+    if (expression === '0') return 1;
+    const chars = Math.max(6, maxCharsPerLine);
+    return (expression.match(new RegExp(`.{1,${chars}}`, 'g')) ?? [expression]).length;
+  }, [expression, maxCharsPerLine]);
+
+  const expressionFontScale = useMemo(() => {
+    const reductions = Math.min(Math.max(expressionLineCount - 1, 0), 2);
+    return 1 - 0.12 * reductions;
+  }, [expressionLineCount]);
+
+  const displayFontSize = baseDisplayFontSize * expressionFontScale;
+  const liveResultFontSize = displayFontSize * 1.5;
+  const expressionLineHeight = 1.25;
+  const visibleExpressionLines = 4;
 
   useLayoutEffect(() => {
     if (!displayContentRef.current) return;
@@ -78,6 +98,13 @@ const AppContent: React.FC = () => {
     if (el) el.scrollTop = el.scrollHeight;
   }, [expression]);
 
+  useEffect(() => {
+    if (showLiveResult && displayResult !== liveResultSpringRef.current) {
+      setLiveResultSpringKey((k) => k + 1);
+    }
+    liveResultSpringRef.current = displayResult;
+  }, [displayResult, showLiveResult]);
+
   // Keep movable blinker (cursor) within expression bounds
   useEffect(() => {
     if (cursorPos !== null && cursorPos > expression.length) {
@@ -93,7 +120,7 @@ const AppContent: React.FC = () => {
       // Use ~84% of width for text (8% margin each side)
       const availWidth = container.clientWidth * 0.84;
       // Rough char width for the font (non-mono but good avg for this style)
-      const approxCharWidth = displayFontSize * 0.58;
+      const approxCharWidth = baseDisplayFontSize * 0.58;
       const calculated = Math.max(8, Math.floor(availWidth / approxCharWidth));
       if (calculated !== maxCharsPerLine) setMaxCharsPerLine(calculated);
     };
@@ -108,7 +135,7 @@ const AppContent: React.FC = () => {
       ro.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [displayFontSize, isLandscape, disableCard]);
+  }, [baseDisplayFontSize, isLandscape, disableCard]);
   
   const isAnyModalOpen = isHistoryOpen || isPOSOpen || isSearchOpen;
   const isCardDimmed = isHistoryOpen || isPOSOpen;
@@ -229,7 +256,7 @@ const AppContent: React.FC = () => {
          {...gestures} onKeyDown={handleKeyDown}
          role="main"
          aria-label="Calculator Application">
-      <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} result={displayResult} isLandscape={isLandscape} />
+      <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} />
 
       {!isUnlocked && (
         <WallpaperOverlay isLight={isLight} accentColor={settings.accentColor} onEnter={() => { triggerHaptic(2); setIsUnlocked(true); }} />
@@ -245,7 +272,7 @@ const AppContent: React.FC = () => {
               : disableCard
                 ? 'w-[97%] h-[98%] sm:w-[95vw] sm:h-[96vh]'
                 : 'w-[94%] h-[96%] sm:w-[90vw] sm:h-[90vh] max-w-[430px] max-h-[932px] rounded-[26px]'
-          } ${disableCard ? (isLight ? 'bg-transparent' : 'bg-transparent') : (isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white')} backdrop-blur-(--glass-blur,24px) ${isCardDimmed ? 'blur-xl opacity-40 scale-[0.92]' : 'opacity-100'}`}
+          } ${disableCard ? 'bg-transparent' : `${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px)`} ${isCardDimmed ? 'blur-xl opacity-40 scale-[0.92]' : 'opacity-100'}`}
           style={{
             paddingTop: 'max(1rem, env(safe-area-inset-top))',
             paddingRight: 'max(1rem, env(safe-area-inset-right))',
@@ -262,7 +289,7 @@ const AppContent: React.FC = () => {
           )}
 
           <div
-            className="flex items-center pb-2 z-50 relative pointer-events-none shrink-0"
+            className="flex items-center z-50 relative pointer-events-none shrink-0"
             style={{
               paddingTop: 'max(0.2rem, calc(1rem - 1.5%))',
               paddingLeft: 'max(0.2rem, calc(1rem - 1%))',
@@ -351,7 +378,7 @@ const AppContent: React.FC = () => {
               </button>
             </div>
           </div>
-          
+
           {/* ── Calculator body (portrait stack / landscape split) ── */}
           <div className={`flex-1 flex min-h-0 overflow-hidden ${isLandscape ? 'flex-row' : 'flex-col'}`}>
             {isLandscape && (
@@ -362,8 +389,9 @@ const AppContent: React.FC = () => {
                   gap: disableCard ? 'max(3px, 1.2%)' : '8px',
                   paddingLeft: edgePadding,
                   paddingRight: disableCard ? '4%' : '0.75rem',
-                  paddingBottom: disableCard ? '7%' : '1rem',
+                  paddingBottom: disableCard ? '5%' : '0.5rem',
                   paddingTop: disableCard ? '2%' : '0.5rem',
+                  marginBottom: '-2%',
                 }}
               >
                 {keypad.map((btn, idx) => (
@@ -387,7 +415,9 @@ const AppContent: React.FC = () => {
               <div
                 className={`flex-1 flex flex-col items-center overflow-hidden min-h-0 transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
                 style={{
-                  paddingTop: isLandscape ? (disableCard ? '10%' : '14%') : (disableCard ? '8%' : '18%'),
+                  paddingTop: isLandscape
+                    ? (disableCard ? '4%' : showLiveResult ? '6%' : '14%')
+                    : (disableCard ? '4%' : showLiveResult ? '6%' : '18%'),
                   paddingLeft: edgePadding,
                   paddingRight: edgePadding,
                 }}
@@ -400,11 +430,41 @@ const AppContent: React.FC = () => {
                   </div>
                 )}
 
-                <div
+                <div className="relative w-full max-w-full shrink-0">
+                  {showLiveResult && (
+                    <div
+                      className={`absolute top-0 left-0 right-0 z-20 flex justify-center items-center pointer-events-none select-none transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+                      style={{
+                        height: `${liveResultFontSize * 1.1}px`,
+                        paddingLeft: '8%',
+                        paddingRight: '8%',
+                      }}
+                      aria-live="polite"
+                      aria-label={`Live result: ${displayResult}`}
+                    >
+                      <div
+                        key={liveResultSpringKey}
+                        className={`
+                          tracking-[-0.04em] leading-none truncate max-w-full
+                          ${isLight ? 'text-black/45' : 'text-white/55 live-result-dark'}
+                          animate-live-breathe animate-live-spring
+                        `}
+                        style={{
+                          fontWeight: 500,
+                          fontSize: `${liveResultFontSize}px`,
+                        }}
+                      >
+                        {displayResult}
+                      </div>
+                    </div>
+                  )}
+
+                  <div
                   ref={expressionScrollRef}
                   className="no-scrollbar w-full max-w-full text-center cursor-text select-none pointer-events-auto overflow-x-hidden"
                   style={{
-                    height: `${displayFontSize * 1.25 * (isLandscape ? 3 : 4)}px`,
+                    height: `${displayFontSize * expressionLineHeight * visibleExpressionLines}px`,
+                    marginTop: showLiveResult ? `${liveResultFontSize * 1.1}px` : 0,
                     overflowY: 'auto',
                     paddingBottom: '0.25rem',
                     paddingLeft: '8%',
@@ -428,6 +488,7 @@ const AppContent: React.FC = () => {
                       fontFamily: 'inherit',
                       fontSize: `${displayFontSize}px`,
                       fontWeight: 300,
+                      transition: 'font-size 0.2s ease-out',
                       letterSpacing: '-0.03em',
                       lineHeight: 1.25,
                       whiteSpace: 'pre-wrap',
@@ -460,6 +521,7 @@ const AppContent: React.FC = () => {
                     )}
                   </pre>
                 </div>
+                </div>
               </div>
 
               {/* Action toolbar */}
@@ -487,7 +549,8 @@ const AppContent: React.FC = () => {
                   gap: disableCard ? 'max(3px, 1.2%)' : '8px',
                   paddingLeft: edgePadding,
                   paddingRight: edgePadding,
-                  paddingBottom: disableCard ? '7%' : '1rem',
+                  paddingBottom: disableCard ? '5%' : '0.5rem',
+                  marginBottom: '-2%',
                 }}
               >
                 {keypad.map((btn, idx) => (
@@ -506,11 +569,25 @@ const AppContent: React.FC = () => {
               </div>
             )}
           </div>
-          <SettingsPanel 
+
+          <InvoiceDragHandle
+            isLight={isLight}
+            disabled={isAnyModalOpen}
+            onDragOpen={() => {
+              triggerHaptic();
+              setIsHistoryOpen(true);
+            }}
+          />
+
+          <SettingsPanel
             isOpen={isSettingsOpen} 
             onClose={() => setIsSettingsOpen(false)} 
             settings={settings} 
-            updateSettings={(k, v) => updateSettings({ [k]: v })} 
+            updateSettings={(k, v) => updateSettings({ [k]: v })}
+            onApplyAppearance={() => {
+              triggerHaptic();
+              setIsSettingsOpen(false);
+            }}
             cartItems={cartItems}
             runningTotal={parseFloat(runningTotal) || 0}
             invoiceName={invoiceName}

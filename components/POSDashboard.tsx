@@ -397,7 +397,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   <div className="p-3.5 rounded-2xl bg-emerald-500/20 text-emerald-500 shadow-inner">
                     <Icons.Requests size={26} />
                   </div>
-                  <div className="text-[10px] font-black px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 tracking-widest">FLOATING</div>
+                  <div className="text-[10px] font-black px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 tracking-widest">REQUESTS</div>
                 </div>
                 <div>
                   <div className="text-3xl font-black tracking-tighter">Requests</div>
@@ -416,7 +416,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   <div className="p-3.5 rounded-2xl bg-amber-500/20 text-amber-500 shadow-inner">
                     <Icons.Restock size={26} />
                   </div>
-                  <div className="text-[10px] font-black px-3 py-1 rounded-full bg-amber-500/10 text-amber-500 tracking-widest">QUICK</div>
+                  <div className="text-[10px] font-black px-3 py-1 rounded-full bg-amber-500/10 text-amber-500 tracking-widest">RESTOCKING</div>
                 </div>
                 <div>
                   <div className="text-3xl font-black tracking-tighter">Restocking</div>
@@ -919,85 +919,83 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         </div>
       )}
 
-      {/* REQUESTS ADD MORE POPUP (13:7 ratio) */}
+      {/* REQUESTS ADD MORE POPUP — matches invoice switcher motion + notepad shell */}
       {showAddRequestPopup && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center p-6" role="presentation">
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-2xl" onClick={closeRequestPopup} aria-hidden="true" />
+        <div className="fixed inset-0 z-[400] flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 pointer-events-auto" role="presentation">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-3xl opacity-100 transition-opacity duration-280"
+            onClick={closeRequestPopup}
+            aria-hidden="true"
+          />
 
-          {/* Popup container - 13:7 ratio */}
-          <div 
-            className={`relative w-full max-w-[520px] aspect-[13/7] rounded-3xl p-7 flex flex-col ${levitateClass} shadow-[0_60px_140px_rgba(0,0,0,0.6)]`}
-            role="dialog"
-            aria-modal="true"
+          <div
+            className="relative w-full max-w-[min(78vw,340px)] aspect-[6/13] opacity-100 scale-100 translate-y-0 transition-all duration-500"
           >
-            {/* Floating round X (close) */}
-            <button
-              onClick={closeRequestPopup}
-              className={`absolute -top-3 -right-3 w-10 h-10 rounded-full flex items-center justify-center shadow-xl active:scale-90 z-10 ${isLight ? 'bg-white text-black' : 'bg-[#111] text-white'}`}
-              aria-label="Close add request"
+            <div
+              className={`absolute inset-0 flex flex-col rounded-[32px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.55)] ${
+                isLight ? 'bg-[#faf8f2] text-zinc-900' : 'bg-[#171614] text-zinc-100'
+              }`}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="request-notepad-title"
             >
-              <Icons.X size={18} />
-            </button>
-
-            {/* Floating round ✓ (save) */}
-            <button
-              onClick={addNewRequest}
-              disabled={!newRequestName.trim()}
-              className={`absolute -bottom-3 -right-3 w-10 h-10 rounded-full flex items-center justify-center shadow-xl active:scale-90 z-10 disabled:opacity-40 transition-all ${isLight ? 'bg-emerald-500 text-white' : 'bg-emerald-500 text-white shadow-[0_0_14px_rgb(16,185,129)]'}`}
-              aria-label="Save new request"
-            >
-              ✓
-            </button>
-
-            <div className="flex-1 flex flex-col">
-              <div className="text-xs font-black tracking-[2px] opacity-40 mb-2">NEW REQUEST CARD</div>
-
-              {/* Text field to rename the card */}
-              <input
-                type="text"
-                value={newRequestName}
-                onChange={(e) => setNewRequestName(e.target.value)}
-                placeholder="Request card name (e.g. 'Urgent restock Q3')"
-                className={`w-full px-4 py-3 mb-4 rounded-2xl font-black text-xl outline-none ${isLight ? 'bg-zinc-100' : 'bg-white/10 text-white'}`}
-                autoFocus
-              />
-
-              {/* Search panel using calculator's exact search logic */}
-              <div className="flex-1">
-                <div className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-2">Search inventory (exact logic)</div>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={requestSearchQuery}
-                    onChange={(e) => setRequestSearchQuery(e.target.value)}
-                    placeholder="Search assets to link..."
-                    className={`w-full pl-9 pr-4 py-2.5 rounded-xl font-black text-sm outline-none ${isLight ? 'bg-white shadow-sm' : 'bg-white/10 text-white'}`}
-                  />
-                  <div className="absolute left-3 top-3 opacity-30">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                  </div>
+              <div
+                className="px-4 pt-4 pb-3 flex items-center gap-3 border-b shrink-0"
+                style={{
+                  borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
+                }}
+              >
+                <input
+                  id="request-notepad-title"
+                  type="text"
+                  value={newRequestName}
+                  onChange={(e) => setNewRequestName(e.target.value)}
+                  placeholder="Request name"
+                  className={`flex-1 min-w-0 bg-transparent outline-none text-lg font-black tracking-tight placeholder:opacity-30 ${
+                    isLight ? 'text-black' : 'text-white'
+                  }`}
+                  autoFocus
+                />
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={closeRequestPopup}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all ${
+                      isLight ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white'
+                    }`}
+                    aria-label="Close add request"
+                  >
+                    <Icons.X size={18} />
+                  </button>
+                  <button
+                    onClick={addNewRequest}
+                    disabled={!newRequestName.trim()}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all disabled:opacity-40 ${
+                      isLight ? 'bg-emerald-500 text-white' : 'bg-emerald-500 text-white shadow-[0_0_14px_rgb(16,185,129)]'
+                    }`}
+                    aria-label="Save new request"
+                  >
+                    <Icons.Check size={18} />
+                  </button>
                 </div>
+              </div>
 
-                {/* Search results (exact search behavior) */}
-                <div className={`mt-2 max-h-[92px] overflow-auto rounded-xl p-1 text-sm ${isLight ? 'bg-zinc-50' : 'bg-white/5'}`}>
-                  {popupSearchResults.length > 0 ? (
-                    popupSearchResults.map(item => (
-                      <button
-                        key={item.id}
-                        onClick={() => setNewRequestName(item.name)}
-                        className={`w-full text-left px-3 py-1.5 rounded-lg hover:bg-black/5 flex justify-between text-xs font-bold ${isLight ? '' : 'hover:bg-white/5'}`}
-                      >
-                        <span>{item.name}</span>
-                        <span className="opacity-40">¢{item.price}</span>
-                      </button>
-                    ))
-                  ) : requestSearchQuery ? (
-                    <div className="px-3 py-2 text-xs opacity-40">No matches</div>
-                  ) : (
-                    <div className="px-3 py-2 text-xs opacity-30">Type to search inventory items</div>
-                  )}
-                </div>
+              <div
+                className="flex-1 min-h-0 px-5 py-4"
+                style={{
+                  backgroundImage: isLight
+                    ? 'repeating-linear-gradient(transparent, transparent 27px, rgba(0,0,0,0.035) 27px, rgba(0,0,0,0.035) 28px)'
+                    : 'repeating-linear-gradient(transparent, transparent 27px, rgba(255,255,255,0.04) 27px, rgba(255,255,255,0.04) 28px)',
+                }}
+              >
+                <textarea
+                  value={requestSearchQuery}
+                  onChange={(e) => setRequestSearchQuery(e.target.value)}
+                  placeholder="Notes..."
+                  className={`w-full h-full resize-none bg-transparent outline-none text-base leading-7 font-medium placeholder:opacity-30 ${
+                    isLight ? 'text-zinc-800' : 'text-zinc-200'
+                  }`}
+                  style={{ lineHeight: '28px' }}
+                />
               </div>
             </div>
           </div>

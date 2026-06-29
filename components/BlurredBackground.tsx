@@ -1,23 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface BlurredBackgroundProps {
   isLight: boolean;
   wallpapers: { image: string }[];
   isUnlocked?: boolean;
-  result?: string;
-  isLandscape?: boolean;
 }
 
 const BlurredBackground: React.FC<BlurredBackgroundProps> = ({
   isLight,
   wallpapers,
   isUnlocked = true,
-  result,
-  isLandscape = false,
 }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [springKey, setSpringKey] = useState(0);
-  const prevResultRef = useRef(result);
 
   useEffect(() => {
     if (wallpapers.length <= 1) return;
@@ -26,15 +20,6 @@ const BlurredBackground: React.FC<BlurredBackgroundProps> = ({
     }, 6000);
     return () => clearInterval(timer);
   }, [wallpapers]);
-
-  useEffect(() => {
-    if (result && result !== prevResultRef.current && result !== '0' && result !== '0.00') {
-      setSpringKey((k) => k + 1);
-    }
-    prevResultRef.current = result;
-  }, [result]);
-
-  const showResult = result && result !== '0.00' && result !== '0';
 
   return (
     <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
@@ -60,30 +45,6 @@ const BlurredBackground: React.FC<BlurredBackgroundProps> = ({
       />
 
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/20" />
-
-      {showResult && (
-        <div
-          className={`absolute z-[1] flex justify-center pointer-events-none select-none ${
-            isLandscape
-              ? 'top-[12%] bottom-[8%] right-[4%] w-[42%] items-center'
-              : 'inset-x-0 bottom-[6%] items-end'
-          }`}
-        >
-          <div className="animate-live-breathe">
-            <div
-              key={springKey}
-              className={`
-                text-[clamp(72px,22vw,160px)] font-black tracking-[-0.04em] leading-none
-                ${isLight ? 'text-black animate-live-breathe-opacity' : 'text-white live-result-dark animate-live-breathe-opacity'}
-                animate-live-spring
-              `}
-              aria-hidden="true"
-            >
-              {result}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

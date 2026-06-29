@@ -14,6 +14,7 @@ interface SettingsPanelProps {
   onClose: () => void;
   settings: SettingsSlice;
   updateSettings: (key: string, value: unknown) => void;
+  onApplyAppearance?: () => void;
   cartItems?: CartLineItem[];
   runningTotal?: number;
   invoiceName?: string;
@@ -25,6 +26,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onClose, 
   settings,
   updateSettings: _updateSettings,
+  onApplyAppearance,
   cartItems = [],
   runningTotal = 0,
   invoiceName = 'Walk-in Customer',
@@ -50,6 +52,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
     onClose();
   }, [onClose]);
+
+  const applyAppearance = useCallback((key: string, value: unknown) => {
+    _updateSettings(key, value);
+    onApplyAppearance?.();
+  }, [_updateSettings, onApplyAppearance]);
+
+  const cycleLayoutMode = useCallback(() => {
+    const current = settings.layoutMode ?? 'portrait';
+    applyAppearance('layoutMode', current === 'portrait' ? 'landscape' : 'portrait');
+  }, [settings.layoutMode, applyAppearance]);
+
+  const cycleCalculatorBackground = useCallback(() => {
+    applyAppearance('disableCalculatorCard', !settings.disableCalculatorCard);
+  }, [settings.disableCalculatorCard, applyAppearance]);
 
   useEffect(() => {
     if (isOpen) {
@@ -186,33 +202,33 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <span className="text-sm font-black">Layout</span>
                 <span className="text-[10px] opacity-50">Portrait stack • landscape splits keypad left</span>
               </div>
-              <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
-                <button
-                  onClick={() => _updateSettings('layoutMode', 'portrait')}
-                  className={`px-3 py-1.5 flex items-center gap-1 transition-all ${(settings.layoutMode ?? 'portrait') === 'portrait' ? 'bg-black text-white' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
-                >
-                  <Icons.Portrait size={14} /> Portrait
-                </button>
-                <button
-                  onClick={() => _updateSettings('layoutMode', 'landscape')}
-                  className={`px-3 py-1.5 flex items-center gap-1 transition-all ${settings.layoutMode === 'landscape' ? 'bg-white text-black' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
-                >
-                  <Icons.Landscape size={14} /> Landscape
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={cycleLayoutMode}
+                className={`flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest px-4 py-1.5 items-center gap-1.5 transition-all ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
+                aria-label={`Layout: ${(settings.layoutMode ?? 'portrait') === 'portrait' ? 'Portrait' : 'Landscape'}. Tap to switch.`}
+              >
+                {(settings.layoutMode ?? 'portrait') === 'portrait' ? (
+                  <><Icons.Portrait size={14} /> Portrait</>
+                ) : (
+                  <><Icons.Landscape size={14} /> Landscape</>
+                )}
+              </button>
             </div>
 
-            {/* Disable Calculator Card Toggle */}
+            {/* Calculator on background */}
             <div className="flex items-center justify-between pt-2 border-t border-white/10">
               <div className="flex flex-col">
                 <span className="text-sm font-black">Calculator on background</span>
                 <span className="text-[10px] opacity-50">Remove card • fill more space, larger buttons</span>
               </div>
               <button
-                onClick={() => _updateSettings('disableCalculatorCard', !settings.disableCalculatorCard)}
-                className={`w-12 h-7 rounded-full relative transition-all ${settings.disableCalculatorCard ? 'bg-emerald-500' : (isLight ? 'bg-zinc-300' : 'bg-white/20')}`}
+                type="button"
+                onClick={cycleCalculatorBackground}
+                className={`flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest px-4 py-1.5 transition-all ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
+                aria-label={`Calculator display: ${settings.disableCalculatorCard ? 'On background' : 'On card'}. Tap to switch.`}
               >
-                <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-all ${settings.disableCalculatorCard ? 'left-6' : 'left-0.5'}`} />
+                {settings.disableCalculatorCard ? 'Background' : 'Card'}
               </button>
             </div>
           </div>
