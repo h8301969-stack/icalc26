@@ -163,7 +163,7 @@ const CalcButton: React.FC<CalcButtonProps> = ({
               }}
             />
           ))}
-          <span className="relative z-10 select-none">{label}</span>
+          <span className="font-num-medium relative z-10 select-none">{label}</span>
         </div>
         <style>{`
           @keyframes ripple {

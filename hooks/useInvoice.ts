@@ -107,10 +107,16 @@ export const useInvoice = (
     setPastLogs([]);
   };
 
-  const recordPrint = (name: string) => {
+  const recordPrint = (name: string, total: string, items: CartLineItem[]) => {
     setPrintLogs((prev) => [
       ...prev,
-      { id: `print-${Date.now()}`, invoiceName: name, timestamp: Date.now() },
+      {
+        id: `print-${Date.now()}`,
+        invoiceName: name,
+        timestamp: Date.now(),
+        total,
+        items,
+      },
     ]);
   };
 

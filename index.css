@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-sans: Candara, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-text: Candara, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-num: Montserrat, Candara, "Segoe UI", system-ui, sans-serif;
   
   --animate-ripple: ripple 0.6s linear;
   --animate-fade-in: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -56,10 +58,38 @@
 
 body {
   @apply bg-black text-white overflow-hidden;
-  font-family: var(--font-sans);
+  font-family: var(--font-text);
   height: 100dvh;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
+}
+
+.font-text {
+  font-family: var(--font-text);
+}
+
+.font-num,
+.tabular-nums {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.font-num-light {
+  font-family: var(--font-num);
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-num-medium {
+  font-family: var(--font-num);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-num-bold {
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 #root { height: 100%; }
@@ -117,6 +147,115 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 
 .animate-live-spring-loop {
   animation: live-spring 2.8s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+
+@keyframes unlock-logo-breathe {
+  0%, 100% {
+    transform: scale(1) translateY(0);
+  }
+  40% {
+    transform: scale(1.055) translateY(-2px);
+  }
+  65% {
+    transform: scale(1.08) translateY(-3px);
+  }
+}
+
+.unlock-logo-wrap {
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow:
+    0 0 22px rgba(10, 132, 255, 0.42),
+    0 10px 28px rgba(0, 0, 0, 0.48);
+  animation: unlock-logo-breathe 3.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+  transition: box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.unlock-logo-wrap:hover {
+  box-shadow:
+    0 0 30px rgba(255, 255, 255, 0.82),
+    0 0 52px rgba(255, 255, 255, 0.38),
+    0 14px 34px rgba(255, 255, 255, 0.22);
+}
+
+.unlock-brand-26 {
+  color: #0a84ff;
+  text-shadow:
+    0 0 6px rgba(255, 255, 255, 0.95),
+    0 0 14px rgba(255, 255, 255, 0.78),
+    0 0 28px rgba(255, 255, 255, 0.52),
+    0 0 42px rgba(255, 255, 255, 0.32);
+}
+
+/* Mobile dashboard — compact, uniform sizing (≈13px base, WhatsApp/X-like density) */
+@media (max-width: 768px) {
+  .pos-dashboard {
+    font-size: 13px;
+    line-height: 1.35;
+    font-family: var(--font-text);
+  }
+
+  .pos-dashboard .text-7xl,
+  .pos-dashboard .text-4xl,
+  .pos-dashboard .text-3xl,
+  .pos-dashboard .text-2xl,
+  .pos-dashboard .text-xl,
+  .pos-dashboard .text-lg,
+  .pos-dashboard .text-base {
+    font-family: var(--font-num) !important;
+  }
+
+  .pos-dashboard .font-black,
+  .pos-dashboard .font-bold {
+    font-weight: 600 !important;
+  }
+
+  .pos-dashboard .text-7xl { font-size: 1.5rem !important; line-height: 1.1 !important; }
+  .pos-dashboard .text-4xl { font-size: 1.125rem !important; line-height: 1.2 !important; }
+  .pos-dashboard .text-3xl { font-size: 1rem !important; line-height: 1.2 !important; }
+  .pos-dashboard .text-2xl { font-size: 0.9375rem !important; line-height: 1.25 !important; }
+  .pos-dashboard .text-xl { font-size: 0.875rem !important; }
+  .pos-dashboard .text-lg { font-size: 0.8125rem !important; }
+  .pos-dashboard .text-base { font-size: 0.8125rem !important; }
+  .pos-dashboard .text-sm { font-size: 0.75rem !important; }
+  .pos-dashboard .text-xs { font-size: 0.6875rem !important; }
+  .pos-dashboard [class*="text-\["] {
+    font-size: 11px !important;
+    letter-spacing: 0.08em !important;
+  }
+
+  .pos-dashboard svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  .pos-dashboard .h-8 { height: 1.75rem !important; }
+  .pos-dashboard .w-8 { width: 1.75rem !important; }
+  .pos-dashboard .h-10 { height: 2rem !important; }
+  .pos-dashboard .w-10 { width: 2rem !important; }
+
+  .pos-dashboard .rounded-2xl { border-radius: 12px !important; }
+  .pos-dashboard .rounded-xl { border-radius: 10px !important; }
+  .pos-dashboard .rounded-\[13px\] { border-radius: 8px !important; }
+  .pos-dashboard .rounded-full { border-radius: 9999px !important; }
+
+  .pos-dashboard .p-10 { padding: 0.875rem !important; }
+  .pos-dashboard .p-8 { padding: 0.875rem !important; }
+  .pos-dashboard .p-7 { padding: 0.75rem !important; }
+  .pos-dashboard .p-6 { padding: 0.75rem !important; }
+  .pos-dashboard .p-4 { padding: 0.5rem !important; }
+  .pos-dashboard .p-3\.5 { padding: 0.4375rem !important; }
+  .pos-dashboard .px-6 { padding-left: 0.875rem !important; padding-right: 0.875rem !important; }
+  .pos-dashboard .px-8 { padding-left: 0.875rem !important; padding-right: 0.875rem !important; }
+  .pos-dashboard .py-7 { padding-top: 0.625rem !important; padding-bottom: 0.625rem !important; }
+  .pos-dashboard .pt-8 { padding-top: 0.875rem !important; }
+  .pos-dashboard .pb-6 { padding-bottom: 0.625rem !important; }
+  .pos-dashboard .gap-6 { gap: 0.625rem !important; }
+  .pos-dashboard .gap-5 { gap: 0.5rem !important; }
+  .pos-dashboard .gap-4 { gap: 0.4375rem !important; }
+  .pos-dashboard .space-y-10 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.75rem !important; }
+  .pos-dashboard .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.5rem !important; }
+  .pos-dashboard .mb-8 { margin-bottom: 0.625rem !important; }
 }
 
 /* Portrait 6:13 cards — clamp to viewport height */

@@ -14,11 +14,14 @@ export interface SavedPrinter {
   lastConnected: number;
 }
 
+export type PrinterDeviceStatus = 'connected' | 'available' | 'saved';
+
 export interface KnownPrinter {
   saved: SavedPrinter;
   device: BluetoothDevice | null;
   isConnected: boolean;
   isAuthorized: boolean;
+  status: PrinterDeviceStatus;
 }
 
 export interface CartItem {
@@ -28,19 +31,54 @@ export interface CartItem {
   quantity: number;
 }
 
+export interface BluetoothSupportInfo {
+  supported: boolean;
+  secureContext: boolean;
+  message: string | null;
+}
+
 const PAIRED_PRINTERS_KEY = 'ble_paired_printers';
 
 const PRINTER_SERVICE_UUIDS = [
   '000018f0-0000-1000-8000-00805f9b34fb',
   '00001101-0000-1000-8000-00805f9b34fb',
   '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+  '0000fee7-0000-1000-8000-00805f9b34fb',
+  '0000ff00-0000-1000-8000-00805f9b34fb',
 ];
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export function getBluetoothSupport(): BluetoothSupportInfo {
+  const secureContext = typeof window !== 'undefined' && window.isSecureContext;
+  const hasApi = typeof navigator !== 'undefined' && !!navigator.bluetooth;
+
+  if (!hasApi) {
+    if (!secureContext) {
+      return {
+        supported: false,
+        secureContext: false,
+        message:
+          'Bluetooth requires a secure context. Use HTTPS or open via http://localhost / http://127.0.0.1 (not plain HTTP on a network IP).',
+      };
+    }
+    return {
+      supported: false,
+      secureContext: true,
+      message: 'Web Bluetooth is not available. Use Chrome or Edge on desktop/Android.',
+    };
+  }
+
+  return { supported: true, secureContext, message: null };
+}
 
 export class BLEPrinter {
   private device: BluetoothDevice | null = null;
   private server: BluetoothRemoteGATTServer | null = null;
   private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private onConnectionChange: (() => void) | null = null;
+  private disconnectHandler: ((event: Event) => void) | null = null;
+  private isBluetoothBusy = false;
 
   public paperWidth: '58mm' | '25mm' = '58mm';
   public isConnected: boolean = false;
@@ -64,6 +102,13 @@ export class BLEPrinter {
     return storage.get<SavedPrinter[]>(PAIRED_PRINTERS_KEY, []);
   }
 
+  private assertBluetoothAvailable() {
+    const support = getBluetoothSupport();
+    if (!support.supported) {
+      throw new Error(support.message ?? 'Web Bluetooth is not supported.');
+    }
+  }
+
   private savePairedDevice(device: BluetoothDevice) {
     const saved = this.getSavedPrinters().filter((p) => p.id !== device.id);
     saved.unshift({
@@ -72,7 +117,7 @@ export class BLEPrinter {
       paperWidth: this.paperWidth,
       lastConnected: Date.now(),
     });
-    storage.set(PAIRED_PRINTERS_KEY, saved.slice(0, 8));
+    storage.set(PAIRED_PRINTERS_KEY, saved.slice(0, 12));
   }
 
   private detectPaperWidth(deviceName: string) {
@@ -84,46 +129,139 @@ export class BLEPrinter {
     }
   }
 
+  private detachDisconnectHandler(device: BluetoothDevice) {
+    if (this.disconnectHandler) {
+      device.removeEventListener('gattserverdisconnected', this.disconnectHandler);
+      this.disconnectHandler = null;
+    }
+  }
+
   private attachDisconnectHandler(device: BluetoothDevice) {
-    device.addEventListener('gattserverdisconnected', () => {
+    if (this.device && this.device.id !== device.id) {
+      this.detachDisconnectHandler(this.device);
+    }
+
+    if (this.disconnectHandler) return;
+
+    this.disconnectHandler = () => {
       this.isConnected = false;
       this.server = null;
       this.characteristic = null;
       this.onConnectionChange?.();
-    });
+    };
+    device.addEventListener('gattserverdisconnected', this.disconnectHandler);
+  }
+
+  private async getAuthorizedDevices(): Promise<BluetoothDevice[]> {
+    if (!navigator.bluetooth?.getDevices) return [];
+    try {
+      return await navigator.bluetooth.getDevices();
+    } catch {
+      return [];
+    }
+  }
+
+  private async connectGattServer(device: BluetoothDevice, attempt = 1): Promise<BluetoothRemoteGATTServer> {
+    if (!device.gatt) {
+      throw new Error('Bluetooth GATT is not available on this device.');
+    }
+
+    if (this.device && this.device.id !== device.id) {
+      try {
+        if (this.device.gatt.connected) this.device.gatt.disconnect();
+      } catch {
+        // ignore stale disconnect errors
+      }
+      this.server = null;
+      this.characteristic = null;
+      this.isConnected = false;
+    }
+
+    try {
+      if (!device.gatt.connected) {
+        await device.gatt.connect();
+      }
+    } catch (err) {
+      if (attempt < 4) {
+        await delay(350 * attempt);
+        return this.connectGattServer(device, attempt + 1);
+      }
+      throw err instanceof Error ? err : new Error('Could not connect to GATT server.');
+    }
+
+    const server = device.gatt;
+    if (!server.connected) {
+      if (attempt < 4) {
+        await delay(350 * attempt);
+        return this.connectGattServer(device, attempt + 1);
+      }
+      throw new Error('GATT server disconnected. Turn the printer on and try again.');
+    }
+
+    return server;
+  }
+
+  private async rediscoverServices(
+    server: BluetoothRemoteGATTServer,
+    device: BluetoothDevice,
+    attempt = 1
+  ): Promise<BluetoothRemoteGATTCharacteristic> {
+    try {
+      if (!server.connected || !device.gatt?.connected) {
+        await this.connectGattServer(device);
+      }
+
+      let service: BluetoothRemoteGATTService | undefined;
+      try {
+        service = await server.getPrimaryService(this.serviceUUID);
+      } catch {
+        if (!server.connected) {
+          await device.gatt!.connect();
+        }
+        const services = await server.getPrimaryServices();
+        service =
+          services.find((s) =>
+            PRINTER_SERVICE_UUIDS.some((uuid) => s.uuid.toLowerCase() === uuid.toLowerCase())
+          ) ?? services[0];
+        if (!service) throw new Error('No compatible primary services found.');
+      }
+
+      const characteristics = await service.getCharacteristics();
+      const writeChar =
+        characteristics.find((c) => c.uuid.toLowerCase() === this.charUUID.toLowerCase()) ??
+        characteristics.find((c) => c.properties.write || c.properties.writeWithoutResponse);
+
+      if (!writeChar) {
+        throw new Error('No write characteristic found on printer.');
+      }
+
+      return writeChar;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '';
+      const retriable =
+        message.includes('disconnected') ||
+        message.includes('GATT') ||
+        message.includes('retrieve services');
+
+      if (retriable && attempt < 4) {
+        await delay(400 * attempt);
+        await this.connectGattServer(device, attempt);
+        return this.rediscoverServices(device.gatt!, device, attempt + 1);
+      }
+      throw err;
+    }
   }
 
   private async connectGATT(device: BluetoothDevice): Promise<string> {
-    if (!navigator.bluetooth) {
-      throw new Error('Web Bluetooth is not supported in this browser.');
-    }
+    this.assertBluetoothAvailable();
 
     this.device = device;
     this.detectPaperWidth(device.name || '');
     this.attachDisconnectHandler(device);
 
-    const server = await device.gatt?.connect();
-    if (!server) throw new Error('Could not connect to GATT Server');
+    const server = await this.connectGattServer(device);
     this.server = server;
-
-    let service: BluetoothRemoteGATTService | undefined;
-    try {
-      service = await server.getPrimaryService(this.serviceUUID);
-    } catch {
-      const services = await server.getPrimaryServices();
-      service = services[0];
-      if (!service) throw new Error('No compatible primary services found.');
-    }
-
-    const characteristics = await service.getCharacteristics();
-    const writeChar = characteristics.find(
-      (c) => c.properties.write || c.properties.writeWithoutResponse
-    );
-    if (!writeChar) {
-      throw new Error('No write characteristic found on printer.');
-    }
-
-    this.characteristic = writeChar;
+    this.characteristic = await this.rediscoverServices(server, device);
     this.isConnected = true;
     this.savePairedDevice(device);
     this.onConnectionChange?.();
@@ -132,51 +270,56 @@ export class BLEPrinter {
   }
 
   async getKnownPrinters(): Promise<KnownPrinter[]> {
-    const saved = this.getSavedPrinters();
-    let authorized: BluetoothDevice[] = [];
+    const saved = [...this.getSavedPrinters()];
+    const authorized = await this.getAuthorizedDevices();
+    const connectedId = this.getConnectedDeviceId();
+    const merged = new Map<string, SavedPrinter>();
 
-    if (navigator.bluetooth?.getDevices) {
-      try {
-        authorized = await navigator.bluetooth.getDevices();
-      } catch {
-        authorized = [];
-      }
+    for (const entry of saved) {
+      merged.set(entry.id, entry);
     }
 
-    const knownIds = new Set(saved.map((p) => p.id));
     for (const device of authorized) {
-      if (!knownIds.has(device.id)) {
-        saved.unshift({
-          id: device.id,
-          name: device.name || 'Thermal Printer',
-          paperWidth: this.paperWidth,
-          lastConnected: 0,
-        });
-        knownIds.add(device.id);
-      }
+      const existing = merged.get(device.id);
+      merged.set(device.id, {
+        id: device.id,
+        name: device.name || existing?.name || 'Thermal Printer',
+        paperWidth: existing?.paperWidth ?? this.paperWidth,
+        lastConnected: existing?.lastConnected ?? 0,
+      });
     }
 
-    return saved.map((entry) => {
+    const list = [...merged.values()].sort((a, b) => {
+      if (a.id === connectedId) return -1;
+      if (b.id === connectedId) return 1;
+      return b.lastConnected - a.lastConnected;
+    });
+
+    return list.map((entry) => {
       const device = authorized.find((d) => d.id === entry.id) ?? null;
+      const gattConnected = device?.gatt?.connected ?? false;
       const isConnected =
-        (this.device?.id === entry.id && this.isConnected) ||
-        (device?.gatt?.connected ?? false);
+        entry.id === connectedId && (this.isConnected || gattConnected);
+
+      let status: PrinterDeviceStatus = 'saved';
+      if (isConnected) status = 'connected';
+      else if (device) status = 'available';
+
       return {
         saved: entry,
         device,
         isConnected,
         isAuthorized: device !== null,
+        status,
       };
     });
   }
 
   async scanAndConnect(): Promise<string> {
     try {
-      if (!navigator.bluetooth) {
-        throw new Error('Web Bluetooth is not supported in this browser.');
-      }
+      this.assertBluetoothAvailable();
 
-      const device = await navigator.bluetooth.requestDevice({
+      const device = await navigator.bluetooth!.requestDevice({
         acceptAllDevices: true,
         optionalServices: PRINTER_SERVICE_UUIDS,
       });
@@ -189,34 +332,44 @@ export class BLEPrinter {
   }
 
   async connectToSavedPrinter(printerId: string): Promise<string> {
-    if (!navigator.bluetooth) {
-      throw new Error('Web Bluetooth is not supported in this browser.');
-    }
+    this.assertBluetoothAvailable();
 
-    let device: BluetoothDevice | undefined;
-
-    if (navigator.bluetooth.getDevices) {
-      const authorized = await navigator.bluetooth.getDevices();
-      device = authorized.find((d) => d.id === printerId);
-    }
+    const authorized = await this.getAuthorizedDevices();
+    let device = authorized.find((d) => d.id === printerId);
 
     if (!device) {
       const saved = this.getSavedPrinters().find((p) => p.id === printerId);
-      device = await navigator.bluetooth.requestDevice({
+      device = await navigator.bluetooth!.requestDevice({
         acceptAllDevices: true,
         optionalServices: PRINTER_SERVICE_UUIDS,
       });
-      if (device.id !== printerId && saved) {
-        // User picked a different device — still connect and save it
+
+      if (saved && device.id !== printerId) {
+        // User chose a different device in the picker — still connect it.
       }
     }
 
     return await this.connectGATT(device);
   }
 
+  async reconnectIfNeeded(): Promise<void> {
+    if (!this.device) {
+      throw new Error('Printer is not connected.');
+    }
+    if (this.device.gatt?.connected && this.characteristic) return;
+    await this.connectGATT(this.device);
+  }
+
   disconnect() {
-    if (this.device && this.device.gatt?.connected) {
-      this.device.gatt.disconnect();
+    if (this.device) {
+      this.detachDisconnectHandler(this.device);
+      try {
+        if (this.device.gatt?.connected) {
+          this.device.gatt.disconnect();
+        }
+      } catch {
+        // ignore
+      }
     }
     this.device = null;
     this.server = null;
@@ -225,10 +378,61 @@ export class BLEPrinter {
     this.onConnectionChange?.();
   }
 
-  async printInvoice(invoiceName: string, items: CartItem[], runningTotal: number, currency: string = '¢'): Promise<void> {
+  private async getWriteCharacteristic(): Promise<BluetoothRemoteGATTCharacteristic> {
+    if (!this.device) {
+      throw new Error('Printer is not connected.');
+    }
+    if (!this.device.gatt?.connected || !this.characteristic) {
+      await this.reconnectIfNeeded();
+    }
     if (!this.characteristic) {
       throw new Error('Printer is not connected.');
     }
+    return this.characteristic;
+  }
+
+  private async withBluetoothLock<T>(operation: () => Promise<T>): Promise<T | null> {
+    if (this.isBluetoothBusy) {
+      console.warn('Bluetooth is busy. Ignoring request.');
+      return null;
+    }
+
+    try {
+      this.isBluetoothBusy = true;
+      return await operation();
+    } catch (error) {
+      console.error('BLE Error:', error);
+      throw error;
+    } finally {
+      this.isBluetoothBusy = false;
+    }
+  }
+
+  private async writeDataInChunks(
+    characteristic: BluetoothRemoteGATTCharacteristic,
+    data: Uint8Array
+  ): Promise<void> {
+    const chunkSize = 20;
+    for (let i = 0; i < data.length; i += chunkSize) {
+      const chunk = data.slice(i, i + chunkSize);
+      if (characteristic.properties.write) {
+        await characteristic.writeValueWithResponse(chunk);
+      } else {
+        await characteristic.writeValue(chunk);
+      }
+      await delay(30);
+    }
+  }
+
+  async printInvoice(
+    invoiceName: string,
+    items: CartItem[],
+    runningTotal: number,
+    currency: string = '¢',
+    attendantName?: string
+  ): Promise<boolean> {
+    const result = await this.withBluetoothLock(async () => {
+    const characteristic = await this.getWriteCharacteristic();
 
     const encoder = new TextEncoder();
     const commands: number[] = [];
@@ -242,6 +446,9 @@ export class BLEPrinter {
     commands.push(0x1B, 0x45, 0x00);
     const subTitle = `iCalc Spatial POS Receipt\n`;
     commands.push(...Array.from(encoder.encode(subTitle)));
+    if (attendantName) {
+      commands.push(...Array.from(encoder.encode(`Served by: ${attendantName}\n`)));
+    }
     commands.push(...Array.from(encoder.encode(`Width: ${this.paperWidth} (Auto)\n`)));
     commands.push(...Array.from(encoder.encode('--------------------------------\n')));
 
@@ -272,27 +479,24 @@ export class BLEPrinter {
     commands.push(0x1D, 0x56, 0x42, 0x00);
 
     const data = new Uint8Array(commands);
-    const chunkSize = 20;
-    for (let i = 0; i < data.length; i += chunkSize) {
-      const chunk = data.slice(i, i + chunkSize);
-      await this.characteristic.writeValue(chunk);
-      await new Promise(resolve => setTimeout(resolve, 30));
-    }
+    await this.writeDataInChunks(characteristic, data);
+    });
+    return result !== null;
   }
 
   async printInvoiceImage(
     invoiceName: string,
     items: { name?: string; price: number; quantity: number }[],
     runningTotal: number,
-    currency: string = '¢'
-  ): Promise<void> {
-    if (!this.characteristic) {
-      throw new Error('Printer is not connected.');
-    }
+    currency: string = '¢',
+    attendantName?: string
+  ): Promise<boolean> {
+    const result = await this.withBluetoothLock(async () => {
+    const characteristic = await this.getWriteCharacteristic();
 
     const width = this.paperWidth === '25mm' ? 192 : 384;
     const itemHeight = 24;
-    const headerHeight = 90;
+    const headerHeight = attendantName ? 108 : 90;
     const footerHeight = 80;
     const height = headerHeight + (items.length * itemHeight) + footerHeight;
 
@@ -315,12 +519,17 @@ export class BLEPrinter {
 
     ctx.font = '12px "Courier New", monospace';
     ctx.fillText('iCalc Spatial POS Receipt', width / 2, 35);
-    ctx.fillText(`Width: ${this.paperWidth} (Image)`, width / 2, 50);
+    if (attendantName) {
+      ctx.fillText(`Served by: ${attendantName}`, width / 2, 50);
+      ctx.fillText(`Width: ${this.paperWidth} (Image)`, width / 2, 65);
+    } else {
+      ctx.fillText(`Width: ${this.paperWidth} (Image)`, width / 2, 50);
+    }
 
     ctx.font = '14px "Courier New", monospace';
-    ctx.fillText('-'.repeat(width === 192 ? 20 : 40), width / 2, 68);
+    ctx.fillText('-'.repeat(width === 192 ? 20 : 40), width / 2, attendantName ? 83 : 68);
 
-    let currentY = 85;
+    let currentY = attendantName ? 100 : 85;
     const maxTextLen = width === 192 ? 12 : 24;
 
     items.forEach(item => {
@@ -392,12 +601,9 @@ export class BLEPrinter {
     commands.push(0x1D, 0x56, 0x42, 0x00);
 
     const printData = new Uint8Array(commands);
-    const chunkSize = 20;
-    for (let i = 0; i < printData.length; i += chunkSize) {
-      const chunk = printData.slice(i, i + chunkSize);
-      await this.characteristic.writeValue(chunk);
-      await new Promise(resolve => setTimeout(resolve, 30));
-    }
+    await this.writeDataInChunks(characteristic, printData);
+    });
+    return result !== null;
   }
 }
 

@@ -401,7 +401,7 @@ const AppContent: React.FC = () => {
             >
               <div
                 className={`
-                  tracking-[-0.04em] leading-none truncate max-w-full
+                  font-num tracking-[-0.04em] leading-none truncate max-w-full
                   ${isLight ? 'live-result-green-light' : 'live-result-green'}
                   animate-live-glow-pulse animate-live-spring-loop
                 `}
@@ -409,9 +409,9 @@ const AppContent: React.FC = () => {
                   fontSize: `${liveResultFontSize}px`,
                 }}
               >
-                <span style={{ fontWeight: 700 }}>{liveResultParts.amount}</span>
+                <span className="font-num-bold">{liveResultParts.amount}</span>
                 {liveResultParts.suffix && (
-                  <span style={{ fontWeight: 300 }}>{liveResultParts.suffix}</span>
+                  <span className="font-num-light">{liveResultParts.suffix}</span>
                 )}
               </div>
             </div>
@@ -499,11 +499,9 @@ const AppContent: React.FC = () => {
                 >
                   <pre
                     ref={displayContentRef}
-                    className={`max-w-full overflow-hidden break-all ${isLight ? 'text-black' : 'text-white'}`}
+                    className={`font-num-light max-w-full overflow-hidden break-all ${isLight ? 'text-black' : 'text-white'}`}
                     style={{
-                      fontFamily: 'inherit',
                       fontSize: `${displayFontSize}px`,
-                      fontWeight: 300,
                       color: isLight ? '#000000' : '#ffffff',
                       transition: 'font-size 0.2s ease-out',
                       letterSpacing: '-0.03em',
@@ -647,9 +645,6 @@ const AppContent: React.FC = () => {
       <HistoryPanel
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
-        onClear={() => {
-          clearExpression();
-        }}
         isLight={isLight}
         currency={settings.currency}
         invoiceName={invoiceName}
@@ -657,6 +652,9 @@ const AppContent: React.FC = () => {
         cartItems={cartItems}
         actionLogs={actionLogs}
         runningTotal={runningTotal}
+        printLogs={printLogs}
+        profiles={settings.profiles ?? []}
+        activeProfileId={settings.activeProfileId ?? ''}
         onInvoicePrinted={recordPrint}
       />
       <POSDashboard

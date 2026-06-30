@@ -1,0 +1,220 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { Icons } from '../constants';
+import { printerInstance, KnownPrinter, getBluetoothSupport } from '../utils/bluetoothPrinter';
+
+interface PrinterConnectModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  isLight: boolean;
+  onPrint: () => Promise<void>;
+  isPrinting?: boolean;
+}
+
+const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
+  isOpen,
+  onClose,
+  isLight,
+  onPrint,
+  isPrinting = false,
+}) => {
+  const [printerName, setPrinterName] = useState<string | null>(null);
+  const [knownPrinters, setKnownPrinters] = useState<KnownPrinter[]>([]);
+  const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [bluetoothSupport, setBluetoothSupport] = useState(getBluetoothSupport);
+
+  const refreshPrinterState = useCallback(async () => {
+    const known = await printerInstance.getKnownPrinters();
+    setKnownPrinters(known);
+    if (printerInstance.isConnected) {
+      setPrinterName(printerInstance.getConnectedDeviceName());
+    } else {
+      setPrinterName(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setBluetoothSupport(getBluetoothSupport());
+    void refreshPrinterState();
+
+    const bt = navigator.bluetooth;
+    const onAvailability = () => setBluetoothSupport(getBluetoothSupport());
+    bt?.addEventListener?.('availabilitychanged', onAvailability);
+    return () => bt?.removeEventListener?.('availabilitychanged', onAvailability);
+  }, [isOpen, refreshPrinterState]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    printerInstance.setConnectionChangeListener(() => {
+      void refreshPrinterState();
+    });
+    return () => printerInstance.setConnectionChangeListener(null);
+  }, [isOpen, refreshPrinterState]);
+
+  const handleScanAndConnect = async () => {
+    setIsScanning(true);
+    setConnectingId(null);
+    setErrorMessage(null);
+    try {
+      const connectedName = await printerInstance.scanAndConnect();
+      setPrinterName(connectedName);
+      await refreshPrinterState();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to connect to printer.';
+      if (!message.toLowerCase().includes('cancel')) {
+        setErrorMessage(message);
+      }
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleConnectSaved = async (printerId: string) => {
+    setConnectingId(printerId);
+    setErrorMessage(null);
+    try {
+      const connectedName = await printerInstance.connectToSavedPrinter(printerId);
+      setPrinterName(connectedName);
+      await refreshPrinterState();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to reconnect to printer.';
+      if (!message.toLowerCase().includes('cancel')) {
+        setErrorMessage(message);
+      }
+    } finally {
+      setConnectingId(null);
+    }
+  };
+
+  const handlePrint = async () => {
+    setErrorMessage(null);
+    try {
+      await onPrint();
+      onClose();
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to print.');
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const panelBg = isLight ? 'bg-[#f2f2f7] text-zinc-900' : 'bg-[#1c1c1e] text-white';
+  const rowBg = isLight ? 'bg-white border-zinc-200' : 'bg-white/5 border-white/5';
+
+  return (
+    <div className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center p-4 pointer-events-auto">
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-md"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        className={`relative w-full max-w-sm rounded-[28px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.45)] ${panelBg}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="printer-connect-title"
+      >
+        <div className={`px-5 pt-5 pb-3 flex items-center justify-between border-b ${isLight ? 'border-black/6' : 'border-white/6'}`}>
+          <div className="flex items-center gap-2">
+            <span className="text-blue-500"><Icons.Printer size={20} /></span>
+            <h3 id="printer-connect-title" className="text-lg font-black tracking-tight">
+              Connect Printer
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className={`p-2 rounded-full ${isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+          >
+            <Icons.X size={22} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+          {bluetoothSupport.message && (
+            <div className={`p-3 rounded-lg text-xs font-bold leading-normal border ${
+              bluetoothSupport.supported
+                ? 'bg-blue-500/10 border-blue-500/20 text-blue-600'
+                : 'bg-amber-500/10 border-amber-500/20 text-amber-600'
+            }`}>
+              {bluetoothSupport.message}
+            </div>
+          )}
+
+          {printerName && (
+            <div className="flex items-center justify-between p-3 rounded-xl bg-green-500/10 border border-green-500/20">
+              <div className="min-w-0">
+                <span className="text-xs font-bold text-green-500 uppercase tracking-widest">Connected</span>
+                <div className="text-sm font-black truncate">{printerName}</div>
+              </div>
+              <span className="text-green-500 shrink-0"><Icons.Check size={18} /></span>
+            </div>
+          )}
+
+          {knownPrinters.filter((e) => e.status !== 'connected').map((entry) => {
+            const isBusy = connectingId === entry.saved.id;
+            return (
+              <div
+                key={entry.saved.id}
+                className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${rowBg}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-black truncate">{entry.saved.name}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest mt-0.5 opacity-50">
+                    {entry.status === 'available' ? 'Ready to connect' : 'Saved printer'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleConnectSaved(entry.saved.id)}
+                  disabled={isBusy || isScanning || !bluetoothSupport.supported}
+                  className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 shrink-0"
+                >
+                  {isBusy ? '...' : 'Connect'}
+                </button>
+              </div>
+            );
+          })}
+
+          {knownPrinters.length === 0 && (
+            <div className="p-4 rounded-xl text-center text-xs font-bold opacity-60">
+              No printers yet. Scan to pair your first device.
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleScanAndConnect}
+            disabled={isScanning || connectingId !== null || !bluetoothSupport.supported}
+            className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all"
+          >
+            {isScanning ? 'Searching...' : 'Scan & Connect Printer'}
+          </button>
+
+          {errorMessage && (
+            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold">
+              {errorMessage}
+            </div>
+          )}
+
+          {printerName && (
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={isPrinting}
+              className="w-full py-3.5 rounded-xl bg-green-500 text-white text-xs font-black uppercase tracking-widest shadow-[0_0_20px_rgba(48,209,88,0.4)] hover:bg-green-600 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+            >
+              <Icons.Check size={16} />
+              {isPrinting ? 'Printing...' : 'Print Invoice'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default PrinterConnectModal;

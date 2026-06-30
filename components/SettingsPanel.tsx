@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Icons } from '../constants';
-import { printerInstance, KnownPrinter } from '../utils/bluetoothPrinter';
+import { printerInstance, KnownPrinter, getBluetoothSupport } from '../utils/bluetoothPrinter';
 import { CartLineItem, UserProfile } from '../types';
 import ProfileAvatar from './ProfileAvatar';
 import ProfilePickerModal from './ProfilePickerModal';
@@ -23,7 +23,7 @@ interface SettingsPanelProps {
   runningTotal?: number;
   invoiceName?: string;
   currency?: string;
-  onInvoicePrinted?: (invoiceName: string) => void;
+  onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
@@ -49,6 +49,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [paperWidth, setPaperWidth] = useState<'58mm' | '25mm'>('58mm');
   const [printSuccess, setPrintSuccess] = useState(false);
+  const [bluetoothSupport, setBluetoothSupport] = useState(getBluetoothSupport);
   const [isProfilePickerOpen, setIsProfilePickerOpen] = useState(false);
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -115,7 +116,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+    setBluetoothSupport(getBluetoothSupport());
     void refreshPrinterState();
+
+    const bt = navigator.bluetooth;
+    const onAvailability = () => setBluetoothSupport(getBluetoothSupport());
+    bt?.addEventListener?.('availabilitychanged', onAvailability);
+    return () => bt?.removeEventListener?.('availabilitychanged', onAvailability);
   }, [isOpen, refreshPrinterState]);
 
   const handleScanAndConnect = async () => {
@@ -232,8 +239,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       const totalToPrint = cartItems.length > 0 ? runningTotal : 54.99;
       const titleToPrint = cartItems.length > 0 ? invoiceName : 'Demo Invoice';
 
-      await printerInstance.printInvoice(titleToPrint, itemsToPrint, totalToPrint, currency);
-      onInvoicePrinted?.(titleToPrint);
+      const activeProfile =
+        profiles.find((p) => p.id === settings.activeProfileId) ?? profiles[0] ?? null;
+      const ok = await printerInstance.printInvoice(
+        titleToPrint,
+        itemsToPrint,
+        totalToPrint,
+        currency,
+        activeProfile?.name
+      );
+      if (!ok) return;
+      onInvoicePrinted?.(titleToPrint, String(totalToPrint), itemsToPrint);
       setPrintSuccess(true);
       setTimeout(() => setPrintSuccess(false), 3000);
     } catch (err: unknown) {
@@ -248,7 +264,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       className={`
         absolute inset-0 z-50 flex flex-col transition-transform duration-300 cubic-bezier(0.16, 1, 0.3, 1)
         ${isOpen ? 'translate-x-0 pointer-events-auto' : 'translate-x-full pointer-events-none'}
-        ${isLight ? 'bg-[#f2f2f7] text-zinc-900' : 'bg-[#1c1c1e] text-white'}
+        ${isLight ? 'bg-[#f2f2f7] text-black' : 'bg-[#1c1c1e] text-white'}
       `}
       role="dialog"
       aria-modal={isOpen}
@@ -339,7 +355,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <div className="flex items-center justify-between pt-2 border-t border-white/10">
               <div className="flex flex-col">
                 <span className="text-sm font-black">Layout</span>
-                <span className="text-[10px] opacity-50">Portrait stack • landscape splits keypad left</span>
+                <span className={`text-[10px] ${isLight ? 'text-black' : 'text-white'}`}>Portrait stack • landscape splits keypad left</span>
               </div>
               <button
                 type="button"
@@ -359,7 +375,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <div className="flex items-center justify-between pt-2 border-t border-white/10">
               <div className="flex flex-col">
                 <span className="text-sm font-black">Calculator on background</span>
-                <span className="text-[10px] opacity-50">Remove card • fill more space, larger buttons</span>
+                <span className={`text-[10px] ${isLight ? 'text-black' : 'text-white'}`}>Remove card • fill more space, larger buttons</span>
               </div>
               <button
                 type="button"
@@ -381,11 +397,44 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
 
           <div className="space-y-4">
-            {printerName && connectedId && (
-              <div className="flex items-center justify-between p-3 rounded-xl bg-green-500/10 border border-green-500/20">
+            {bluetoothSupport.message && (
+              <div className={`p-3 rounded-lg text-xs font-bold leading-normal border ${
+                bluetoothSupport.supported
+                  ? 'bg-blue-500/10 border-blue-500/20 text-blue-600'
+                  : 'bg-amber-500/10 border-amber-500/20 text-amber-600'
+              }`}>
+                {bluetoothSupport.message}
+                {!bluetoothSupport.secureContext && (
+                  <span className="block mt-1 opacity-80">
+                    HTTP on localhost works; HTTPS works everywhere supported.
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2">
+              <span className={`text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black' : 'text-white'}`}>
+                {knownPrinters.length} device{knownPrinters.length !== 1 ? 's' : ''} known
+              </span>
+              <button
+                type="button"
+                onClick={() => void refreshPrinterState()}
+                className={`text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg active:scale-95 ${
+                  isLight ? 'bg-zinc-100 text-black' : 'bg-white/10 text-white'
+                }`}
+              >
+                Refresh
+              </button>
+            </div>
+
+            {knownPrinters.filter((e) => e.status === 'connected').map((entry) => (
+              <div
+                key={`connected-${entry.saved.id}`}
+                className="flex items-center justify-between p-3 rounded-xl bg-green-500/10 border border-green-500/20"
+              >
                 <div className="flex flex-col min-w-0">
                   <span className="text-xs font-bold text-green-500 uppercase tracking-widest">Connected</span>
-                  <span className="text-sm font-black truncate">{printerName}</span>
+                  <span className="text-sm font-black truncate">{entry.saved.name}</span>
                 </div>
                 <button
                   onClick={handleDisconnect}
@@ -394,53 +443,85 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   Disconnect
                 </button>
               </div>
-            )}
+            ))}
 
-            {knownPrinters.length > 0 && (
+            {knownPrinters.filter((e) => e.status === 'available').length > 0 && (
               <div className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-wider opacity-40">Paired &amp; previous devices</span>
-                {knownPrinters.map((entry) => {
-                  const isActive = entry.isConnected || entry.saved.id === connectedId;
+                <span className={`text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black' : 'text-white'}`}>
+                  Available (paired in browser)
+                </span>
+                {knownPrinters.filter((e) => e.status === 'available').map((entry) => {
                   const isBusy = connectingId === entry.saved.id;
                   return (
                     <div
-                      key={entry.saved.id}
+                      key={`available-${entry.saved.id}`}
                       className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${
-                        isActive
-                          ? 'bg-green-500/10 border-green-500/20'
-                          : isLight ? 'bg-zinc-50 border-zinc-200' : 'bg-white/5 border-white/5'
+                        isLight ? 'bg-zinc-50 border-zinc-200' : 'bg-white/5 border-white/5'
                       }`}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-black truncate">{entry.saved.name}</div>
-                        <div className="text-[10px] font-bold uppercase tracking-widest opacity-40 mt-0.5">
-                          {isActive
-                            ? 'Connected'
-                            : entry.isAuthorized
-                              ? 'Paired — tap to connect'
-                              : entry.saved.lastConnected > 0
-                                ? `Last used ${new Date(entry.saved.lastConnected).toLocaleDateString()}`
-                                : 'Previously used'}
+                        <div className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isLight ? 'text-black' : 'text-white'}`}>
+                          Ready to connect
                         </div>
                       </div>
-                      {!isActive && (
-                        <button
-                          onClick={() => handleConnectSaved(entry.saved.id)}
-                          disabled={isBusy || isScanning}
-                          className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 transition-all shrink-0"
-                        >
-                          {isBusy ? '...' : 'Connect'}
-                        </button>
-                      )}
+                      <button
+                        onClick={() => handleConnectSaved(entry.saved.id)}
+                        disabled={isBusy || isScanning || !bluetoothSupport.supported}
+                        className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 transition-all shrink-0"
+                      >
+                        {isBusy ? '...' : 'Connect'}
+                      </button>
                     </div>
                   );
                 })}
               </div>
             )}
 
+            {knownPrinters.filter((e) => e.status === 'saved').length > 0 && (
+              <div className="space-y-2">
+                <span className={`text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black' : 'text-white'}`}>
+                  Saved printers
+                </span>
+                {knownPrinters.filter((e) => e.status === 'saved').map((entry) => {
+                  const isBusy = connectingId === entry.saved.id;
+                  return (
+                    <div
+                      key={`saved-${entry.saved.id}`}
+                      className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${
+                        isLight ? 'bg-zinc-50 border-zinc-200' : 'bg-white/5 border-white/5'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-black truncate">{entry.saved.name}</div>
+                        <div className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isLight ? 'text-black' : 'text-white'}`}>
+                          {entry.saved.lastConnected > 0
+                            ? `Last used ${new Date(entry.saved.lastConnected).toLocaleDateString()}`
+                            : 'Tap connect to pair again'}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleConnectSaved(entry.saved.id)}
+                        disabled={isBusy || isScanning || !bluetoothSupport.supported}
+                        className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 transition-all shrink-0"
+                      >
+                        {isBusy ? '...' : 'Connect'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {knownPrinters.length === 0 && (
+              <div className={`p-4 rounded-xl text-center text-xs font-bold ${isLight ? 'text-black' : 'text-white'}`}>
+                No printers yet. Scan to pair your first device.
+              </div>
+            )}
+
             <button
               onClick={handleScanAndConnect}
-              disabled={isScanning || connectingId !== null}
+              disabled={isScanning || connectingId !== null || !bluetoothSupport.supported}
               className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all shadow-md"
             >
               {isScanning ? 'Searching...' : knownPrinters.length > 0 ? 'Scan for new printer' : 'Scan & Connect Printer'}
@@ -448,7 +529,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             {/* Paper Size selector (auto detects, allows manual correction) */}
             <div className="flex flex-col gap-2">
-              <span className="text-[10px] font-black uppercase tracking-wider opacity-40">Roll Specifications</span>
+              <span className={`text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black' : 'text-white'}`}>Roll Specifications</span>
               <div className="flex gap-2">
                 {(['58mm', '25mm'] as const).map(width => (
                   <button
@@ -457,7 +538,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     className={`flex-1 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider border transition-all active:scale-95 ${
                       paperWidth === width 
                         ? 'bg-blue-500 text-white border-blue-500' 
-                        : (isLight ? 'bg-zinc-100 border-zinc-200 text-zinc-900' : 'bg-white/5 border-white/5 text-white/60')
+                        : (isLight ? 'bg-zinc-100 border-zinc-200 text-black' : 'bg-white/5 border-white/5 text-white')
                     }`}
                   >
                     {width} {printerName && printerInstance.paperWidth === width && '(Auto)'}

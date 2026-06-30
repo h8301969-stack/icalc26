@@ -25,9 +25,10 @@ export default defineConfig(async () => {
     await getAvailablePort(allowedPorts);
     return {
       server: {
-        port:5173,
+        port: 5173,
         strictPort: true,
-        host: '127.0.0.1',
+        // localhost HTTP is a secure context for Web Bluetooth; use https in production.
+        host: true,
       },
       plugins: [react()],
       // No env injection needed — all features are client-side only.

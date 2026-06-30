@@ -31,7 +31,7 @@ interface POSDashboardProps {
     currency?: string;
   };
   updateSettings: (keyOrPatch: string | Record<string, unknown>, value?: unknown) => void;
-  onInvoicePrinted?: (invoiceName: string) => void;
+  onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
 }
 
 type SortOption = 'a-z' | 'high-stock' | 'low-stock';
@@ -159,44 +159,31 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     }
   }, [isOpen]);
 
-  const invoiceCards = useMemo<InvoiceCard[]>(() => {
-    const grouped = new Map<string, InvoiceActionLog[]>();
-    for (const log of invoiceActionLogs) {
-      if (!grouped.has(log.invoiceName)) grouped.set(log.invoiceName, []);
-      grouped.get(log.invoiceName)!.push(log);
+  const paidInvoiceCards = useMemo(() => {
+    const latestPrintByInvoice = new Map<string, InvoicePrintLog>();
+    for (const log of printLogs) {
+      latestPrintByInvoice.set(log.invoiceName, log);
     }
 
-    const built: InvoiceCard[] = [];
-    const pastNames = [...grouped.keys()].filter((k) => k !== invoiceName);
-
-    for (const name of pastNames) {
-      const logs = grouped.get(name)!;
-      built.push({
-        id: `past-${name}`,
-        name,
-        items: logs.map((l) => ({ price: l.price, quantity: l.quantity, name: l.itemName })),
-        logs,
-        total: logs.reduce((s, l) => s + l.price * l.quantity, 0).toFixed(2),
-        isCurrent: false,
-        latestTimestamp: Math.max(...logs.map((l) => l.timestamp)),
-      });
-    }
-
-    const currentLogs = grouped.get(invoiceName) ?? [];
-    built.unshift({
-      id: 'current',
-      name: invoiceName,
-      items: cartItems,
-      logs: currentLogs,
-      total: runningTotal,
-      isCurrent: true,
-      latestTimestamp: currentLogs.length > 0
-        ? Math.max(...currentLogs.map((l) => l.timestamp))
-        : Date.now(),
-    });
-
-    return built;
-  }, [invoiceActionLogs, cartItems, invoiceName, runningTotal]);
+    return [...latestPrintByInvoice.values()]
+      .map((log) => {
+        const logs = invoiceActionLogs.filter((l) => l.invoiceName === log.invoiceName);
+        const items = log.items?.length
+          ? log.items
+          : logs.map((l) => ({ price: l.price, quantity: l.quantity, name: l.itemName }));
+        const total = log.total ?? logs.reduce((s, l) => s + l.price * l.quantity, 0).toFixed(2);
+        return {
+          id: `paid-${log.invoiceName}`,
+          name: log.invoiceName,
+          items,
+          logs,
+          total,
+          isCurrent: log.invoiceName === invoiceName,
+          latestTimestamp: log.timestamp,
+        };
+      })
+      .filter((card) => card.items.length > 0);
+  }, [printLogs, invoiceActionLogs, invoiceName]);
 
   const todayStart = useMemo(
     () => new Date(new Date().setHours(0, 0, 0, 0)).getTime(),
@@ -209,11 +196,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   );
 
   const stats = useMemo(() => {
-    const invoiceMonthlyRev = invoiceCards
-      .filter((c) => c.latestTimestamp >= monthStart && c.items.length > 0)
+    const invoiceMonthlyRev = paidInvoiceCards
+      .filter((c) => c.latestTimestamp >= monthStart)
       .reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0);
-    const invoiceDailyRev = invoiceCards
-      .filter((c) => c.latestTimestamp >= todayStart && c.items.length > 0)
+    const invoiceDailyRev = paidInvoiceCards
+      .filter((c) => c.latestTimestamp >= todayStart)
       .reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0);
     const purchaseMonthlyRev = purchases
       .filter((p) => p.timestamp >= monthStart)
@@ -224,15 +211,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
     const monthlyRev = invoiceMonthlyRev + purchaseMonthlyRev;
     const dailyRev = invoiceDailyRev + purchaseDailyRev;
-    const totalRev = invoiceCards.reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0)
+    const totalRev = paidInvoiceCards.reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0)
       + purchases.reduce((acc, p) => acc + p.total, 0);
-    const invoicesToday = invoiceCards.filter(
-      (c) => c.latestTimestamp >= todayStart && c.items.length > 0
+    const invoicesToday = paidInvoiceCards.filter(
+      (c) => c.latestTimestamp >= todayStart
     ).length;
-    const customerCount = new Set([
-      ...invoiceActionLogs.map((l) => l.invoiceName),
-      invoiceName,
-    ]).size;
+    const customerCount = paidInvoiceCards.length;
     const avgPerCustomer = customerCount > 0 ? totalRev / customerCount : 0;
     const stockLevel = items.length > 0
       ? Math.round(items.reduce((acc, item) => acc + (item.stock / item.threshold) * 100, 0) / items.length)
@@ -240,13 +224,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     const criticalItems = items.filter((i) => i.stock < i.threshold).length;
 
     return { totalRev, monthlyRev, dailyRev, avgPerCustomer, invoicesToday, stockLevel, criticalItems };
-  }, [invoiceCards, purchases, items, monthStart, todayStart, invoiceActionLogs, invoiceName]);
+  }, [paidInvoiceCards, purchases, items, monthStart, todayStart]);
 
   const invoicesTodayList = useMemo(() => {
-    return invoiceCards
-      .filter((card) => card.latestTimestamp >= todayStart && card.items.length > 0)
+    return paidInvoiceCards
+      .filter((card) => card.latestTimestamp >= todayStart)
       .sort((a, b) => b.latestTimestamp - a.latestTimestamp);
-  }, [invoiceCards, todayStart]);
+  }, [paidInvoiceCards, todayStart]);
 
   const customerPrintCounts = useMemo(() => {
     const printCounts = new Map<string, number>();
@@ -277,8 +261,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       kind: 'invoice' | 'purchase';
     }> = [];
 
-    invoiceCards
-      .filter((c) => c.latestTimestamp >= monthStart && c.items.length > 0)
+    paidInvoiceCards
+      .filter((c) => c.latestTimestamp >= monthStart)
       .forEach((c) => {
         rows.push({
           id: c.id,
@@ -304,7 +288,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       });
 
     return rows.sort((a, b) => b.timestamp - a.timestamp);
-  }, [invoiceCards, purchases, monthStart]);
+  }, [paidInvoiceCards, purchases, monthStart]);
 
   const dailySalesList = useMemo(() => {
     const rows: Array<{
@@ -316,8 +300,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       kind: 'invoice' | 'purchase';
     }> = [];
 
-    invoiceCards
-      .filter((c) => c.latestTimestamp >= todayStart && c.items.length > 0)
+    paidInvoiceCards
+      .filter((c) => c.latestTimestamp >= todayStart)
       .forEach((c) => {
         rows.push({
           id: c.id,
@@ -343,7 +327,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       });
 
     return rows.sort((a, b) => b.timestamp - a.timestamp);
-  }, [invoiceCards, purchases, todayStart]);
+  }, [paidInvoiceCards, purchases, todayStart]);
 
   const hubCollapsed = !inventoryExpanded && !purchasesExpanded && !requestsExpanded
     && !restockExpanded && !avgCustomerExpanded && !invoicesTodayExpanded
@@ -366,22 +350,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   const systemLogs = useMemo(() => {
     const dayAgo = Date.now() - 86400000;
-    const inventoryLogs = items
+    return items
       .flatMap(item => item.activities.map(log => ({ ...log, itemName: item.name })))
-      .filter(log => log.timestamp >= dayAgo);
-
-    const liveInvoiceLogs = invoiceActionLogs.map((log) => ({
-      id: log.id,
-      type: 'cart-add' as ActivityLogEntry['type'],
-      action: log.message,
-      itemName: log.itemName ?? `${log.price} ghs`,
-      time: 'Live',
-      timestamp: log.timestamp,
-    }));
-
-    return [...liveInvoiceLogs, ...inventoryLogs]
+      .filter(log => log.timestamp >= dayAgo)
       .sort((a, b) => b.timestamp - a.timestamp);
-  }, [items, invoiceActionLogs]);
+  }, [items]);
 
   const filteredInventory = useMemo(() => {
     let result = [...items];
@@ -510,11 +483,17 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     ? 'bg-white shadow-[0_16px_36px_rgba(0,0,0,0.12)] hover:shadow-[0_24px_48px_rgba(0,0,0,0.16)] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)' 
     : 'bg-[#151518] shadow-[0_0_20px_rgba(255,255,255,0.18)] hover:shadow-[0_0_35px_rgba(255,255,255,0.35)] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)';
 
-  const textColorClass = isLight ? 'text-zinc-900' : 'text-zinc-100';
+  const textColorClass = isLight ? 'text-black' : 'text-white';
+  const mutedTextClass = isLight ? 'text-black' : 'text-white';
+  const statDetailCardClass = isLight
+    ? 'bg-zinc-900 text-white shadow-[0_16px_36px_rgba(0,0,0,0.28)]'
+    : 'bg-white text-white shadow-[0_0_28px_rgba(255,255,255,0.45)]';
+  const statDetailTextClass = 'text-white';
+  const statDetailBorderClass = isLight ? 'border-white/15' : 'border-white/20';
 
   return (
     <div className={`fixed inset-0 z-200 flex flex-col ${isOpen ? 'opacity-100 pointer-events-auto animate-insight-pop' : 'opacity-0 pointer-events-none transition-opacity duration-300'}`}>
-      <div className={`relative w-full h-full flex flex-col transition-all duration-200 backdrop-blur-[44px] ${isLight ? 'bg-white/95' : 'bg-[#050505]/95'} ${(isAddingItem || isRestocking || showAddRequestPopup) ? 'blur-2xl scale-[0.98]' : ''}`}>
+      <div className={`pos-dashboard relative w-full h-full flex flex-col transition-all duration-200 backdrop-blur-[44px] ${isLight ? 'bg-white/95' : 'bg-[#050505]/95'} ${(isAddingItem || isRestocking || showAddRequestPopup) ? 'blur-2xl scale-[0.98]' : ''}`}>
         
         {/* DASHBOARD HEADER PORTION WITH THEME-INVERTED FIXED BAR */}
         {hubCollapsed && (
@@ -532,7 +511,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     <h2 className="text-4xl font-black tracking-tighter">Vision Hub</h2>
                     
                     <div className="mt-4 flex items-center gap-3">
-                      <div className="text-xl font-black tracking-tight leading-none">{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                      <div className="font-num-medium text-xl tracking-tight leading-none">{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                       <div className={`w-px h-4 ${isLight ? 'bg-white/20' : 'bg-zinc-900/20'}`} />
                       <div className="text-[9px] font-bold opacity-30 uppercase tracking-[0.2em]">Live Session</div>
                     </div>
@@ -590,7 +569,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     tabIndex={card.onClick ? 0 : undefined}
                     onKeyDown={card.onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.onClick!(); } } : undefined}
                   >
-                    <p className="text-[9px] font-black uppercase tracking-[0.3em] opacity-30 mb-2">{card.label}</p>
+                    <p className={`text-[9px] font-black uppercase tracking-[0.3em] mb-2 ${mutedTextClass}`}>{card.label}</p>
                     <p className="text-2xl font-black tracking-tight" style={{ color: accentColor }}>{card.val}</p>
                   </div>
                 ))}
@@ -635,8 +614,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 </div>
                 <div>
                   <div className="text-3xl font-black tracking-tighter">Requests</div>
-                  <p className="text-[10px] font-black opacity-40 mt-0.5">Pending • Delivered • Out of Stock</p>
-                  <div className="mt-2 text-xs font-black opacity-50">
+                  <p className={`text-[10px] font-black mt-0.5 ${mutedTextClass}`}>Pending • Delivered • Out of Stock</p>
+                  <div className={`mt-2 text-xs font-black ${mutedTextClass}`}>
                     {requests.filter(r => r.status === 'pending').length} active
                   </div>
                 </div>
@@ -654,8 +633,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 </div>
                 <div>
                   <div className="text-3xl font-black tracking-tighter">Restocking</div>
-                  <p className="text-[10px] font-black opacity-40 mt-0.5">Low stock replenishment</p>
-                  <div className="mt-2 text-xs font-black opacity-50">
+                  <p className={`text-[10px] font-black mt-0.5 ${mutedTextClass}`}>Low stock replenishment</p>
+                  <div className={`mt-2 text-xs font-black ${mutedTextClass}`}>
                     {items.filter(i => i.stock < i.threshold).length} items need attention
                   </div>
                 </div>
@@ -666,7 +645,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <div className="flex justify-between items-center mb-8">
                    <div className="space-y-1">
                       <h3 className={`text-2xl font-black tracking-tighter ${textColorClass}`}>Action Logs</h3>
-                      <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-30">Neural Ledger • 24h</p>
+                      <p className={`text-[10px] font-black uppercase tracking-[0.3em] ${mutedTextClass}`}>Neural Ledger • 24h</p>
                    </div>
                    <div className="p-3.5 rounded-full bg-blue-500/10 text-blue-500 shadow-xl"><Icons.Trends size={24} /></div>
                 </div>
@@ -678,15 +657,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                           {getLogIcon(log.type)}
                           <div className="flex flex-col min-w-0">
                             <span className={`text-[14px] font-black tracking-tight truncate ${textColorClass}`}>{log.action}</span>
-                            <span className={`text-[9px] font-bold uppercase tracking-[0.2em] opacity-30 truncate ${textColorClass}`}>{log.itemName}</span>
+                            <span className={`text-[9px] font-bold uppercase tracking-[0.2em] truncate ${mutedTextClass}`}>{log.itemName}</span>
                           </div>
                         </div>
-                        <span className={`text-[9px] font-black uppercase opacity-20 whitespace-nowrap ${textColorClass}`}>{log.time}</span>
+                        <span className={`text-[9px] font-black uppercase whitespace-nowrap ${mutedTextClass}`}>{log.time}</span>
                       </div>
                     ))
                   ) : (
                     <div className="py-16 text-center space-y-3">
-                       <p className={`text-[11px] font-black uppercase tracking-[0.4em] opacity-10 ${textColorClass}`}>No Log Data</p>
+                       <p className={`text-[11px] font-black uppercase tracking-[0.4em] ${mutedTextClass}`}>No Log Data</p>
                     </div>
                   )}
                 </div>
@@ -694,42 +673,44 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
             </div>
           ) : monthlyRevExpanded ? (
-            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Monthly revenue">
+            <div className={`animate-fade-in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Monthly revenue">
               <button
                 onClick={() => setMonthlyRevExpanded(false)}
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Monthly Revenue</h3>
-              <p className="text-sm opacity-50 px-1 -mt-4">{formatCurrency(stats.monthlyRev.toFixed(2))} this month • sorted by date</p>
-              <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
+              <p className={`text-sm px-1 -mt-4 ${mutedTextClass}`}>{formatCurrency(stats.monthlyRev.toFixed(2))} this month • sorted by date</p>
+              <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
+                {!isLight && <div className="absolute inset-0 bg-zinc-900/88 pointer-events-none" aria-hidden="true" />}
+                <div className="relative">
                 {monthlyRevList.length > 0 ? (
                   monthlyRevList.map((row, idx) => (
                     <div
                       key={row.id}
-                      className={`px-8 py-7 ${idx !== monthlyRevList.length - 1 ? 'border-b border-white/10' : ''}`}
+                      className={`px-8 py-7 ${idx !== monthlyRevList.length - 1 ? `border-b ${statDetailBorderClass}` : ''}`}
                     >
                       <div className="flex items-center justify-between gap-3 mb-3">
                         <div className="min-w-0">
-                          <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50 mb-0.5">
+                          <div className={`text-[10px] font-black uppercase tracking-[0.2em] mb-0.5 ${statDetailTextClass}`}>
                             {row.kind === 'invoice' ? 'Invoice' : 'Sale'}
                           </div>
-                          <div className={`text-lg font-black tracking-tight truncate ${textColorClass}`}>{row.name}</div>
+                          <div className={`text-lg font-black tracking-tight truncate ${statDetailTextClass}`}>{row.name}</div>
                         </div>
                         <div className="text-right shrink-0">
                           <div className="text-base font-black" style={{ color: accentColor }}>{formatCurrency(row.total.toFixed(2))}</div>
                         </div>
                       </div>
-                      <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 mb-3">
+                      <div className={`text-[10px] font-black uppercase tracking-[0.2em] mb-3 ${statDetailTextClass}`}>
                         {new Date(row.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </div>
                       <div className="space-y-1.5">
                         {row.items.map((item, i) => (
-                          <div key={i} className={`flex items-center justify-between text-sm font-semibold opacity-80 ${textColorClass}`}>
+                          <div key={i} className={`flex items-center justify-between text-sm font-semibold ${statDetailTextClass}`}>
                             <span>{formatPosLineItemDisplay(item, currency)}</span>
-                            <span className="opacity-55 text-xs">{currency} {(item.price * item.quantity).toFixed(2)}</span>
+                            <span className="text-xs">{currency} {(item.price * item.quantity).toFixed(2)}</span>
                           </div>
                         ))}
                       </div>
@@ -737,48 +718,51 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className="text-[11px] font-black uppercase tracking-[2px] opacity-30">No revenue this month</p>
+                    <p className={`text-[11px] font-black uppercase tracking-[2px] ${statDetailTextClass}`}>No revenue this month</p>
                   </div>
                 )}
+                </div>
               </div>
             </div>
           ) : dailySalesExpanded ? (
-            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Daily sales">
+            <div className={`animate-fade-in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Daily sales">
               <button
                 onClick={() => setDailySalesExpanded(false)}
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Daily Sales</h3>
-              <p className="text-sm opacity-50 px-1 -mt-4">{formatCurrency(stats.dailyRev.toFixed(2))} today • sorted by time</p>
-              <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
+              <p className={`text-sm px-1 -mt-4 ${mutedTextClass}`}>{formatCurrency(stats.dailyRev.toFixed(2))} today • sorted by time</p>
+              <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
+                {!isLight && <div className="absolute inset-0 bg-zinc-900/88 pointer-events-none" aria-hidden="true" />}
+                <div className="relative">
                 {dailySalesList.length > 0 ? (
                   dailySalesList.map((row, idx) => (
                     <div
                       key={row.id}
-                      className={`px-8 py-7 ${idx !== dailySalesList.length - 1 ? 'border-b border-white/10' : ''}`}
+                      className={`px-8 py-7 ${idx !== dailySalesList.length - 1 ? `border-b ${statDetailBorderClass}` : ''}`}
                     >
                       <div className="flex items-center justify-between gap-3 mb-3">
                         <div className="min-w-0">
-                          <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50 mb-0.5">
+                          <div className={`text-[10px] font-black uppercase tracking-[0.2em] mb-0.5 ${statDetailTextClass}`}>
                             {row.kind === 'invoice' ? 'Invoice' : 'Sale'}
                           </div>
-                          <div className={`text-lg font-black tracking-tight truncate ${textColorClass}`}>{row.name}</div>
+                          <div className={`text-lg font-black tracking-tight truncate ${statDetailTextClass}`}>{row.name}</div>
                         </div>
                         <div className="text-right shrink-0">
                           <div className="text-base font-black" style={{ color: accentColor }}>{formatCurrency(row.total.toFixed(2))}</div>
                         </div>
                       </div>
-                      <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 mb-3">
+                      <div className={`text-[10px] font-black uppercase tracking-[0.2em] mb-3 ${statDetailTextClass}`}>
                         {new Date(row.timestamp).toLocaleString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
                       <div className="space-y-1.5">
                         {row.items.map((item, i) => (
-                          <div key={i} className={`flex items-center justify-between text-sm font-semibold opacity-80 ${textColorClass}`}>
+                          <div key={i} className={`flex items-center justify-between text-sm font-semibold ${statDetailTextClass}`}>
                             <span>{formatPosLineItemDisplay(item, currency)}</span>
-                            <span className="opacity-55 text-xs">{currency} {(item.price * item.quantity).toFixed(2)}</span>
+                            <span className="text-xs">{currency} {(item.price * item.quantity).toFixed(2)}</span>
                           </div>
                         ))}
                       </div>
@@ -786,83 +770,89 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className="text-[11px] font-black uppercase tracking-[2px] opacity-30">No sales today</p>
+                    <p className={`text-[11px] font-black uppercase tracking-[2px] ${statDetailTextClass}`}>No sales today</p>
                   </div>
                 )}
+                </div>
               </div>
             </div>
           ) : avgCustomerExpanded ? (
-            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Customer print history">
+            <div className={`animate-fade-in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Customer print history">
               <button
                 onClick={() => setAvgCustomerExpanded(false)}
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Customers</h3>
-              <p className="text-sm opacity-50 px-1 -mt-4">Invoice names • print count</p>
-              <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
+              <p className={`text-sm px-1 -mt-4 ${mutedTextClass}`}>Invoice names • print count</p>
+              <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
+                {!isLight && <div className="absolute inset-0 bg-zinc-900/88 pointer-events-none" aria-hidden="true" />}
+                <div className="relative">
                 {customerPrintCounts.length > 0 ? (
                   customerPrintCounts.map((customer, idx) => (
                     <div
                       key={customer.name}
-                      className={`px-8 py-7 flex items-center justify-between gap-4 ${idx !== customerPrintCounts.length - 1 ? 'border-b border-white/10' : ''}`}
+                      className={`px-8 py-7 flex items-center justify-between gap-4 ${idx !== customerPrintCounts.length - 1 ? `border-b ${statDetailBorderClass}` : ''}`}
                     >
-                      <div className={`font-black tracking-tight text-lg ${textColorClass}`}>{customer.name}</div>
+                      <div className={`font-black tracking-tight text-lg ${statDetailTextClass}`}>{customer.name}</div>
                       <div className="text-right shrink-0">
-                        <div className="text-[10px] font-black uppercase tracking-widest opacity-40">Printed</div>
+                        <div className={`text-[10px] font-black uppercase tracking-widest ${statDetailTextClass}`}>Printed</div>
                         <div className="text-2xl font-black" style={{ color: accentColor }}>{customer.printCount}</div>
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className="text-[11px] font-black uppercase tracking-[2px] opacity-30">No customers yet</p>
+                    <p className={`text-[11px] font-black uppercase tracking-[2px] ${statDetailTextClass}`}>No customers yet</p>
                   </div>
                 )}
+                </div>
               </div>
             </div>
           ) : invoicesTodayExpanded ? (
-            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Invoices today">
+            <div className={`animate-fade-in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Invoices today">
               <button
                 onClick={() => setInvoicesTodayExpanded(false)}
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Invoices Today</h3>
-              <p className="text-sm opacity-50 px-1 -mt-4">Sorted by most recent activity</p>
-              <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
+              <p className={`text-sm px-1 -mt-4 ${mutedTextClass}`}>Sorted by most recent activity</p>
+              <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
+                {!isLight && <div className="absolute inset-0 bg-zinc-900/88 pointer-events-none" aria-hidden="true" />}
+                <div className="relative">
                 {invoicesTodayList.length > 0 ? (
                   invoicesTodayList.map((card, idx) => (
                     <div
                       key={card.id}
-                      className={`px-8 py-7 ${idx !== invoicesTodayList.length - 1 ? 'border-b border-white/10' : ''}`}
+                      className={`px-8 py-7 ${idx !== invoicesTodayList.length - 1 ? `border-b ${statDetailBorderClass}` : ''}`}
                     >
                       <div className="flex items-center justify-between gap-3 mb-3">
                         <div className="min-w-0">
-                          <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50 mb-0.5">
+                          <div className={`text-[10px] font-black uppercase tracking-[0.2em] mb-0.5 ${statDetailTextClass}`}>
                             {card.isCurrent ? 'Current' : 'Saved'}
                           </div>
-                          <div className={`text-lg font-black tracking-tight truncate ${textColorClass}`}>{card.name}</div>
+                          <div className={`text-lg font-black tracking-tight truncate ${statDetailTextClass}`}>{card.name}</div>
                         </div>
                         <div className="text-right shrink-0">
-                          <div className="text-[10px] font-black uppercase tracking-widest opacity-40">Total</div>
+                          <div className={`text-[10px] font-black uppercase tracking-widest ${statDetailTextClass}`}>Total</div>
                           <div className="text-base font-black" style={{ color: accentColor }}>{currency} {card.total}</div>
                         </div>
                       </div>
-                      <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 mb-3">
+                      <div className={`text-[10px] font-black uppercase tracking-[0.2em] mb-3 ${statDetailTextClass}`}>
                         {new Date(card.latestTimestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         {' • '}
                         {card.items.length} item{card.items.length !== 1 ? 's' : ''}
                       </div>
                       <div className="space-y-1.5">
                         {card.items.map((item, i) => (
-                          <div key={i} className={`flex items-center justify-between text-sm font-semibold opacity-80 ${textColorClass}`}>
+                          <div key={i} className={`flex items-center justify-between text-sm font-semibold ${statDetailTextClass}`}>
                             <span>{formatPosLineItemDisplay(item, currency)}</span>
-                            <span className="opacity-55 text-xs">{currency} {(item.price * item.quantity).toFixed(2)}</span>
+                            <span className="text-xs">{currency} {(item.price * item.quantity).toFixed(2)}</span>
                           </div>
                         ))}
                       </div>
@@ -870,9 +860,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className="text-[11px] font-black uppercase tracking-[2px] opacity-30">No invoices today</p>
+                    <p className={`text-[11px] font-black uppercase tracking-[2px] ${statDetailTextClass}`}>No invoices today</p>
                   </div>
                 )}
+                </div>
               </div>
             </div>
           ) : inventoryExpanded ? (

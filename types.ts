@@ -27,6 +27,8 @@ export interface InvoicePrintLog {
   id: string;
   invoiceName: string;
   timestamp: number;
+  total: string;
+  items: CartLineItem[];
 }
 
 export interface UserProfile {

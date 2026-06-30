@@ -1,13 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icons } from '../constants';
-import { CartLineItem, InvoiceActionLog } from '../types';
+import { CartLineItem, InvoiceActionLog, InvoicePrintLog, UserProfile } from '../types';
 import { formatPosLineItemDisplay } from '../utils/posExpression';
 import { printerInstance } from '../utils/bluetoothPrinter';
+import { storage } from '../hooks/storage';
+import InvoiceAttendantPicker from './InvoiceAttendantPicker';
+import PrinterConnectModal from './PrinterConnectModal';
+
+const ATTENDANT_NAMES_KEY = 'invoice_attendant_names';
 
 interface HistoryPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  onClear: () => void;
   isLight?: boolean;
   currency?: string;
   invoiceName: string;
@@ -15,7 +19,10 @@ interface HistoryPanelProps {
   cartItems: CartLineItem[];
   actionLogs: InvoiceActionLog[];
   runningTotal: string;
-  onInvoicePrinted?: (invoiceName: string) => void;
+  printLogs: InvoicePrintLog[];
+  profiles: UserProfile[];
+  activeProfileId: string;
+  onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
 }
 
 interface InvoiceCard {
@@ -35,7 +42,6 @@ const SWIPE_THRESHOLD = 22;
 const HistoryPanel: React.FC<HistoryPanelProps> = ({
   isOpen,
   onClose,
-  onClear,
   isLight = false,
   currency = 'GHS',
   invoiceName,
@@ -43,8 +49,97 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   cartItems,
   actionLogs,
   runningTotal,
+  printLogs,
+  profiles,
+  activeProfileId,
   onInvoicePrinted,
 }) => {
+  const [attendantNames, setAttendantNames] = useState<Record<string, string>>(() =>
+    storage.get(ATTENDANT_NAMES_KEY, {})
+  );
+  const [attendantPickerOpen, setAttendantPickerOpen] = useState(false);
+  const [printerModalOpen, setPrinterModalOpen] = useState(false);
+  const [pendingPrintCard, setPendingPrintCard] = useState<InvoiceCard | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [attendantPickerInvoice, setAttendantPickerInvoice] = useState<string | null>(null);
+
+  const activeProfile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
+
+  const printedNames = useMemo(
+    () => new Set(printLogs.map((log) => log.invoiceName)),
+    [printLogs]
+  );
+
+  useEffect(() => {
+    storage.set(ATTENDANT_NAMES_KEY, attendantNames);
+  }, [attendantNames]);
+
+  const getAttendantForInvoice = useCallback(
+    (name: string) => attendantNames[name] ?? activeProfile?.name ?? 'Staff',
+    [attendantNames, activeProfile]
+  );
+
+  const setAttendantForInvoice = useCallback((name: string, attendant: string) => {
+    setAttendantNames((prev) => ({ ...prev, [name]: attendant }));
+  }, []);
+
+  const getHeaderBackground = (isPaid: boolean) =>
+    isPaid
+      ? 'linear-gradient(180deg, #30d158 0%, rgba(48,209,88,0.5) 20%, rgba(255,255,255,0.98) 25%, #ffffff 100%)'
+      : 'linear-gradient(180deg, #ff9f0a 0%, rgba(255,159,10,0.5) 20%, rgba(255,255,255,0.98) 25%, #ffffff 100%)';
+
+  const executePrint = useCallback(
+    async (card: InvoiceCard): Promise<boolean> => {
+      const numericTotal = parseFloat(card.total) || 0;
+      const attendant = getAttendantForInvoice(card.name);
+      const items = card.items.map((item, idx) => ({
+        name: item.name || `Item ${idx + 1}`,
+        price: item.price,
+        quantity: item.quantity,
+      }));
+      return printerInstance.printInvoiceImage(
+        card.name,
+        items,
+        numericTotal,
+        currency,
+        attendant
+      );
+    },
+    [currency, getAttendantForInvoice]
+  );
+
+  const handlePrintClick = useCallback(
+    async (card: InvoiceCard) => {
+      if (isPrinting) return;
+      if (printerInstance.isConnected) {
+        setIsPrinting(true);
+        try {
+          const ok = await executePrint(card);
+          if (ok) onInvoicePrinted?.(card.name, card.total, card.items);
+        } catch (err: unknown) {
+          alert(err instanceof Error ? err.message : 'Failed to print');
+        } finally {
+          setIsPrinting(false);
+        }
+      } else {
+        setPendingPrintCard(card);
+        setPrinterModalOpen(true);
+      }
+    },
+    [executePrint, isPrinting, onInvoicePrinted]
+  );
+
+  const handleModalPrint = useCallback(async () => {
+    if (!pendingPrintCard) return;
+    setIsPrinting(true);
+    try {
+      const ok = await executePrint(pendingPrintCard);
+      if (!ok) throw new Error('Printer is busy. Try again.');
+      onInvoicePrinted?.(pendingPrintCard.name, pendingPrintCard.total, pendingPrintCard.items);
+    } finally {
+      setIsPrinting(false);
+    }
+  }, [pendingPrintCard, executePrint, onInvoicePrinted]);
   const cards = useMemo<InvoiceCard[]>(() => {
     const grouped = new Map<string, InvoiceActionLog[]>();
     for (const log of actionLogs) {
@@ -296,7 +391,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           >
             Total
           </div>
-          <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: '-0.04em' }}>
+          <div className="font-num-bold" style={{ fontSize: 22, letterSpacing: '-0.04em' }}>
             {currency} {card.total}
           </div>
         </div>
@@ -346,7 +441,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
               }}
             >
               <span>{formatPosLineItemDisplay(item, currency)}</span>
-              <span style={{ opacity: 0.55, fontSize: 11 }}>
+              <span className="font-num-medium" style={{ opacity: 0.55, fontSize: 11 }}>
                 {currency} {(item.price * item.quantity).toFixed(2)}
               </span>
             </div>
@@ -354,82 +449,54 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         )}
       </div>
 
-      {isActive && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-          <button
-            onClick={async e => {
-              e.stopPropagation();
-              try {
-                const numericTotal = parseFloat(card.total) || 0;
-                await printerInstance.printInvoiceImage(
-                  card.name,
-                  card.items,
-                  numericTotal,
-                  currency
-                );
-                onInvoicePrinted?.(card.name);
-              } catch (err: unknown) {
-                alert(err instanceof Error ? err.message : 'Failed to print');
-              }
-            }}
-            style={{
-              flex: 1,
-              padding: '10px 0',
-              borderRadius: 14,
-              background: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)',
-              color: isLight ? '#000' : '#fff',
-              fontSize: 10,
-              fontWeight: 900,
-              letterSpacing: '0.28em',
-              textTransform: 'uppercase',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-            }}
-            aria-label="Print invoice"
-          >
-            <Icons.Printer size={12} />
-            Print
-          </button>
-
-          {card.isCurrent && (
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                onClear();
-              }}
-              style={{
-                flex: 1,
-                padding: '10px 0',
-                borderRadius: 14,
-                background: 'rgba(239,68,68,0.10)',
-                color: '#ef4444',
-                fontSize: 10,
-                fontWeight: 900,
-                letterSpacing: '0.28em',
-                textTransform: 'uppercase',
-                border: 'none',
-                cursor: 'pointer',
-              }}
-              aria-label="Clear current invoice"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 
-  const renderCardBody = (card: InvoiceCard, isActive: boolean) => (
+  const renderCardFooter = (card: InvoiceCard, isActive: boolean) => {
+    if (!isActive) return null;
+    const attendant = getAttendantForInvoice(card.name);
+
+    return (
+      <div
+        className="shrink-0 px-5 py-3 border-t border-black/6 bg-white flex items-center gap-2"
+        style={{ touchAction: 'auto' }}
+      >
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setAttendantPickerInvoice(card.name);
+            setAttendantPickerOpen(true);
+          }}
+          className="flex-1 min-w-0 text-left px-4 py-3 rounded-xl border border-black/8 bg-black/[0.03] text-sm font-black tracking-tight text-black hover:bg-black/[0.06] active:scale-[0.99] transition-all truncate"
+          aria-label="Choose name for print"
+        >
+          {attendant}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void handlePrintClick(card);
+          }}
+          disabled={isPrinting || card.items.length === 0}
+          className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center bg-emerald-500 text-white shadow-[0_8px_24px_rgba(0,0,0,0.22),0_0_14px_rgb(16,185,129)] active:scale-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          aria-label="Print and mark paid"
+        >
+          <Icons.Check size={18} />
+        </button>
+      </div>
+    );
+  };
+
+  const renderCardBody = (card: InvoiceCard, isActive: boolean) => {
+    const isPaid = printedNames.has(card.name);
+
+    return (
     <>
       <div
-        className={`px-5 pt-5 pb-3 flex items-center justify-between gap-3 border-b shrink-0 ${
-          isLight ? 'border-black/6' : 'border-white/6'
-        }`}
+        className="px-5 pt-5 pb-4 flex items-center justify-between gap-3 shrink-0 text-white"
+        style={{ background: getHeaderBackground(isPaid), minHeight: '25%' }}
       >
         {card.isCurrent && isActive ? (
           <input
@@ -439,9 +506,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             onChange={e => onInvoiceNameChange(e.target.value)}
             placeholder="Invoice #1"
             aria-label="Invoice name"
-            className={`flex-1 min-w-0 text-2xl font-black tracking-tighter bg-transparent outline-none border-b border-transparent focus:border-current/20 transition-colors placeholder:opacity-30 ${
-              isLight ? 'text-black' : 'text-white'
-            }`}
+            className="flex-1 min-w-0 text-2xl font-black tracking-tighter bg-transparent outline-none border-b border-transparent focus:border-white/30 transition-colors placeholder:text-white/40 text-white"
           />
         ) : (
           <div className="flex-1 min-w-0">
@@ -451,11 +516,11 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 fontWeight: 900,
                 letterSpacing: '0.28em',
                 textTransform: 'uppercase',
-                opacity: 0.38,
+                opacity: 0.7,
                 marginBottom: 2,
               }}
             >
-              {card.isCurrent ? 'Current' : 'Saved'}
+              {card.isCurrent ? 'Current' : isPaid ? 'Paid' : 'Unpaid'}
             </div>
             <div
               id={isActive ? 'invoice-title' : undefined}
@@ -473,9 +538,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
               ref={closeRef}
               onClick={handleClose}
               aria-label="Close invoice panel"
-              className={`p-2.5 rounded-full hover:bg-black/8 transition-colors duration-150 ${
-                isLight ? 'text-black' : 'text-white'
-              }`}
+              className="p-2.5 rounded-full hover:bg-white/15 transition-colors duration-150 text-white"
             >
               <Icons.X size={22} />
             </button>
@@ -483,7 +546,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         )}
       </div>
 
-      {renderCardContent(card, isActive)}
+      <div className="flex-1 flex flex-col min-h-0 bg-white text-black">
+        {renderCardContent(card, isActive)}
+        {renderCardFooter(card, isActive)}
+      </div>
 
       {isActive && viewMode === 'carousel' && cards.length > 1 && (
         <div
@@ -522,7 +588,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         </div>
       )}
     </>
-  );
+    );
+  };
 
   return (
     <div
@@ -614,24 +681,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             </div>
 
             {cards[activeIdx] && (
-              <div className={`border-t flex flex-col min-h-0 flex-1 ${isLight ? 'border-black/6' : 'border-white/6'}`}>
-                <div className={`px-5 pt-4 pb-2 border-b shrink-0 ${isLight ? 'border-black/6' : 'border-white/6'}`}>
-                  {cards[activeIdx].isCurrent ? (
-                    <input
-                      type="text"
-                      value={invoiceName}
-                      onChange={e => onInvoiceNameChange(e.target.value)}
-                      placeholder="Invoice #1"
-                      aria-label="Invoice name"
-                      className={`w-full text-xl font-black tracking-tighter bg-transparent outline-none border-b border-transparent focus:border-current/20 ${
-                        isLight ? 'text-black' : 'text-white'
-                      }`}
-                    />
-                  ) : (
-                    <div className="text-xl font-black tracking-tight truncate">{cards[activeIdx].name}</div>
-                  )}
-                </div>
-                {renderCardContent(cards[activeIdx], true)}
+              <div className="border-t flex flex-col min-h-0 flex-1 relative bg-white text-black">
+                {renderCardBody(cards[activeIdx], true)}
               </div>
             )}
           </div>
@@ -646,11 +697,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 inert={!isActive || !isOpen ? true : undefined}
                 role={isActive ? 'dialog' : undefined}
                 aria-modal={isActive ? true : undefined}
-                className={`
-                  absolute inset-0 flex flex-col rounded-[32px] overflow-hidden
-                  shadow-[0_24px_80px_rgba(0,0,0,0.55)]
-                  ${panelBg} ${isLight ? 'text-black' : 'text-white'}
-                `}
+                className="absolute inset-0 flex flex-col rounded-[32px] overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
                 style={{
                   transform: `translateX(${translateX}px) translateY(${translateY}px) scale(${scale})`,
                   transformOrigin: 'center center',
@@ -670,6 +717,30 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           })
         )}
       </div>
+
+      <InvoiceAttendantPicker
+        isOpen={attendantPickerOpen}
+        onClose={() => setAttendantPickerOpen(false)}
+        isLight={isLight}
+        profiles={profiles}
+        selectedName={attendantPickerInvoice ? getAttendantForInvoice(attendantPickerInvoice) : ''}
+        onSelectName={(name) => {
+          if (attendantPickerInvoice) {
+            setAttendantForInvoice(attendantPickerInvoice, name);
+          }
+        }}
+      />
+
+      <PrinterConnectModal
+        isOpen={printerModalOpen}
+        onClose={() => {
+          setPrinterModalOpen(false);
+          setPendingPrintCard(null);
+        }}
+        isLight={isLight}
+        isPrinting={isPrinting}
+        onPrint={handleModalPrint}
+      />
     </div>
   );
 };
