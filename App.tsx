@@ -652,7 +652,6 @@ const AppContent: React.FC = () => {
         cartItems={cartItems}
         actionLogs={actionLogs}
         runningTotal={runningTotal}
-        printLogs={printLogs}
         profiles={settings.profiles ?? []}
         activeProfileId={settings.activeProfileId ?? ''}
         onInvoicePrinted={recordPrint}

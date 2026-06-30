@@ -507,13 +507,28 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
              `}>
                <div className="flex justify-between items-start">
                  <div className="flex flex-col">
-                    <span className="text-[9px] font-black uppercase tracking-[0.4em] mb-1 opacity-40">Neural Terminal</span>
-                    <h2 className="text-4xl font-black tracking-tighter">Vision Hub</h2>
+                    <span
+                      className="text-[9px] uppercase tracking-[0.4em] mb-1 opacity-40"
+                      style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontWeight: 600 }}
+                    >
+                      Neural Terminal
+                    </span>
+                    <h2
+                      className="text-4xl tracking-tighter"
+                      style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontWeight: 700 }}
+                    >
+                      Vision Hub
+                    </h2>
                     
                     <div className="mt-4 flex items-center gap-3">
                       <div className="font-num-medium text-xl tracking-tight leading-none">{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                       <div className={`w-px h-4 ${isLight ? 'bg-white/20' : 'bg-zinc-900/20'}`} />
-                      <div className="text-[9px] font-bold opacity-30 uppercase tracking-[0.2em]">Live Session</div>
+                      <div
+                        className="text-[9px] opacity-30 uppercase tracking-[0.2em]"
+                        style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontWeight: 600 }}
+                      >
+                        Live Session
+                      </div>
                     </div>
                  </div>
 

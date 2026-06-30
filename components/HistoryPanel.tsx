@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icons } from '../constants';
-import { CartLineItem, InvoiceActionLog, InvoicePrintLog, UserProfile } from '../types';
+import { CartLineItem, InvoiceActionLog, UserProfile } from '../types';
 import { formatPosLineItemDisplay } from '../utils/posExpression';
 import { printerInstance } from '../utils/bluetoothPrinter';
 import { storage } from '../hooks/storage';
@@ -19,7 +19,6 @@ interface HistoryPanelProps {
   cartItems: CartLineItem[];
   actionLogs: InvoiceActionLog[];
   runningTotal: string;
-  printLogs: InvoicePrintLog[];
   profiles: UserProfile[];
   activeProfileId: string;
   onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
@@ -49,7 +48,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   cartItems,
   actionLogs,
   runningTotal,
-  printLogs,
   profiles,
   activeProfileId,
   onInvoicePrinted,
@@ -65,11 +63,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   const activeProfile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
 
-  const printedNames = useMemo(
-    () => new Set(printLogs.map((log) => log.invoiceName)),
-    [printLogs]
-  );
-
   useEffect(() => {
     storage.set(ATTENDANT_NAMES_KEY, attendantNames);
   }, [attendantNames]);
@@ -82,11 +75,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const setAttendantForInvoice = useCallback((name: string, attendant: string) => {
     setAttendantNames((prev) => ({ ...prev, [name]: attendant }));
   }, []);
-
-  const getHeaderBackground = (isPaid: boolean) =>
-    isPaid
-      ? 'linear-gradient(180deg, #30d158 0%, rgba(48,209,88,0.5) 20%, rgba(255,255,255,0.98) 25%, #ffffff 100%)'
-      : 'linear-gradient(180deg, #ff9f0a 0%, rgba(255,159,10,0.5) 20%, rgba(255,255,255,0.98) 25%, #ffffff 100%)';
 
   const executePrint = useCallback(
     async (card: InvoiceCard): Promise<boolean> => {
@@ -490,14 +478,9 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   };
 
   const renderCardBody = (card: InvoiceCard, isActive: boolean) => {
-    const isPaid = printedNames.has(card.name);
-
     return (
     <>
-      <div
-        className="px-5 pt-5 pb-4 flex items-center justify-between gap-3 shrink-0 text-white"
-        style={{ background: getHeaderBackground(isPaid), minHeight: '25%' }}
-      >
+      <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-3 shrink-0 border-b border-black/6 bg-white text-black">
         {card.isCurrent && isActive ? (
           <input
             id="invoice-title"
@@ -506,7 +489,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             onChange={e => onInvoiceNameChange(e.target.value)}
             placeholder="Invoice #1"
             aria-label="Invoice name"
-            className="flex-1 min-w-0 text-2xl font-black tracking-tighter bg-transparent outline-none border-b border-transparent focus:border-white/30 transition-colors placeholder:text-white/40 text-white"
+            className="flex-1 min-w-0 text-2xl font-black tracking-tighter bg-transparent outline-none border-b border-transparent focus:border-black/20 transition-colors placeholder:opacity-30 text-black"
           />
         ) : (
           <div className="flex-1 min-w-0">
@@ -516,11 +499,11 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 fontWeight: 900,
                 letterSpacing: '0.28em',
                 textTransform: 'uppercase',
-                opacity: 0.7,
+                opacity: 0.38,
                 marginBottom: 2,
               }}
             >
-              {card.isCurrent ? 'Current' : isPaid ? 'Paid' : 'Unpaid'}
+              {card.isCurrent ? 'Current' : 'Saved'}
             </div>
             <div
               id={isActive ? 'invoice-title' : undefined}
@@ -538,7 +521,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
               ref={closeRef}
               onClick={handleClose}
               aria-label="Close invoice panel"
-              className="p-2.5 rounded-full hover:bg-white/15 transition-colors duration-150 text-white"
+              className="p-2.5 rounded-full hover:bg-black/8 transition-colors duration-150 text-black"
             >
               <Icons.X size={22} />
             </button>
