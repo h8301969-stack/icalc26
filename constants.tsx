@@ -8,23 +8,7 @@ export const THEMES = [
   { name: 'Cyber Pink', color: '#ff375f' }
 ];
 
-export const WALLPAPER_SLIDES = [
-  {
-    image: '/assets/autoswipe/pos1.png',
-    header: 'iCalc Vision',
-    subHeader: 'Precision engineered for the next generation of spatial computing.'
-  },
-  {
-    image: '/assets/autoswipe/pos2.png',
-    header: 'Spatial Identity',
-    subHeader: 'Seamless integration with modern digital ecosystems.'
-  },
-  {
-    image: '/assets/autoswipe/pos3.png',
-    header: 'Neural Flow',
-    subHeader: 'Dynamic visual structures designed for immersive workflows.'
-  }
-];
+export { WALLPAPER_SLIDES } from './utils/wallpapers';
 
 interface IconProps {
   size?: number;

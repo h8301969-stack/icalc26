@@ -1,7 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 
 interface InvoiceDragHandleProps {
-  isLight: boolean;
   onDragOpen: () => void;
   disabled?: boolean;
   edgePinned?: boolean;
@@ -10,7 +9,6 @@ interface InvoiceDragHandleProps {
 const DRAG_THRESHOLD = 32;
 
 const InvoiceDragHandle: React.FC<InvoiceDragHandleProps> = ({
-  isLight,
   onDragOpen,
   disabled = false,
   edgePinned = false,
@@ -42,12 +40,12 @@ const InvoiceDragHandle: React.FC<InvoiceDragHandleProps> = ({
 
   return (
     <div
-      className={`flex flex-col items-center justify-center touch-none select-none ${
+      className={`touch-none select-none ${
         edgePinned
-          ? 'absolute bottom-0 left-0 right-0 z-30 pt-1'
-          : 'shrink-0 py-2'
+          ? 'absolute bottom-0 left-0 right-0 z-30 h-10'
+          : 'shrink-0 h-10'
       } ${
-        disabled ? 'opacity-30 pointer-events-none' : 'cursor-grab active:cursor-grabbing pointer-events-auto'
+        disabled ? 'pointer-events-none' : 'cursor-grab active:cursor-grabbing pointer-events-auto'
       }`}
       style={{
         transform: `translateY(${offset * 0.4}px)`,
@@ -67,19 +65,7 @@ const InvoiceDragHandle: React.FC<InvoiceDragHandleProps> = ({
           onDragOpen();
         }
       }}
-    >
-      <div
-        className="w-[min(72%,280px)] h-[4px] rounded-full bg-black transition-opacity"
-        style={{ opacity: dragging ? 0.85 : 0.55 }}
-      />
-      <span
-        className={`text-[8px] font-medium lowercase tracking-wide mt-2 ${
-          isLight ? 'text-black/40' : 'text-white/35'
-        }`}
-      >
-        swipe up to open
-      </span>
-    </div>
+    />
   );
 };
 

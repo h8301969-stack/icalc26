@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { HistoryItem } from '../types';
 import { storage } from './storage';
+import { WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
 
 export interface ActivityLogEntry {
   id: string;
@@ -45,7 +46,7 @@ const INITIAL_INVENTORY: InventoryItem[] = [
     dateAdded: '2025-01-10', 
     supplier: 'Synapse Tech', 
     lastStocked: new Date(Date.now() - 3600000 * 2).toISOString(),
-    image: '/assets/autoswipe/pos1.png',
+    image: WALLPAPER_IMAGE_URLS[0],
     activities: [
       { id: '1a', type: 'restock', action: 'Restocked 10 units', time: '2h ago', timestamp: Date.now() - 3600000 * 2 },
     ]
@@ -60,7 +61,7 @@ const INITIAL_INVENTORY: InventoryItem[] = [
     dateAdded: '2025-02-14', 
     supplier: 'Lumina Corp', 
     lastStocked: new Date(Date.now() - 3600000 * 48).toISOString(),
-    image: '/assets/autoswipe/pos2.png',
+    image: WALLPAPER_IMAGE_URLS[1],
     activities: [
       { id: '2b', type: 'restock', action: 'Restocked 5 units', time: '2 days ago', timestamp: Date.now() - 3600000 * 48 },
     ]

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { resolveWallpaperImage } from '../utils/wallpapers';
 
 interface BlurredBackgroundProps {
   isLight: boolean;
@@ -12,31 +13,41 @@ const BlurredBackground: React.FC<BlurredBackgroundProps> = ({
   isUnlocked = true,
 }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const slides = wallpapers.length > 0 ? wallpapers : [{ image: '' }];
 
   useEffect(() => {
-    if (wallpapers.length <= 1) return;
+    if (slides.length <= 1) return;
     const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % wallpapers.length);
+      setCurrentSlide((prev) => (prev + 1) % slides.length);
     }, 6000);
     return () => clearInterval(timer);
-  }, [wallpapers]);
+  }, [slides.length]);
 
   return (
-    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
-      {wallpapers.map((slide, index) => (
-        <div
-          key={index}
-          className={`absolute inset-0 transition-opacity duration-[2000ms] ease-in-out ${
-            index === currentSlide ? 'opacity-100' : 'opacity-0'
-          }`}
-        >
-          <img
-            src={slide.image}
-            alt=""
-            className={`w-full h-full object-cover scale-110 transition-all duration-1000 ${isUnlocked ? 'blur-[80px]' : 'blur-0'} brightness-[0.7] saturate-[1.2]`}
-          />
-        </div>
-      ))}
+    <div
+      className="fixed inset-0 z-0 overflow-hidden pointer-events-none min-h-[100dvh] min-w-full"
+      aria-hidden="true"
+    >
+      {slides.map((slide, index) => {
+        const imageUrl = resolveWallpaperImage(slide.image);
+        if (!imageUrl) return null;
+
+        return (
+          <div
+            key={`${imageUrl}-${index}`}
+            className={`absolute inset-[-12%] transition-opacity duration-[2000ms] ease-in-out ${
+              index === currentSlide ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            <div
+              className={`wallpaper-layer absolute inset-0 bg-cover bg-center bg-no-repeat ${
+                isUnlocked ? 'wallpaper-layer--blurred' : 'wallpaper-layer--sharp'
+              }`}
+              style={{ backgroundImage: `url("${imageUrl}")` }}
+            />
+          </div>
+        );
+      })}
 
       <div
         className={`absolute inset-0 transition-colors duration-700 ${

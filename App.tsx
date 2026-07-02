@@ -16,7 +16,8 @@ import { useSettings } from './hooks/useSettings';
 import { useHistory } from './hooks/useHistory';
 import { useCalculator } from './hooks/useCalculator';
 import { useSwipeGesture } from './hooks/useGestures';
-import { usePOS } from './hooks/usePOS';
+import { useStandby } from './hooks/useStandby';
+import { usePOS, InventoryItem } from './hooks/usePOS';
 import { useInvoice } from './hooks/useInvoice';
 
 const AppContent: React.FC = () => {
@@ -28,7 +29,7 @@ const AppContent: React.FC = () => {
   const { 
     expression, calcError, inputChar, 
     toggleSign, finalize, handleUndo, handleRedo, clearExpression, deleteLast,
-    cursorPos, setCursorPos
+    addInventoryItem, cursorPos, setCursorPos
   } = useCalculator(saveResult, triggerHaptic);
 
   const displayResult = expression === '0' ? '0' : safeEvaluate(expression);
@@ -53,6 +54,12 @@ const AppContent: React.FC = () => {
   } = useInvoice(expression, items, settings.currency);
 
   const [isUnlocked, setIsUnlocked] = useState(false);
+
+  const lockScreen = useCallback(() => {
+    setIsUnlocked(false);
+  }, []);
+
+  useStandby(isUnlocked, settings.standbyTimerSeconds ?? 0, lockScreen);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPOSOpen, setIsPOSOpen] = useState(false);
@@ -106,14 +113,24 @@ const AppContent: React.FC = () => {
     if (el) el.scrollTop = el.scrollHeight;
   }, [expression]);
 
-  const mapClientXToCursorPos = useCallback((clientX: number) => {
-    const container = expressionScrollRef.current;
-    if (!container || expression === '0') return 0;
-    const rect = container.getBoundingClientRect();
-    const clickX = clientX - rect.left;
-    const containerWidth = rect.width * 0.84;
-    return Math.max(0, Math.min(expression.length, Math.round((clickX / containerWidth) * (maxCharsPerLine || 10) * 1.1)));
-  }, [expression, maxCharsPerLine]);
+  const mapPointerToCursorPos = useCallback((clientX: number, clientY: number) => {
+    const pre = displayContentRef.current;
+    if (!pre || expression === '0') return 0;
+
+    const chars = Math.max(6, maxCharsPerLine);
+    const lines = expression.match(new RegExp(`.{1,${chars}}`, 'g')) ?? [expression];
+    const preRect = pre.getBoundingClientRect();
+    const lineHeight = displayFontSize * expressionLineHeight;
+    const lineIndex = Math.max(
+      0,
+      Math.min(lines.length - 1, Math.floor((clientY - preRect.top) / lineHeight))
+    );
+    const charsBeforeLine = lines.slice(0, lineIndex).join('').length;
+    const line = lines[lineIndex] ?? '';
+    const charPosInLine = Math.round(((clientX - preRect.left) / preRect.width) * line.length);
+
+    return Math.max(0, Math.min(expression.length, charsBeforeLine + charPosInLine));
+  }, [expression, maxCharsPerLine, displayFontSize, expressionLineHeight]);
 
   // Keep movable blinker (cursor) within expression bounds
   useEffect(() => {
@@ -163,10 +180,9 @@ const AppContent: React.FC = () => {
     setIsHistoryOpen(true);
   };
 
-  const handleSearchInventorySelect = () => {
+  const handleSearchInventorySelect = (item: InventoryItem) => {
+    addInventoryItem(item.price);
     closeSearch();
-    triggerHaptic();
-    setIsPOSOpen(true);
   };
 
   const handleNewInvoice = () => {
@@ -269,7 +285,11 @@ const AppContent: React.FC = () => {
       <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} />
 
       {!isUnlocked && (
-        <WallpaperOverlay isLight={isLight} accentColor={settings.accentColor} onEnter={() => { triggerHaptic(2); setIsUnlocked(true); }} />
+        <WallpaperOverlay
+          isLight={isLight}
+          accentColor={settings.accentColor}
+          onEnter={() => { triggerHaptic(2); setIsUnlocked(true); }}
+        />
       )}
 
       <div className={`fixed inset-0 z-20 flex items-center justify-center transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) ${isUnlocked ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'}`}>
@@ -484,11 +504,11 @@ const AppContent: React.FC = () => {
                   aria-label={`Expression: ${expression}`}
                   onClick={(e) => {
                     if (isDraggingCursor.current) return;
-                    setCursorPos(mapClientXToCursorPos(e.clientX));
+                    setCursorPos(mapPointerToCursorPos(e.clientX, e.clientY));
                   }}
                   onPointerMove={(e) => {
                     if (!isDraggingCursor.current) return;
-                    setCursorPos(mapClientXToCursorPos(e.clientX));
+                    setCursorPos(mapPointerToCursorPos(e.clientX, e.clientY));
                   }}
                   onPointerUp={() => {
                     isDraggingCursor.current = false;
@@ -537,12 +557,12 @@ const AppContent: React.FC = () => {
                                 e.stopPropagation();
                                 isDraggingCursor.current = true;
                                 e.currentTarget.setPointerCapture(e.pointerId);
-                                setCursorPos(mapClientXToCursorPos(e.clientX));
+                                setCursorPos(mapPointerToCursorPos(e.clientX, e.clientY));
                               }}
                               onPointerMove={(e) => {
                                 if (!isDraggingCursor.current) return;
                                 e.stopPropagation();
-                                setCursorPos(mapClientXToCursorPos(e.clientX));
+                                setCursorPos(mapPointerToCursorPos(e.clientX, e.clientY));
                               }}
                               onPointerUp={(e) => {
                                 e.stopPropagation();
@@ -612,7 +632,6 @@ const AppContent: React.FC = () => {
           </div>
 
           <InvoiceDragHandle
-            isLight={isLight}
             disabled={isAnyModalOpen}
             edgePinned
             onDragOpen={() => {
@@ -652,6 +671,7 @@ const AppContent: React.FC = () => {
         cartItems={cartItems}
         actionLogs={actionLogs}
         runningTotal={runningTotal}
+        printLogs={printLogs}
         profiles={settings.profiles ?? []}
         activeProfileId={settings.activeProfileId ?? ''}
         onInvoicePrinted={recordPrint}

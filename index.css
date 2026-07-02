@@ -101,6 +101,24 @@ body {
   -webkit-backdrop-filter: blur(var(--glass-blur));
 }
 
+.pos-dashboard-card-glass {
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(28px) saturate(1.35);
+  -webkit-backdrop-filter: blur(28px) saturate(1.35);
+  box-shadow:
+    0 10px 36px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.pos-dashboard-card-glass:hover {
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 16px 44px rgba(0, 0, 0, 0.48),
+    0 0 28px rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
 /* Utility classes and accessibility overrides */
 * { 
   -webkit-touch-callout: none; 
@@ -187,6 +205,72 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
     0 0 42px rgba(255, 255, 255, 0.32);
 }
 
+@keyframes swipe-hint-pulse {
+  0%, 100% {
+    opacity: 0.45;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+.animate-swipe-hint-pulse {
+  animation: swipe-hint-pulse 2.4s ease-in-out infinite;
+}
+
+.wallpaper-layer {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform, filter;
+}
+
+.wallpaper-layer--sharp {
+  filter: brightness(0.7) saturate(1.2);
+  -webkit-filter: brightness(0.7) saturate(1.2);
+}
+
+.wallpaper-layer--blurred {
+  filter: blur(80px) brightness(0.7) saturate(1.2);
+  -webkit-filter: blur(80px) brightness(0.7) saturate(1.2);
+  transform: translateZ(0) scale(1.08);
+  -webkit-transform: translateZ(0) scale(1.08);
+}
+
+@media (max-width: 768px) {
+  .wallpaper-layer--blurred {
+    filter: blur(48px) brightness(0.72) saturate(1.15);
+    -webkit-filter: blur(48px) brightness(0.72) saturate(1.15);
+    transform: translateZ(0) scale(1.12);
+    -webkit-transform: translateZ(0) scale(1.12);
+  }
+}
+
+.pos-dashboard .vision-hub-title {
+  font-family: var(--font-text, inherit);
+  font-weight: 800;
+}
+
+.pos-dashboard .pos-subtext {
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+
+/* App-wide hint / helper subtext — matches "Scan for new printer" */
+.app-subtext {
+  font-family: var(--font-text);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  line-height: 1.35;
+}
+
+
+
 /* Mobile dashboard — compact, uniform sizing (≈13px base, WhatsApp/X-like density) */
 @media (max-width: 768px) {
   .pos-dashboard {
@@ -208,6 +292,11 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   .pos-dashboard .font-black,
   .pos-dashboard .font-bold {
     font-weight: 600 !important;
+  }
+
+  .pos-dashboard .vision-hub-title {
+    font-weight: 800 !important;
+    font-family: var(--font-text, inherit) !important;
   }
 
   .pos-dashboard .text-7xl { font-size: 1.5rem !important; line-height: 1.1 !important; }

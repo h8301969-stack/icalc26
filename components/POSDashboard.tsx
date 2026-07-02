@@ -4,6 +4,7 @@ import { formatPosLineItemDisplay } from '../utils/posExpression';
 import { Icons } from '../constants';
 import { InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS';
 import SettingsPanel from './SettingsPanel';
+import { WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
 
 interface POSDashboardProps {
   history: HistoryItem[];
@@ -45,6 +46,28 @@ interface InvoiceCard {
   total: string;
   isCurrent: boolean;
   latestTimestamp: number;
+}
+
+type RequestStatus = 'pending' | 'delivered' | 'outofstock';
+
+interface RequestItem {
+  id: string;
+  requester: string;
+  notes: string;
+  status: RequestStatus;
+  timestamp: number;
+}
+
+function formatRequestElapsed(timestamp: number, now: Date): string {
+  const ms = Math.max(0, now.getTime() - timestamp);
+  const secs = Math.floor(ms / 1000);
+  const mins = Math.floor(secs / 60);
+  const hrs = Math.floor(mins / 60);
+  const days = Math.floor(hrs / 24);
+  if (secs < 60) return `${secs}s`;
+  if (mins < 60) return `${mins}m ${secs % 60}s`;
+  if (hrs < 24) return `${hrs}h ${mins % 60}m ${secs % 60}s`;
+  return `${days}d ${hrs % 24}h ${mins % 60}m`;
 }
 
 const POSDashboard: React.FC<POSDashboardProps> = ({
@@ -102,15 +125,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   // Requests feature states
   const [requestTab, setRequestTab] = useState<'pending' | 'delivered' | 'outofstock'>('pending');
   const [showAddRequestPopup, setShowAddRequestPopup] = useState(false);
-  const [newRequestName, setNewRequestName] = useState('');
-  const [requestSearchQuery, setRequestSearchQuery] = useState('');
+  const [newRequesterName, setNewRequesterName] = useState('');
+  const [requestNotes, setRequestNotes] = useState('');
 
   // Sample requests data (in real app would come from hook/storage)
-  const [requests, setRequests] = useState<Array<{ id: string; name: string; status: 'pending' | 'delivered' | 'outofstock'; timestamp: number }>>([
-    { id: 'req1', name: 'Neural Processor X1 - Urgent', status: 'pending', timestamp: Date.now() - 1000 * 60 * 45 },
-    { id: 'req2', name: 'Optic Glass v26 batch', status: 'delivered', timestamp: Date.now() - 1000 * 60 * 60 * 27 },
-    { id: 'req3', name: 'Sensor Array replacements', status: 'pending', timestamp: Date.now() - 1000 * 60 * 60 * 5 },
-    { id: 'req4', name: 'Power cells - low stock', status: 'outofstock', timestamp: Date.now() - 1000 * 60 * 90 },
+  const [requests, setRequests] = useState<RequestItem[]>([
+    { id: 'req1', requester: 'Marcus Chen', notes: 'Neural Processor X1 — urgent', status: 'pending', timestamp: Date.now() - 1000 * 60 * 45 },
+    { id: 'req2', requester: 'Sarah Okonkwo', notes: 'Optic Glass v26 batch', status: 'delivered', timestamp: Date.now() - 1000 * 60 * 60 * 27 },
+    { id: 'req3', requester: 'James Rivera', notes: 'Sensor Array replacements', status: 'pending', timestamp: Date.now() - 1000 * 60 * 60 * 5 },
+    { id: 'req4', requester: 'Amina Hassan', notes: 'Power cells — low stock', status: 'outofstock', timestamp: Date.now() - 1000 * 60 * 90 },
   ]);
 
   // Keyboard accessibility: close on Escape
@@ -389,48 +412,32 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     return result;
   }, [items, searchQuery, sortOption, filterOption, customDateStart, customDateEnd]);
 
-  // Requests filtered by active tab (using calculator-style search support)
   const filteredRequests = useMemo(() => {
-    const q = requestSearchQuery.toLowerCase().trim();
-    let result = requests.filter(r => r.status === requestTab);
-    if (q) {
-      result = result.filter(r => r.name.toLowerCase().includes(q));
-    }
-    return result.sort((a, b) => b.timestamp - a.timestamp);
-  }, [requests, requestTab, requestSearchQuery]);
-
-  // Exact calculator search logic helper (reused for the popup search)
-  const normalizeSearch = (value: string) => value.toLowerCase().trim();
-  const searchInventoryForRequests = (query: string) => {
-    const q = normalizeSearch(query);
-    if (!q) return [];
-    return items.filter(item =>
-      item.name.toLowerCase().includes(q) ||
-      item.category.toLowerCase().includes(q) ||
-      item.supplier.toLowerCase().includes(q)
-    ).slice(0, 6);
-  };
-  const popupSearchResults = useMemo(() => searchInventoryForRequests(requestSearchQuery), [items, requestSearchQuery]);
+    return requests
+      .filter(r => r.status === requestTab)
+      .sort((a, b) => b.timestamp - a.timestamp);
+  }, [requests, requestTab]);
 
   const addNewRequest = () => {
-    const name = newRequestName.trim();
-    if (!name) return;
-    const newReq = {
+    const requester = newRequesterName.trim();
+    if (!requester) return;
+    const newReq: RequestItem = {
       id: 'req-' + Date.now(),
-      name,
-      status: 'pending' as const,
+      requester,
+      notes: requestNotes.trim(),
+      status: 'pending',
       timestamp: Date.now(),
     };
     setRequests(prev => [newReq, ...prev]);
-    setNewRequestName('');
-    setRequestSearchQuery('');
+    setNewRequesterName('');
+    setRequestNotes('');
     setShowAddRequestPopup(false);
   };
 
   const closeRequestPopup = () => {
     setShowAddRequestPopup(false);
-    setNewRequestName('');
-    setRequestSearchQuery('');
+    setNewRequesterName('');
+    setRequestNotes('');
   };
 
   const handleAddItem = () => {
@@ -479,15 +486,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     }
   };
 
-  const levitateClass = isLight 
-    ? 'bg-white shadow-[0_16px_36px_rgba(0,0,0,0.12)] hover:shadow-[0_24px_48px_rgba(0,0,0,0.16)] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)' 
-    : 'bg-[#151518] shadow-[0_0_20px_rgba(255,255,255,0.18)] hover:shadow-[0_0_35px_rgba(255,255,255,0.35)] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)';
+  const levitateClass = isLight
+    ? 'bg-white shadow-[0_16px_36px_rgba(0,0,0,0.12)] hover:shadow-[0_24px_48px_rgba(0,0,0,0.16)] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)'
+    : 'pos-dashboard-card-glass border border-white/10 hover:-translate-y-0.5 active:scale-[0.99] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)';
 
   const textColorClass = isLight ? 'text-black' : 'text-white';
   const mutedTextClass = isLight ? 'text-black' : 'text-white';
   const statDetailCardClass = isLight
     ? 'bg-zinc-900 text-white shadow-[0_16px_36px_rgba(0,0,0,0.28)]'
-    : 'bg-white text-white shadow-[0_0_28px_rgba(255,255,255,0.45)]';
+    : 'pos-dashboard-card-glass border border-white/10 text-white';
   const statDetailTextClass = 'text-white';
   const statDetailBorderClass = isLight ? 'border-white/15' : 'border-white/20';
 
@@ -507,28 +514,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
              `}>
                <div className="flex justify-between items-start">
                  <div className="flex flex-col">
-                    <span
-                      className="text-[9px] uppercase tracking-[0.4em] mb-1 opacity-40"
-                      style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontWeight: 600 }}
-                    >
-                      Neural Terminal
-                    </span>
-                    <h2
-                      className="text-4xl tracking-tighter"
-                      style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontWeight: 700 }}
-                    >
-                      Vision Hub
-                    </h2>
+                    <span className="pos-subtext text-[9px] font-black tracking-[0.4em] mb-1 opacity-40">Neural Terminal</span>
+                    <h2 className="vision-hub-title text-4xl font-black tracking-tighter">Vision Hub</h2>
                     
                     <div className="mt-4 flex items-center gap-3">
                       <div className="font-num-medium text-xl tracking-tight leading-none">{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                       <div className={`w-px h-4 ${isLight ? 'bg-white/20' : 'bg-zinc-900/20'}`} />
-                      <div
-                        className="text-[9px] opacity-30 uppercase tracking-[0.2em]"
-                        style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontWeight: 600 }}
-                      >
-                        Live Session
-                      </div>
+                      <div className="pos-subtext text-[9px] font-bold opacity-30 tracking-[0.2em]">Live Session</div>
                     </div>
                  </div>
 
@@ -584,7 +576,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     tabIndex={card.onClick ? 0 : undefined}
                     onKeyDown={card.onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.onClick!(); } } : undefined}
                   >
-                    <p className={`text-[9px] font-black uppercase tracking-[0.3em] mb-2 ${mutedTextClass}`}>{card.label}</p>
+                    <p className={`pos-subtext text-[9px] font-black tracking-[0.3em] mb-2 ${mutedTextClass}`}>{card.label}</p>
                     <p className="text-2xl font-black tracking-tight" style={{ color: accentColor }}>{card.val}</p>
                   </div>
                 ))}
@@ -592,25 +584,25 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
               {/* INVENTORY MASTER CARD - TEXTS FITTED MARGINALLY */}
               <div onClick={() => setInventoryExpanded(true)} className={`col-span-2 aspect-16/10 rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer active:scale-[0.98]`}>
-                <img src="/assets/autoswipe/pos4.png" alt="" className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-70 dark:opacity-50" />
+                <img src={WALLPAPER_IMAGE_URLS[3]} alt="" className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-70 dark:opacity-50" />
                 <div className="absolute inset-x-0 bottom-0 h-[65%] bg-linear-to-t from-black/95 via-black/30 to-transparent pointer-events-none" />
                 <div className="absolute inset-0 p-8 flex flex-col justify-between">
                   <div className="flex items-center gap-5 translate-y-2">
                     <div className="p-4 rounded-[13px] bg-orange-500/20 text-orange-500 backdrop-blur-3xl shadow-2xl border border-white/10"><Icons.Scientific size={28} /></div>
-                    <span className="text-[11px] font-black uppercase tracking-[0.4em] opacity-90 text-white drop-shadow-md">Live Matrix</span>
+                    <span className="pos-subtext text-[11px] font-black tracking-[0.4em] opacity-90 text-white drop-shadow-md">Live Matrix</span>
                   </div>
                   <div className="space-y-1 relative z-10 translate-y-2">
                     <div className="flex items-end justify-between">
                       <div className="text-7xl font-black tracking-tighter text-white drop-shadow-[0_8px_24px_rgba(0,0,0,0.7)]">{stats.stockLevel}%</div>
                       <div className="text-right pb-3">
-                        <p className="text-[9px] font-black uppercase tracking-[0.3em] text-white/50 mb-1.5">Network Load</p>
-                        <div className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest backdrop-blur-3xl shadow-2xl ${stats.criticalItems > 0 ? 'bg-red-500/80 text-white' : 'bg-green-500/80 text-white'}`}>
+                        <p className="pos-subtext text-[9px] font-black tracking-[0.3em] text-white/50 mb-1.5">Network Load</p>
+                        <div className={`pos-subtext px-4 py-1.5 rounded-full text-[9px] font-black tracking-widest backdrop-blur-3xl shadow-2xl ${stats.criticalItems > 0 ? 'bg-red-500/80 text-white' : 'bg-green-500/80 text-white'}`}>
                           {stats.criticalItems} Alerts
                         </div>
                       </div>
                     </div>
                     <div className="pt-2">
-                      <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.15em] leading-relaxed max-w-[280px]">Inventory flow optimized within margins. Real-time neural processing active.</p>
+                      <p className="app-subtext text-white/40 leading-relaxed max-w-[280px] opacity-50">Inventory flow optimized within margins. Real-time neural processing active.</p>
                     </div>
                   </div>
                 </div>
@@ -625,11 +617,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   <div className="p-3.5 rounded-2xl bg-emerald-500/20 text-emerald-500 shadow-inner">
                     <Icons.Requests size={26} />
                   </div>
-                  <div className="text-[10px] font-black px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 tracking-widest">REQUESTS</div>
+                  <div className="pos-subtext text-[10px] font-black px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 tracking-widest">Requests</div>
                 </div>
                 <div>
-                  <div className="text-3xl font-black tracking-tighter">Requests</div>
-                  <p className={`text-[10px] font-black mt-0.5 ${mutedTextClass}`}>Pending • Delivered • Out of Stock</p>
+                  <div className={`text-3xl font-black tracking-tighter ${textColorClass}`}>Requests</div>
+                  <p className={`app-subtext mt-0.5 opacity-50 ${mutedTextClass}`}>Pending • Delivered • Out of Stock</p>
                   <div className={`mt-2 text-xs font-black ${mutedTextClass}`}>
                     {requests.filter(r => r.status === 'pending').length} active
                   </div>
@@ -644,11 +636,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   <div className="p-3.5 rounded-2xl bg-amber-500/20 text-amber-500 shadow-inner">
                     <Icons.Restock size={26} />
                   </div>
-                  <div className="text-[10px] font-black px-3 py-1 rounded-full bg-amber-500/10 text-amber-500 tracking-widest">RESTOCKING</div>
+                  <div className="pos-subtext text-[10px] font-black px-3 py-1 rounded-full bg-amber-500/10 text-amber-500 tracking-widest">Restocking</div>
                 </div>
                 <div>
-                  <div className="text-3xl font-black tracking-tighter">Restocking</div>
-                  <p className={`text-[10px] font-black mt-0.5 ${mutedTextClass}`}>Low stock replenishment</p>
+                  <div className={`text-3xl font-black tracking-tighter ${textColorClass}`}>Restocking</div>
+                  <p className={`app-subtext mt-0.5 opacity-50 ${mutedTextClass}`}>Low stock replenishment</p>
                   <div className={`mt-2 text-xs font-black ${mutedTextClass}`}>
                     {items.filter(i => i.stock < i.threshold).length} items need attention
                   </div>
@@ -660,7 +652,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <div className="flex justify-between items-center mb-8">
                    <div className="space-y-1">
                       <h3 className={`text-2xl font-black tracking-tighter ${textColorClass}`}>Action Logs</h3>
-                      <p className={`text-[10px] font-black uppercase tracking-[0.3em] ${mutedTextClass}`}>Neural Ledger • 24h</p>
+                      <p className={`app-subtext opacity-50 ${mutedTextClass}`}>Neural Ledger • 24h</p>
                    </div>
                    <div className="p-3.5 rounded-full bg-blue-500/10 text-blue-500 shadow-xl"><Icons.Trends size={24} /></div>
                 </div>
@@ -672,15 +664,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                           {getLogIcon(log.type)}
                           <div className="flex flex-col min-w-0">
                             <span className={`text-[14px] font-black tracking-tight truncate ${textColorClass}`}>{log.action}</span>
-                            <span className={`text-[9px] font-bold uppercase tracking-[0.2em] truncate ${mutedTextClass}`}>{log.itemName}</span>
+                            <span className={`pos-subtext text-[9px] font-bold tracking-[0.2em] truncate ${mutedTextClass}`}>{log.itemName}</span>
                           </div>
                         </div>
-                        <span className={`text-[9px] font-black uppercase whitespace-nowrap ${mutedTextClass}`}>{log.time}</span>
+                        <span className={`pos-subtext text-[9px] font-black whitespace-nowrap ${mutedTextClass}`}>{log.time}</span>
                       </div>
                     ))
                   ) : (
                     <div className="py-16 text-center space-y-3">
-                       <p className={`text-[11px] font-black uppercase tracking-[0.4em] ${mutedTextClass}`}>No Log Data</p>
+                       <p className={`pos-subtext text-[11px] font-black tracking-[0.4em] ${mutedTextClass}`}>No Log Data</p>
                     </div>
                   )}
                 </div>
@@ -697,9 +689,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Monthly Revenue</h3>
-              <p className={`text-sm px-1 -mt-4 ${mutedTextClass}`}>{formatCurrency(stats.monthlyRev.toFixed(2))} this month • sorted by date</p>
+              <p className={`pos-subtext text-sm px-1 -mt-4 ${mutedTextClass}`}>{formatCurrency(stats.monthlyRev.toFixed(2))} this month • sorted by date</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
-                {!isLight && <div className="absolute inset-0 bg-zinc-900/88 pointer-events-none" aria-hidden="true" />}
+
                 <div className="relative">
                 {monthlyRevList.length > 0 ? (
                   monthlyRevList.map((row, idx) => (
@@ -709,7 +701,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     >
                       <div className="flex items-center justify-between gap-3 mb-3">
                         <div className="min-w-0">
-                          <div className={`text-[10px] font-black uppercase tracking-[0.2em] mb-0.5 ${statDetailTextClass}`}>
+                          <div className={`pos-subtext text-[10px] font-black tracking-[0.2em] mb-0.5 ${statDetailTextClass}`}>
                             {row.kind === 'invoice' ? 'Invoice' : 'Sale'}
                           </div>
                           <div className={`text-lg font-black tracking-tight truncate ${statDetailTextClass}`}>{row.name}</div>
@@ -718,7 +710,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                           <div className="text-base font-black" style={{ color: accentColor }}>{formatCurrency(row.total.toFixed(2))}</div>
                         </div>
                       </div>
-                      <div className={`text-[10px] font-black uppercase tracking-[0.2em] mb-3 ${statDetailTextClass}`}>
+                      <div className={`pos-subtext text-[10px] font-black tracking-[0.2em] mb-3 ${statDetailTextClass}`}>
                         {new Date(row.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </div>
                       <div className="space-y-1.5">
@@ -733,7 +725,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className={`text-[11px] font-black uppercase tracking-[2px] ${statDetailTextClass}`}>No revenue this month</p>
+                    <p className={`pos-subtext text-[11px] font-black tracking-[2px] ${statDetailTextClass}`}>No revenue this month</p>
                   </div>
                 )}
                 </div>
@@ -749,9 +741,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Daily Sales</h3>
-              <p className={`text-sm px-1 -mt-4 ${mutedTextClass}`}>{formatCurrency(stats.dailyRev.toFixed(2))} today • sorted by time</p>
+              <p className={`pos-subtext text-sm px-1 -mt-4 ${mutedTextClass}`}>{formatCurrency(stats.dailyRev.toFixed(2))} today • sorted by time</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
-                {!isLight && <div className="absolute inset-0 bg-zinc-900/88 pointer-events-none" aria-hidden="true" />}
+
                 <div className="relative">
                 {dailySalesList.length > 0 ? (
                   dailySalesList.map((row, idx) => (
@@ -761,7 +753,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     >
                       <div className="flex items-center justify-between gap-3 mb-3">
                         <div className="min-w-0">
-                          <div className={`text-[10px] font-black uppercase tracking-[0.2em] mb-0.5 ${statDetailTextClass}`}>
+                          <div className={`pos-subtext text-[10px] font-black tracking-[0.2em] mb-0.5 ${statDetailTextClass}`}>
                             {row.kind === 'invoice' ? 'Invoice' : 'Sale'}
                           </div>
                           <div className={`text-lg font-black tracking-tight truncate ${statDetailTextClass}`}>{row.name}</div>
@@ -770,7 +762,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                           <div className="text-base font-black" style={{ color: accentColor }}>{formatCurrency(row.total.toFixed(2))}</div>
                         </div>
                       </div>
-                      <div className={`text-[10px] font-black uppercase tracking-[0.2em] mb-3 ${statDetailTextClass}`}>
+                      <div className={`pos-subtext text-[10px] font-black tracking-[0.2em] mb-3 ${statDetailTextClass}`}>
                         {new Date(row.timestamp).toLocaleString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
                       <div className="space-y-1.5">
@@ -785,7 +777,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className={`text-[11px] font-black uppercase tracking-[2px] ${statDetailTextClass}`}>No sales today</p>
+                    <p className={`pos-subtext text-[11px] font-black tracking-[2px] ${statDetailTextClass}`}>No sales today</p>
                   </div>
                 )}
                 </div>
@@ -801,9 +793,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Customers</h3>
-              <p className={`text-sm px-1 -mt-4 ${mutedTextClass}`}>Invoice names • print count</p>
+              <p className={`pos-subtext text-sm px-1 -mt-4 ${mutedTextClass}`}>Invoice names • print count</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
-                {!isLight && <div className="absolute inset-0 bg-zinc-900/88 pointer-events-none" aria-hidden="true" />}
+
                 <div className="relative">
                 {customerPrintCounts.length > 0 ? (
                   customerPrintCounts.map((customer, idx) => (
@@ -813,14 +805,14 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     >
                       <div className={`font-black tracking-tight text-lg ${statDetailTextClass}`}>{customer.name}</div>
                       <div className="text-right shrink-0">
-                        <div className={`text-[10px] font-black uppercase tracking-widest ${statDetailTextClass}`}>Printed</div>
+                        <div className={`pos-subtext text-[10px] font-black tracking-widest ${statDetailTextClass}`}>Printed</div>
                         <div className="text-2xl font-black" style={{ color: accentColor }}>{customer.printCount}</div>
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className={`text-[11px] font-black uppercase tracking-[2px] ${statDetailTextClass}`}>No customers yet</p>
+                    <p className={`pos-subtext text-[11px] font-black tracking-[2px] ${statDetailTextClass}`}>No customers yet</p>
                   </div>
                 )}
                 </div>
@@ -836,9 +828,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Invoices Today</h3>
-              <p className={`text-sm px-1 -mt-4 ${mutedTextClass}`}>Sorted by most recent activity</p>
+              <p className={`pos-subtext text-sm px-1 -mt-4 ${mutedTextClass}`}>Sorted by most recent activity</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
-                {!isLight && <div className="absolute inset-0 bg-zinc-900/88 pointer-events-none" aria-hidden="true" />}
+
                 <div className="relative">
                 {invoicesTodayList.length > 0 ? (
                   invoicesTodayList.map((card, idx) => (
@@ -848,17 +840,17 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     >
                       <div className="flex items-center justify-between gap-3 mb-3">
                         <div className="min-w-0">
-                          <div className={`text-[10px] font-black uppercase tracking-[0.2em] mb-0.5 ${statDetailTextClass}`}>
+                          <div className={`pos-subtext text-[10px] font-black tracking-[0.2em] mb-0.5 ${statDetailTextClass}`}>
                             {card.isCurrent ? 'Current' : 'Saved'}
                           </div>
                           <div className={`text-lg font-black tracking-tight truncate ${statDetailTextClass}`}>{card.name}</div>
                         </div>
                         <div className="text-right shrink-0">
-                          <div className={`text-[10px] font-black uppercase tracking-widest ${statDetailTextClass}`}>Total</div>
+                          <div className={`pos-subtext text-[10px] font-black tracking-widest ${statDetailTextClass}`}>Total</div>
                           <div className="text-base font-black" style={{ color: accentColor }}>{currency} {card.total}</div>
                         </div>
                       </div>
-                      <div className={`text-[10px] font-black uppercase tracking-[0.2em] mb-3 ${statDetailTextClass}`}>
+                      <div className={`pos-subtext text-[10px] font-black tracking-[0.2em] mb-3 ${statDetailTextClass}`}>
                         {new Date(card.latestTimestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         {' • '}
                         {card.items.length} item{card.items.length !== 1 ? 's' : ''}
@@ -875,7 +867,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className={`text-[11px] font-black uppercase tracking-[2px] ${statDetailTextClass}`}>No invoices today</p>
+                    <p className={`pos-subtext text-[11px] font-black tracking-[2px] ${statDetailTextClass}`}>No invoices today</p>
                   </div>
                 )}
                 </div>
@@ -923,7 +915,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                         <h4 className="text-[11px] font-black tracking-tight leading-tight truncate text-white">{item.name}</h4>
                       </div>
                       <div className="absolute top-2 right-2">
-                        <div className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${item.stock < item.threshold ? 'bg-red-500 text-white' : 'bg-black/60 text-white/90'}`}>{item.stock}u</div>
+                        <div className={`pos-subtext px-2 py-1 rounded-lg text-[9px] font-black tracking-widest ${item.stock < item.threshold ? 'bg-red-500 text-white' : 'bg-black/60 text-white/90'}`}>{item.stock}u</div>
                       </div>
                     </div>
                   </div>
@@ -973,19 +965,24 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
                 {filteredRequests.length > 0 ? (
                   filteredRequests.map((req, idx) => (
-                    <div key={req.id} className={`px-8 py-7 flex items-center justify-between ${idx !== filteredRequests.length - 1 ? 'border-b border-white/10' : ''}`}>
-                      <div>
-                        <div className={`font-black tracking-tight text-lg ${textColorClass}`}>{req.name}</div>
-                        <div className="text-[10px] font-black uppercase opacity-40 mt-1">{new Date(req.timestamp).toLocaleDateString()}</div>
+                    <div key={req.id} className={`px-8 py-7 flex items-center justify-between gap-4 ${idx !== filteredRequests.length - 1 ? 'border-b border-white/10' : ''}`}>
+                      <div className="min-w-0">
+                        <div className={`font-black tracking-tight text-lg ${textColorClass}`}>{req.requester}</div>
+                        <div className="flex items-center gap-1.5 mt-2">
+                          <span className="pos-subtext text-[10px] font-black opacity-50 uppercase tracking-widest">Elapsed</span>
+                          <span className={`font-num-medium text-xs tabular-nums tracking-tight ${req.status === 'pending' ? 'text-yellow-500' : req.status === 'delivered' ? 'text-emerald-500' : 'text-red-400'}`}>
+                            {formatRequestElapsed(req.timestamp, currentTime)}
+                          </span>
+                        </div>
                       </div>
-                      <div className={`text-xs px-4 py-1 rounded-full font-black tracking-widest uppercase ${req.status === 'pending' ? 'bg-yellow-500/20 text-yellow-500' : req.status === 'delivered' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-red-500/20 text-red-500'}`}>
+                      <div className={`shrink-0 text-xs px-4 py-1 rounded-full font-black tracking-widest uppercase ${req.status === 'pending' ? 'bg-yellow-500/20 text-yellow-500' : req.status === 'delivered' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-red-500/20 text-red-500'}`}>
                         {req.status}
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className="text-[11px] font-black uppercase tracking-[2px] opacity-30">No {requestTab} requests</p>
+                    <p className="pos-subtext text-[11px] font-black tracking-[2px] opacity-30">No {requestTab} requests</p>
                   </div>
                 )}
               </div>
@@ -1011,7 +1008,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                         <img src={item.image} alt="" className="w-12 h-12 rounded-xl object-cover" />
                         <div>
                           <div className={`font-black ${textColorClass}`}>{item.name}</div>
-                          <div className="text-xs opacity-40 font-black uppercase tracking-widest">{item.stock} / {item.threshold} • {item.category}</div>
+                          <div className="pos-subtext text-xs opacity-40 font-black tracking-widest">{item.stock} / {item.threshold} • {item.category}</div>
                         </div>
                       </div>
                       <button 
@@ -1057,13 +1054,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                          <div className="flex flex-col items-start gap-0.5">
                            <div className="flex-1 min-w-0">
                              <h4 className="text-[11px] font-black tracking-tight leading-tight truncate text-white">{item.name}</h4>
-                             <p className="text-[8px] font-black uppercase text-white/50 tracking-widest truncate">{item.category}</p>
+                             <p className="pos-subtext text-[8px] font-black text-white/50 tracking-widest truncate">{item.category}</p>
                            </div>
                            <span className="text-[10px] font-black text-white whitespace-nowrap">¢{item.price}</span>
                          </div>
                       </div>
                       <div className="absolute top-2 right-2" aria-hidden="true">
-                        <div className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest backdrop-blur-3xl shadow-xl ${item.stock < item.threshold ? 'bg-red-500 text-white' : 'bg-black/60 text-white/90'}`}>
+                        <div className={`pos-subtext px-2 py-1 rounded-lg text-[9px] font-black tracking-widest backdrop-blur-3xl shadow-xl ${item.stock < item.threshold ? 'bg-red-500 text-white' : 'bg-black/60 text-white/90'}`}>
                           {item.stock}u
                         </div>
                       </div>
@@ -1146,13 +1143,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                          <div className="flex flex-col items-start gap-0.5">
                            <div className="flex-1 min-w-0">
                              <h4 className="text-[11px] font-black tracking-tight leading-tight truncate text-white">{item.name}</h4>
-                             <p className="text-[8px] font-black uppercase text-white/50 tracking-widest truncate">{item.category}</p>
+                             <p className="pos-subtext text-[8px] font-black text-white/50 tracking-widest truncate">{item.category}</p>
                            </div>
                            <span className="text-[10px] font-black text-white whitespace-nowrap">¢{item.price}</span>
                          </div>
                       </div>
                       <div className="absolute top-2 right-2" aria-hidden="true">
-                        <div className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest backdrop-blur-3xl shadow-xl ${item.stock < item.threshold ? 'bg-red-500 text-white' : 'bg-black/60 text-white/90'}`}>
+                        <div className={`pos-subtext px-2 py-1 rounded-lg text-[9px] font-black tracking-widest backdrop-blur-3xl shadow-xl ${item.stock < item.threshold ? 'bg-red-500 text-white' : 'bg-black/60 text-white/90'}`}>
                           {item.stock}u
                         </div>
                       </div>
@@ -1205,19 +1202,24 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
                 {filteredRequests.length > 0 ? (
                   filteredRequests.map((req, idx) => (
-                    <div key={req.id} className={`px-8 py-7 flex items-center justify-between ${idx !== filteredRequests.length - 1 ? 'border-b border-white/10' : ''}`}>
-                      <div>
-                        <div className={`font-black tracking-tight text-lg ${textColorClass}`}>{req.name}</div>
-                        <div className="text-[10px] font-black uppercase opacity-40 mt-1">{new Date(req.timestamp).toLocaleDateString()}</div>
+                    <div key={req.id} className={`px-8 py-7 flex items-center justify-between gap-4 ${idx !== filteredRequests.length - 1 ? 'border-b border-white/10' : ''}`}>
+                      <div className="min-w-0">
+                        <div className={`font-black tracking-tight text-lg ${textColorClass}`}>{req.requester}</div>
+                        <div className="flex items-center gap-1.5 mt-2">
+                          <span className="pos-subtext text-[10px] font-black opacity-50 uppercase tracking-widest">Elapsed</span>
+                          <span className={`font-num-medium text-xs tabular-nums tracking-tight ${req.status === 'pending' ? 'text-yellow-500' : req.status === 'delivered' ? 'text-emerald-500' : 'text-red-400'}`}>
+                            {formatRequestElapsed(req.timestamp, currentTime)}
+                          </span>
+                        </div>
                       </div>
-                      <div className={`text-xs px-4 py-1 rounded-full font-black tracking-widest uppercase ${req.status === 'pending' ? 'bg-yellow-500/20 text-yellow-500' : req.status === 'delivered' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-red-500/20 text-red-500'}`}>
+                      <div className={`shrink-0 text-xs px-4 py-1 rounded-full font-black tracking-widest uppercase ${req.status === 'pending' ? 'bg-yellow-500/20 text-yellow-500' : req.status === 'delivered' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-red-500/20 text-red-500'}`}>
                         {req.status}
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className="text-[11px] font-black uppercase tracking-[2px] opacity-30">No {requestTab} requests</p>
+                    <p className="pos-subtext text-[11px] font-black tracking-[2px] opacity-30">No {requestTab} requests</p>
                   </div>
                 )}
               </div>
@@ -1243,7 +1245,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                         <img src={item.image} alt="" className="w-12 h-12 rounded-xl object-cover" />
                         <div>
                           <div className={`font-black ${textColorClass}`}>{item.name}</div>
-                          <div className="text-xs opacity-40 font-black uppercase tracking-widest">{item.stock} / {item.threshold} • {item.category}</div>
+                          <div className="pos-subtext text-xs opacity-40 font-black tracking-widest">{item.stock} / {item.threshold} • {item.category}</div>
                         </div>
                       </div>
                       <button 
@@ -1288,7 +1290,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       <span className={`text-xl font-black tracking-tight ${textColorClass}`}>{p.itemName}</span>
                       <span className="text-xl font-black" style={{ color: accentColor }}>{formatCurrency(p.total.toString())}</span>
                     </div>
-                    <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-[0.2em] opacity-40">
+                    <div className="flex justify-between items-center pos-subtext text-[10px] font-black tracking-[0.2em] opacity-40">
                       <span>{p.date}</span>
                       <span>Qty: {p.quantity}</span>
                     </div>
@@ -1296,7 +1298,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 ))}
                 {purchases.length === 0 && (
                   <div className="p-10 text-center">
-                    <p className={`text-[11px] font-black uppercase tracking-[0.4em] opacity-30 ${textColorClass}`}>No transactions yet</p>
+                    <p className={`pos-subtext text-[11px] font-black tracking-[0.4em] opacity-30 ${textColorClass}`}>No transactions yet</p>
                   </div>
                 )}
               </div>
@@ -1370,9 +1372,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <input
                   id="request-notepad-title"
                   type="text"
-                  value={newRequestName}
-                  onChange={(e) => setNewRequestName(e.target.value)}
-                  placeholder="Request name"
+                  value={newRequesterName}
+                  onChange={(e) => setNewRequesterName(e.target.value)}
+                  placeholder="Requester name"
                   className={`flex-1 min-w-0 bg-transparent outline-none text-lg font-black tracking-tight placeholder:opacity-30 ${
                     isLight ? 'text-black' : 'text-white'
                   }`}
@@ -1390,7 +1392,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   </button>
                   <button
                     onClick={addNewRequest}
-                    disabled={!newRequestName.trim()}
+                    disabled={!newRequesterName.trim()}
                     className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all disabled:opacity-40 ${
                       isLight ? 'bg-emerald-500 text-white' : 'bg-emerald-500 text-white shadow-[0_0_14px_rgb(16,185,129)]'
                     }`}
@@ -1410,9 +1412,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 }}
               >
                 <textarea
-                  value={requestSearchQuery}
-                  onChange={(e) => setRequestSearchQuery(e.target.value)}
-                  placeholder="Notes..."
+                  value={requestNotes}
+                  onChange={(e) => setRequestNotes(e.target.value)}
+                  placeholder="Products / notes..."
                   className={`w-full h-full resize-none bg-transparent outline-none text-base leading-7 font-medium placeholder:opacity-30 ${
                     isLight ? 'text-zinc-800' : 'text-zinc-200'
                   }`}
@@ -1439,10 +1441,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                  <h3 id="restock-title" className="text-5xl font-black tracking-tighter">Replenish</h3>
                  <div className="p-8 rounded-[28.6px] bg-current/5 flex items-center gap-6 shadow-inner">
                    <img src={selectedItem.image} alt={selectedItem.name} className="w-24 h-24 rounded-[20.8px] object-cover" />
-                   <div className="flex flex-col"><span className="text-xl font-black truncate">{selectedItem.name}</span><span className="text-[12px] font-black opacity-40 uppercase tracking-widest">{selectedItem.stock} U Current Flow</span></div>
+                   <div className="flex flex-col"><span className="text-xl font-black truncate">{selectedItem.name}</span><span className="pos-subtext text-[12px] font-black opacity-40 tracking-widest">{selectedItem.stock} U Current Flow</span></div>
                  </div>
                  <div className="space-y-4">
-                   <label className="text-[11px] font-black uppercase tracking-[0.5em] opacity-30 ml-3" htmlFor="restock-qty">Injection Count</label>
+                   <label className="pos-subtext text-[11px] font-black tracking-[0.5em] opacity-30 ml-3" htmlFor="restock-qty">Injection Count</label>
                    <input 
                      id="restock-qty" 
                      type="number" 
@@ -1453,7 +1455,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                    />
                  </div>
                  <div className="space-y-4">
-                   <label className="text-[11px] font-black uppercase tracking-[0.5em] opacity-30 ml-3" htmlFor="restock-supplier">Supplier (optional)</label>
+                   <label className="pos-subtext text-[11px] font-black tracking-[0.5em] opacity-30 ml-3" htmlFor="restock-supplier">Supplier (optional)</label>
                    <input 
                      id="restock-supplier" 
                      type="text" 
@@ -1503,11 +1505,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             <div className={`p-10 space-y-8 ${textColorClass}`}>
               <div className="flex justify-between items-start">
                 <h3 id="item-detail-title" className="text-4xl font-black tracking-tighter leading-tight">{selectedItem.name}</h3>
-                <span className={`px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest ${isLight ? 'bg-zinc-100' : 'bg-white/10'}`}>{selectedItem.category}</span>
+                <span className={`px-5 py-2 rounded-2xl pos-subtext text-[10px] font-black tracking-widest ${isLight ? 'bg-zinc-100' : 'bg-white/10'}`}>{selectedItem.category}</span>
               </div>
               <div className="grid grid-cols-2 gap-8">
-                <div><p className="text-[10px] font-black opacity-30 uppercase tracking-[0.3em] mb-2">Inventory</p><p className={`text-3xl font-black ${selectedItem.stock < selectedItem.threshold ? 'text-red-500' : ''}`}>{selectedItem.stock} U</p></div>
-                <div><p className="text-[10px] font-black opacity-30 uppercase tracking-[0.3em] mb-2">Credit Rate</p><p className="text-3xl font-black">¢{selectedItem.price}</p></div>
+                <div><p className="pos-subtext text-[10px] font-black opacity-30 tracking-[0.3em] mb-2">Inventory</p><p className={`text-3xl font-black ${selectedItem.stock < selectedItem.threshold ? 'text-red-500' : ''}`}>{selectedItem.stock} U</p></div>
+                <div><p className="pos-subtext text-[10px] font-black opacity-30 tracking-[0.3em] mb-2">Credit Rate</p><p className="text-3xl font-black">¢{selectedItem.price}</p></div>
               </div>
               <button onClick={() => setIsRestocking(true)} aria-label="Replenish this asset" className="w-full py-7 rounded-[20.8px] text-black font-black uppercase tracking-[0.4em] text-[11px] active:scale-95 shadow-2xl flex items-center justify-center gap-4 transition-all" style={{ backgroundColor: accentColor }}><Icons.Scientific size={18} /> Replenish Asset</button>
             </div>

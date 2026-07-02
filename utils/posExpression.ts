@@ -41,7 +41,7 @@ export const parsePosLineItems = (expression: string): PosLineItem[] => {
       const price = parseFloat(priceStr);
       if (Number.isNaN(price)) return null;
 
-      if (!qtyStr) return { price, quantity: 1 };
+      if (!qtyStr) return null;
 
       const quantity = parseFloat(qtyStr);
       if (Number.isNaN(quantity)) return null;
@@ -49,6 +49,11 @@ export const parsePosLineItems = (expression: string): PosLineItem[] => {
       return { price, quantity };
     })
     .filter((item): item is PosLineItem => item !== null);
+};
+
+export const formatInventoryPriceSegment = (price: number): string => {
+  const priceStr = Number.isInteger(price) ? String(price) : price.toString();
+  return `${priceStr}x`;
 };
 
 export const formatPriceLabel = (price: number, currency = 'GHS'): string => {
@@ -103,6 +108,9 @@ export const getLoggedSegments = (expression: string): string[] => {
 
 export const formatPosLineItems = (expression: string, currency = 'GHS'): string[] =>
   parsePosLineItems(expression).map((item) => formatPosLineItem(item, currency));
+
+export const cleanPosExpressionForEval = (expression: string): string =>
+  normalizeExpression(expression).replace(/\+$/, '');
 
 export const evaluatePosExpression = (expression: string): number =>
   parsePosLineItems(expression).reduce(

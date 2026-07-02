@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icons } from '../constants';
-import { CartLineItem, InvoiceActionLog, UserProfile } from '../types';
+import { CartLineItem, InvoiceActionLog, InvoicePrintLog, UserProfile } from '../types';
 import { formatPosLineItemDisplay } from '../utils/posExpression';
 import { printerInstance } from '../utils/bluetoothPrinter';
 import { storage } from '../hooks/storage';
@@ -19,6 +19,7 @@ interface HistoryPanelProps {
   cartItems: CartLineItem[];
   actionLogs: InvoiceActionLog[];
   runningTotal: string;
+  printLogs: InvoicePrintLog[];
   profiles: UserProfile[];
   activeProfileId: string;
   onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
@@ -48,6 +49,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   cartItems,
   actionLogs,
   runningTotal,
+  printLogs,
   profiles,
   activeProfileId,
   onInvoicePrinted,
@@ -62,6 +64,11 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const [attendantPickerInvoice, setAttendantPickerInvoice] = useState<string | null>(null);
 
   const activeProfile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
+
+  const printedNames = useMemo(
+    () => new Set(printLogs.map((log) => log.invoiceName)),
+    [printLogs]
+  );
 
   useEffect(() => {
     storage.set(ATTENDANT_NAMES_KEY, attendantNames);
@@ -99,19 +106,21 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const handlePrintClick = useCallback(
     async (card: InvoiceCard) => {
       if (isPrinting) return;
-      if (printerInstance.isConnected) {
-        setIsPrinting(true);
-        try {
-          const ok = await executePrint(card);
-          if (ok) onInvoicePrinted?.(card.name, card.total, card.items);
-        } catch (err: unknown) {
-          alert(err instanceof Error ? err.message : 'Failed to print');
-        } finally {
-          setIsPrinting(false);
+      setIsPrinting(true);
+      try {
+        const connected =
+          printerInstance.isConnected || (await printerInstance.ensureConnected());
+        if (!connected) {
+          setPendingPrintCard(card);
+          setPrinterModalOpen(true);
+          return;
         }
-      } else {
-        setPendingPrintCard(card);
-        setPrinterModalOpen(true);
+        const ok = await executePrint(card);
+        if (ok) onInvoicePrinted?.(card.name, card.total, card.items);
+      } catch (err: unknown) {
+        alert(err instanceof Error ? err.message : 'Failed to print');
+      } finally {
+        setIsPrinting(false);
       }
     },
     [executePrint, isPrinting, onInvoicePrinted]
@@ -478,9 +487,14 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   };
 
   const renderCardBody = (card: InvoiceCard, isActive: boolean) => {
+    const isPaid = printedNames.has(card.name);
+
     return (
     <>
-      <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-3 shrink-0 border-b border-black/6 bg-white text-black">
+      <div
+        className="px-5 pt-5 pb-4 flex items-center justify-between gap-3 shrink-0 text-black bg-white border-b border-black/6"
+        style={{ minHeight: '25%' }}
+      >
         {card.isCurrent && isActive ? (
           <input
             id="invoice-title"
@@ -489,7 +503,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             onChange={e => onInvoiceNameChange(e.target.value)}
             placeholder="Invoice #1"
             aria-label="Invoice name"
-            className="flex-1 min-w-0 text-2xl font-black tracking-tighter bg-transparent outline-none border-b border-transparent focus:border-black/20 transition-colors placeholder:opacity-30 text-black"
+            className="flex-1 min-w-0 text-2xl font-black tracking-tighter bg-transparent outline-none border-b border-transparent focus:border-black/20 transition-colors placeholder:text-black/30 text-black"
           />
         ) : (
           <div className="flex-1 min-w-0">
@@ -499,11 +513,11 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 fontWeight: 900,
                 letterSpacing: '0.28em',
                 textTransform: 'uppercase',
-                opacity: 0.38,
+                opacity: 0.7,
                 marginBottom: 2,
               }}
             >
-              {card.isCurrent ? 'Current' : 'Saved'}
+              {card.isCurrent ? 'Current' : isPaid ? 'Paid' : 'Unpaid'}
             </div>
             <div
               id={isActive ? 'invoice-title' : undefined}
@@ -521,7 +535,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
               ref={closeRef}
               onClick={handleClose}
               aria-label="Close invoice panel"
-              className="p-2.5 rounded-full hover:bg-black/8 transition-colors duration-150 text-black"
+              className="p-2.5 rounded-full hover:bg-black/5 transition-colors duration-150 text-black"
             >
               <Icons.X size={22} />
             </button>
@@ -652,7 +666,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                       <div className="text-lg font-black tracking-tight truncate">{card.name}</div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="text-[10px] font-black uppercase tracking-widest opacity-40">Total</div>
+                      <div className="app-subtext opacity-40">Total</div>
                       <div className="text-base font-black">{currency} {card.total}</div>
                     </div>
                   </div>
@@ -723,6 +737,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         isLight={isLight}
         isPrinting={isPrinting}
         onPrint={handleModalPrint}
+        autoPrintOnConnect={!!pendingPrintCard}
       />
     </div>
   );

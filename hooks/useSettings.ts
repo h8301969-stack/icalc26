@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { THEMES, WALLPAPER_SLIDES } from '../constants';
+import { migrateWallpaperSlides } from '../utils/wallpapers';
 import { storage } from './storage';
 import { UserProfile } from '../types';
 
@@ -16,6 +17,7 @@ const DEFAULTS = {
   uiScale: 1,
   disableCalculatorCard: false as boolean,
   layoutMode: 'portrait' as 'portrait' | 'landscape',
+  standbyTimerSeconds: 0,
   profiles: [] as UserProfile[],
   activeProfileId: '',
 };
@@ -41,8 +43,10 @@ const migrateStoredSettings = (stored: Partial<typeof DEFAULTS> & Record<string,
   }
 
   if (!merged.activeProfileId && merged.profiles.length > 0) {
-    return { ...merged, activeProfileId: merged.profiles[0].id };
+    merged.activeProfileId = merged.profiles[0].id;
   }
+
+  merged.customWallpapers = migrateWallpaperSlides(merged.customWallpapers);
 
   return merged as typeof DEFAULTS;
 };

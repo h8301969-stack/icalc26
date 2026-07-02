@@ -4,11 +4,13 @@ import { printerInstance, KnownPrinter, getBluetoothSupport } from '../utils/blu
 import { CartLineItem, UserProfile } from '../types';
 import ProfileAvatar from './ProfileAvatar';
 import ProfilePickerModal from './ProfilePickerModal';
+import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
 
 interface SettingsSlice {
   themeMode: 'light' | 'dark';
   disableCalculatorCard?: boolean;
   layoutMode?: 'portrait' | 'landscape';
+  standbyTimerSeconds?: number;
   profiles?: UserProfile[];
   activeProfileId?: string;
 }
@@ -47,7 +49,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [paperWidth, setPaperWidth] = useState<'58mm' | '25mm'>('58mm');
   const [printSuccess, setPrintSuccess] = useState(false);
   const [bluetoothSupport, setBluetoothSupport] = useState(getBluetoothSupport);
   const [isProfilePickerOpen, setIsProfilePickerOpen] = useState(false);
@@ -100,7 +101,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     if (printerInstance.isConnected) {
       setPrinterName(printerInstance.getConnectedDeviceName());
       setConnectedId(printerInstance.getConnectedDeviceId());
-      setPaperWidth(printerInstance.paperWidth);
     } else {
       setPrinterName(null);
       setConnectedId(null);
@@ -134,7 +134,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       const connectedName = await printerInstance.scanAndConnect();
       setPrinterName(connectedName);
       setConnectedId(printerInstance.getConnectedDeviceId());
-      setPaperWidth(printerInstance.paperWidth);
       await refreshPrinterState();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to connect to printer.';
@@ -154,7 +153,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       const connectedName = await printerInstance.connectToSavedPrinter(printerId);
       setPrinterName(connectedName);
       setConnectedId(printerInstance.getConnectedDeviceId());
-      setPaperWidth(printerInstance.paperWidth);
       await refreshPrinterState();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to reconnect to printer.';
@@ -172,11 +170,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setConnectedId(null);
     setPrintSuccess(false);
     void refreshPrinterState();
-  };
-
-  const handlePaperWidthChange = (width: '58mm' | '25mm') => {
-    printerInstance.paperWidth = width;
-    setPaperWidth(width);
   };
 
   const profiles = settings.profiles ?? [];
@@ -220,10 +213,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const handlePrintReceipt = async () => {
-    if (!printerName) return;
     setErrorMessage(null);
     setPrintSuccess(false);
     try {
+      const connected = printerInstance.isConnected || (await printerInstance.ensureConnected());
+      if (!connected) {
+        setErrorMessage('No printer connected. Scan and pair a printer first.');
+        return;
+      }
+      setPrinterName(printerInstance.getConnectedDeviceName());
+      setConnectedId(printerInstance.getConnectedDeviceId());
       // Use actual items if available, otherwise print a demo test receipt
       const itemsToPrint = cartItems.length > 0 
         ? cartItems.map((item, idx) => ({
@@ -323,6 +322,36 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onAddProfile={handleAddProfile}
           onUpdateProfileAvatar={handleUpdateProfileAvatar}
         />
+
+        {/* Idle / Standby Screen */}
+        <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
+          <div className="flex items-center gap-3 mb-4">
+            <span><Icons.Moon size={20} /></span>
+            <h3 className="text-sm font-black uppercase tracking-wider">Idle Screen</h3>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {STANDBY_TIMER_OPTIONS.map((option) => {
+              const isActive = (settings.standbyTimerSeconds ?? 0) === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => _updateSettings({ standbyTimerSeconds: option.value })}
+                  className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all active:scale-95 ${
+                    isActive
+                      ? 'bg-blue-500 text-white border-blue-500'
+                      : isLight
+                        ? 'bg-zinc-100 border-zinc-200 text-black'
+                        : 'bg-white/5 border-white/5 text-white'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Appearance Settings */}
         <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
@@ -526,26 +555,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             >
               {isScanning ? 'Searching...' : knownPrinters.length > 0 ? 'Scan for new printer' : 'Scan & Connect Printer'}
             </button>
-
-            {/* Paper Size selector (auto detects, allows manual correction) */}
-            <div className="flex flex-col gap-2">
-              <span className={`text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black' : 'text-white'}`}>Roll Specifications</span>
-              <div className="flex gap-2">
-                {(['58mm', '25mm'] as const).map(width => (
-                  <button
-                    key={width}
-                    onClick={() => handlePaperWidthChange(width)}
-                    className={`flex-1 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider border transition-all active:scale-95 ${
-                      paperWidth === width 
-                        ? 'bg-blue-500 text-white border-blue-500' 
-                        : (isLight ? 'bg-zinc-100 border-zinc-200 text-black' : 'bg-white/5 border-white/5 text-white')
-                    }`}
-                  >
-                    {width} {printerName && printerInstance.paperWidth === width && '(Auto)'}
-                  </button>
-                ))}
-              </div>
-            </div>
 
             {/* Test Invoice / Print Action */}
             {printerName && (

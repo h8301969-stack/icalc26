@@ -8,6 +8,7 @@ interface PrinterConnectModalProps {
   isLight: boolean;
   onPrint: () => Promise<void>;
   isPrinting?: boolean;
+  autoPrintOnConnect?: boolean;
 }
 
 const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
@@ -16,6 +17,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
   isLight,
   onPrint,
   isPrinting = false,
+  autoPrintOnConnect = false,
 }) => {
   const [printerName, setPrinterName] = useState<string | null>(null);
   const [knownPrinters, setKnownPrinters] = useState<KnownPrinter[]>([]);
@@ -61,6 +63,9 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
       const connectedName = await printerInstance.scanAndConnect();
       setPrinterName(connectedName);
       await refreshPrinterState();
+      if (autoPrintOnConnect) {
+        await handlePrint();
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to connect to printer.';
       if (!message.toLowerCase().includes('cancel')) {
@@ -78,6 +83,9 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
       const connectedName = await printerInstance.connectToSavedPrinter(printerId);
       setPrinterName(connectedName);
       await refreshPrinterState();
+      if (autoPrintOnConnect) {
+        await handlePrint();
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to reconnect to printer.';
       if (!message.toLowerCase().includes('cancel')) {
@@ -200,7 +208,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             </div>
           )}
 
-          {printerName && (
+          {printerName && !autoPrintOnConnect && (
             <button
               type="button"
               onClick={handlePrint}

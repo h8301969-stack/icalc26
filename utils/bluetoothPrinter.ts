@@ -122,10 +122,18 @@ export class BLEPrinter {
 
   private detectPaperWidth(deviceName: string) {
     const lower = deviceName.toLowerCase();
-    if (lower.includes('25') || lower.includes('micro') || lower.includes('label')) {
+    if (/\b25\b|25mm|2\.5\s*inch|micro|mini|label|narrow/.test(lower)) {
       this.paperWidth = '25mm';
     } else {
+      // 58mm, 80mm, and unknown thermal printers default to standard width
       this.paperWidth = '58mm';
+    }
+  }
+
+  private applySavedPaperWidth(deviceId: string) {
+    const saved = this.getSavedPrinters().find((p) => p.id === deviceId);
+    if (saved?.paperWidth) {
+      this.paperWidth = saved.paperWidth;
     }
   }
 
@@ -256,6 +264,7 @@ export class BLEPrinter {
     this.assertBluetoothAvailable();
 
     this.device = device;
+    this.applySavedPaperWidth(device.id);
     this.detectPaperWidth(device.name || '');
     this.attachDisconnectHandler(device);
 
@@ -360,6 +369,46 @@ export class BLEPrinter {
     await this.connectGATT(this.device);
   }
 
+  /** Silently reconnect to a previously paired printer (no browser picker). */
+  async ensureConnected(): Promise<boolean> {
+    if (this.isConnected && this.device?.gatt?.connected && this.characteristic) {
+      return true;
+    }
+
+    const support = getBluetoothSupport();
+    if (!support.supported) return false;
+
+    try {
+      if (this.device) {
+        await this.connectGATT(this.device);
+        return true;
+      }
+
+      const authorized = await this.getAuthorizedDevices();
+      const saved = [...this.getSavedPrinters()].sort(
+        (a, b) => b.lastConnected - a.lastConnected
+      );
+
+      for (const entry of saved) {
+        const device = authorized.find((d) => d.id === entry.id);
+        if (device) {
+          await this.connectGATT(device);
+          return true;
+        }
+      }
+
+      const available = authorized.find((d) => d.gatt);
+      if (available) {
+        await this.connectGATT(available);
+        return true;
+      }
+    } catch (err) {
+      console.warn('Auto printer connect failed:', err);
+    }
+
+    return false;
+  }
+
   disconnect() {
     if (this.device) {
       this.detachDisconnectHandler(this.device);
@@ -449,7 +498,6 @@ export class BLEPrinter {
     if (attendantName) {
       commands.push(...Array.from(encoder.encode(`Served by: ${attendantName}\n`)));
     }
-    commands.push(...Array.from(encoder.encode(`Width: ${this.paperWidth} (Auto)\n`)));
     commands.push(...Array.from(encoder.encode('--------------------------------\n')));
 
     commands.push(0x1B, 0x61, 0x00);
@@ -496,7 +544,7 @@ export class BLEPrinter {
 
     const width = this.paperWidth === '25mm' ? 192 : 384;
     const itemHeight = 24;
-    const headerHeight = attendantName ? 108 : 90;
+    const headerHeight = attendantName ? 100 : 88;
     const footerHeight = 80;
     const height = headerHeight + (items.length * itemHeight) + footerHeight;
 
@@ -521,15 +569,12 @@ export class BLEPrinter {
     ctx.fillText('iCalc Spatial POS Receipt', width / 2, 35);
     if (attendantName) {
       ctx.fillText(`Served by: ${attendantName}`, width / 2, 50);
-      ctx.fillText(`Width: ${this.paperWidth} (Image)`, width / 2, 65);
-    } else {
-      ctx.fillText(`Width: ${this.paperWidth} (Image)`, width / 2, 50);
     }
 
     ctx.font = '14px "Courier New", monospace';
-    ctx.fillText('-'.repeat(width === 192 ? 20 : 40), width / 2, attendantName ? 83 : 68);
+    ctx.fillText('-'.repeat(width === 192 ? 20 : 40), width / 2, attendantName ? 68 : 68);
 
-    let currentY = attendantName ? 100 : 85;
+    let currentY = attendantName ? 85 : 85;
     const maxTextLen = width === 192 ? 12 : 24;
 
     items.forEach(item => {

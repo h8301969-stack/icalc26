@@ -1,6 +1,11 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { safeEvaluate, evaluateExpression, CalculationError } from '../utils/calculator';
-import { evaluatePosExpression, isPosStyleExpression } from '../utils/posExpression';
+import {
+  cleanPosExpressionForEval,
+  evaluatePosExpression,
+  formatInventoryPriceSegment,
+  isPosStyleExpression,
+} from '../utils/posExpression';
 
 export const useCalculator = (
   onEvaluate: (expr: string, res: string) => void,
@@ -31,7 +36,9 @@ export const useCalculator = (
       return;
     }
     try {
-      const cleanExpr = expression.replace(/[+\-*/%×÷x(]+$/i, '');
+      const cleanExpr = isPosStyleExpression(expression)
+        ? cleanPosExpressionForEval(expression)
+        : expression.replace(/[+\-*/%×÷(]+$/i, '');
       if (!cleanExpr || cleanExpr === '0') {
         setCalcError(null);
         return;
@@ -193,6 +200,31 @@ export const useCalculator = (
     setIsResultMode(false);
   }, [triggerHaptic, cursorPos]);
 
+  const addInventoryItem = useCallback((price: number) => {
+    triggerHaptic();
+    pushToUndo(expression);
+    setIsResultMode(false);
+
+    const segment = formatInventoryPriceSegment(price);
+
+    setExpression((prev) => {
+      if (prev === '0') {
+        setCursorPos(segment.length);
+        return segment;
+      }
+
+      let pos = cursorPos;
+      if (pos < 0 || pos > prev.length) pos = prev.length;
+
+      const before = prev.slice(0, pos);
+      const needsSeparator = before.length > 0 && !before.endsWith('+');
+      const insert = needsSeparator ? `+${segment}` : segment;
+      const newExpr = before + insert + prev.slice(pos);
+      setCursorPos(pos + insert.length);
+      return newExpr;
+    });
+  }, [expression, cursorPos, triggerHaptic, pushToUndo]);
+
   return {
     expression,
     setExpression,
@@ -204,6 +236,7 @@ export const useCalculator = (
     handleRedo,
     clearExpression,
     deleteLast,
+    addInventoryItem,
     cursorPos,
     setCursorPos,
   };

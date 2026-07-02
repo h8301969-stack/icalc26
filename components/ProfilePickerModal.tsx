@@ -153,7 +153,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                 onClick={() => openGallery('new')}
                 ariaLabel="Choose avatar from gallery"
               />
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-40">
+              <span className="app-subtext opacity-40">
                 Tap avatar to choose image
               </span>
             </div>
