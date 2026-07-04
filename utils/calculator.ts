@@ -105,6 +105,23 @@ export const safeEvaluate = (expr: string, decimals = 2): string => {
   }
 };
 
+/** Strip clipboard text to calculator/POS expression characters only. */
+export const sanitizeClipboardExpression = (raw: string): string => {
+  if (!raw) return '';
+
+  const compact = raw
+    .replace(/[\u2212\u2013\u2014]/g, '-')
+    .replace(/×/g, '*')
+    .replace(/÷/g, '/')
+    .replace(/,/g, '')
+    .replace(/\s+/g, '');
+
+  const filtered = compact.replace(/[^0-9.+\-*/%xX()]/g, '');
+  if (!filtered) return '';
+
+  return filtered.replace(/\*/g, '×').replace(/\//g, '÷');
+};
+
 export const isValidPartialExpression = (expr: string): boolean => {
   if (!expr) return true;
   try {

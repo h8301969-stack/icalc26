@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { THEMES, WALLPAPER_SLIDES } from '../constants';
 import { migrateWallpaperSlides } from '../utils/wallpapers';
+import { getAutoLayoutMode, getSystemTheme, ThemeMode } from '../utils/devicePreferences';
 import { storage } from './storage';
 import { UserProfile } from '../types';
 
@@ -11,12 +12,15 @@ const DEFAULTS = {
   glassBlur: 24,
   hapticFeedback: true,
   hapticIntensity: 'medium' as 'soft' | 'medium' | 'intense',
-  themeMode: 'light' as 'light' | 'dark',
+  themeMode: 'system' as ThemeMode,
   currency: 'GHS' as 'GHS' | 'USD' | 'EUR' | 'GBP' | 'JPY' | 'NGN',
   customWallpapers: WALLPAPER_SLIDES,
   uiScale: 1,
   disableCalculatorCard: false as boolean,
   layoutMode: 'portrait' as 'portrait' | 'landscape',
+  layoutModeAuto: true,
+  invoiceSwitcherMode: 'horizontal' as 'horizontal' | 'grid' | 'vertical',
+  invoiceSwitcherGridCols: 3 as 3 | 4,
   standbyTimerSeconds: 0,
   profiles: [] as UserProfile[],
   activeProfileId: '',
@@ -48,6 +52,11 @@ const migrateStoredSettings = (stored: Partial<typeof DEFAULTS> & Record<string,
 
   merged.customWallpapers = migrateWallpaperSlides(merged.customWallpapers);
 
+  if (merged.layoutModeAuto !== false) {
+    merged.layoutModeAuto = true;
+    merged.layoutMode = getAutoLayoutMode();
+  }
+
   return merged as typeof DEFAULTS;
 };
 
@@ -55,11 +64,44 @@ export const useSettings = () => {
   const [settings, setSettings] = useState<typeof DEFAULTS>(() =>
     migrateStoredSettings(storage.get(SETTINGS_KEY, DEFAULTS))
   );
+  const [systemTheme, setSystemTheme] = useState(getSystemTheme);
 
   useEffect(() => {
     storage.set(SETTINGS_KEY, settings);
     document.documentElement.style.fontSize = `${(settings.uiScale || 1) * 100}%`;
   }, [settings]);
+
+  useEffect(() => {
+    const resolved = settings.themeMode === 'system' ? systemTheme : settings.themeMode;
+    document.documentElement.style.colorScheme = resolved;
+  }, [settings.themeMode, systemTheme]);
+
+  useEffect(() => {
+    const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onThemeChange = () => setSystemTheme(getSystemTheme());
+    darkMq.addEventListener('change', onThemeChange);
+    return () => darkMq.removeEventListener('change', onThemeChange);
+  }, []);
+
+  useEffect(() => {
+    const syncLayout = () => {
+      setSettings((prev) => {
+        if (!prev.layoutModeAuto) return prev;
+        const next = getAutoLayoutMode();
+        return next === prev.layoutMode ? prev : { ...prev, layoutMode: next };
+      });
+    };
+
+    const portraitMq = window.matchMedia('(orientation: portrait)');
+    portraitMq.addEventListener('change', syncLayout);
+    window.addEventListener('resize', syncLayout);
+    syncLayout();
+
+    return () => {
+      portraitMq.removeEventListener('change', syncLayout);
+      window.removeEventListener('resize', syncLayout);
+    };
+  }, []);
 
   const updateSettings = useCallback((updates: Partial<typeof settings>) => {
     setSettings(prev => ({ ...prev, ...updates }));
@@ -110,11 +152,16 @@ export const useSettings = () => {
     navigator.vibrate(duration * multiplier);
   }, [settings.hapticFeedback, settings.hapticIntensity]);
 
+  const isLight = useMemo(
+    () => (settings.themeMode === 'system' ? systemTheme : settings.themeMode) === 'light',
+    [settings.themeMode, systemTheme]
+  );
+
   return {
     settings,
     updateSettings,
     triggerHaptic,
-    isLight: settings.themeMode === 'light',
+    isLight,
     formatCurrency,
     activeProfile,
     setActiveProfile,

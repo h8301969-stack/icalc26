@@ -15,6 +15,8 @@ export interface InvoiceActionLog {
   quantity: number;
   invoiceName: string;
   timestamp: number;
+  isUnidentified?: boolean;
+  profileName?: string;
 }
 
 export interface CartLineItem {

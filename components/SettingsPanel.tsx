@@ -7,9 +7,12 @@ import ProfilePickerModal from './ProfilePickerModal';
 import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
 
 interface SettingsSlice {
-  themeMode: 'light' | 'dark';
+  themeMode: 'light' | 'dark' | 'system';
   disableCalculatorCard?: boolean;
   layoutMode?: 'portrait' | 'landscape';
+  layoutModeAuto?: boolean;
+  invoiceSwitcherMode?: 'horizontal' | 'grid' | 'vertical';
+  invoiceSwitcherGridCols?: 3 | 4;
   standbyTimerSeconds?: number;
   profiles?: UserProfile[];
   activeProfileId?: string;
@@ -26,6 +29,7 @@ interface SettingsPanelProps {
   invoiceName?: string;
   currency?: string;
   onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
+  isLight?: boolean;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
@@ -34,13 +38,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   settings,
   updateSettings: _updateSettings,
   onApplyAppearance,
+  isLight: isLightProp,
   cartItems = [],
   runningTotal = 0,
   invoiceName = 'Walk-in Customer',
   currency = '¢',
   onInvoicePrinted,
 }) => {
-  const isLight = settings.themeMode === 'light';
+  const isLight = isLightProp ?? settings.themeMode === 'light';
 
   // Bluetooth states
   const [printerName, setPrinterName] = useState<string | null>(null);
@@ -66,14 +71,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     onClose();
   }, [onClose]);
 
-  const applyAppearance = useCallback((key: string, value: unknown) => {
-    _updateSettings({ [key]: value } as Partial<SettingsSlice>);
+  const applyAppearance = useCallback((keyOrPatch: string | Partial<SettingsSlice>, value?: unknown) => {
+    if (typeof keyOrPatch === 'string') {
+      _updateSettings({ [keyOrPatch]: value } as Partial<SettingsSlice>);
+    } else {
+      _updateSettings(keyOrPatch);
+    }
     onApplyAppearance?.();
   }, [_updateSettings, onApplyAppearance]);
 
   const cycleLayoutMode = useCallback(() => {
     const current = settings.layoutMode ?? 'portrait';
-    applyAppearance('layoutMode', current === 'portrait' ? 'landscape' : 'portrait');
+    applyAppearance({ layoutMode: current === 'portrait' ? 'landscape' : 'portrait', layoutModeAuto: false });
   }, [settings.layoutMode, applyAppearance]);
 
   const cycleCalculatorBackground = useCallback(() => {
@@ -327,7 +336,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
           <div className="flex items-center gap-3 mb-4">
             <span><Icons.Moon size={20} /></span>
-            <h3 className="text-sm font-black uppercase tracking-wider">Idle Screen</h3>
+            <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Idle Screen</h3>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -338,7 +347,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   key={option.value}
                   type="button"
                   onClick={() => _updateSettings({ standbyTimerSeconds: option.value })}
-                  className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all active:scale-95 ${
+                  className={`app-subtext px-3 py-2 rounded-xl text-[10px] font-black border transition-all active:scale-95 ${
                     isActive
                       ? 'bg-blue-500 text-white border-blue-500'
                       : isLight
@@ -356,8 +365,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* Appearance Settings */}
         <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
           <div className="flex items-center gap-3 mb-4">
-            <span>{settings.themeMode === 'light' ? <Icons.Sun size={20} /> : <Icons.Moon size={20} />}</span>
-            <h3 className="text-sm font-black uppercase tracking-wider">Appearance</h3>
+            <span>{isLight ? <Icons.Sun size={20} /> : <Icons.Moon size={20} />}</span>
+            <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Appearance</h3>
           </div>
 
           <div className="space-y-4">
@@ -367,15 +376,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
                 <button
                   onClick={() => _updateSettings({ themeMode: 'light' })}
-                  className={`px-4 py-1.5 flex items-center gap-1 transition-all ${settings.themeMode === 'light' ? 'bg-black text-white' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
+                  className={`px-3 py-1.5 flex items-center gap-1 transition-all ${settings.themeMode === 'light' ? 'bg-black text-white' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
                 >
                   <Icons.Sun size={14} /> Light
                 </button>
                 <button
                   onClick={() => _updateSettings({ themeMode: 'dark' })}
-                  className={`px-4 py-1.5 flex items-center gap-1 transition-all ${settings.themeMode === 'dark' ? 'bg-white text-black' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
+                  className={`px-3 py-1.5 flex items-center gap-1 transition-all ${settings.themeMode === 'dark' ? 'bg-white text-black' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
                 >
                   <Icons.Moon size={14} /> Dark
+                </button>
+                <button
+                  onClick={() => _updateSettings({ themeMode: 'system' })}
+                  className={`px-3 py-1.5 transition-all ${settings.themeMode === 'system' ? (isLight ? 'bg-black text-white' : 'bg-white text-black') : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
+                >
+                  Auto
                 </button>
               </div>
             </div>
@@ -384,7 +399,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <div className="flex items-center justify-between pt-2 border-t border-white/10">
               <div className="flex flex-col">
                 <span className="text-sm font-black">Layout</span>
-                <span className={`text-[10px] ${isLight ? 'text-black' : 'text-white'}`}>Portrait stack • landscape splits keypad left</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  {settings.layoutModeAuto !== false ? 'Auto from device orientation' : 'Manual layout override'}
+                </span>
               </div>
               <button
                 type="button"
@@ -400,11 +417,73 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </button>
             </div>
 
+            {/* Invoice switcher layout */}
+            <div className="pt-2 border-t border-white/10 space-y-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-sm font-black">Invoice switcher</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  How invoices appear when you open the switcher
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  { id: 'horizontal' as const, label: 'Horizontal', icon: Icons.Carousel },
+                  { id: 'grid' as const, label: 'Grid', icon: Icons.Grid },
+                  { id: 'vertical' as const, label: 'Vertical', icon: Icons.Stack },
+                ]).map(({ id, label, icon: Icon }) => {
+                  const active = (settings.invoiceSwitcherMode ?? 'horizontal') === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => applyAppearance({ invoiceSwitcherMode: id })}
+                      className={`app-subtext px-3 py-2 rounded-xl text-[10px] font-black border transition-all active:scale-95 flex items-center gap-1.5 ${
+                        active
+                          ? 'bg-blue-500 text-white border-blue-500'
+                          : isLight
+                            ? 'bg-zinc-100 border-zinc-200 text-black'
+                            : 'bg-white/5 border-white/5 text-white'
+                      }`}
+                    >
+                      <Icon size={14} />
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              {(settings.invoiceSwitcherMode ?? 'horizontal') === 'grid' && (
+                <div className="flex items-center justify-between">
+                  <span className={`app-subtext text-[10px] font-black ${isLight ? 'text-black/70' : 'text-white/70'}`}>
+                    Grid density
+                  </span>
+                  <div className="flex rounded-full overflow-hidden border text-[10px] font-black uppercase tracking-widest">
+                    {([3, 4] as const).map((cols) => {
+                      const active = (settings.invoiceSwitcherGridCols ?? 3) === cols;
+                      return (
+                        <button
+                          key={cols}
+                          type="button"
+                          onClick={() => applyAppearance({ invoiceSwitcherGridCols: cols })}
+                          className={`px-3 py-1.5 transition-all ${
+                            active
+                              ? isLight ? 'bg-black text-white' : 'bg-white text-black'
+                              : isLight ? 'bg-zinc-100 text-black' : 'bg-white/10 text-white'
+                          }`}
+                        >
+                          {cols}×{cols}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Calculator on background */}
             <div className="flex items-center justify-between pt-2 border-t border-white/10">
               <div className="flex flex-col">
                 <span className="text-sm font-black">Calculator on background</span>
-                <span className={`text-[10px] ${isLight ? 'text-black' : 'text-white'}`}>Remove card • fill more space, larger buttons</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>Remove card • fill more space, larger buttons</span>
               </div>
               <button
                 type="button"
@@ -422,7 +501,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
           <div className="flex items-center gap-3 mb-4">
             <span className="text-blue-500"><Icons.Printer size={22} /></span>
-            <h3 className="text-sm font-black uppercase tracking-wider">Bluetooth</h3>
+            <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Bluetooth</h3>
           </div>
 
           <div className="space-y-4">
@@ -442,7 +521,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             )}
 
             <div className="flex items-center justify-between gap-2">
-              <span className={`text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black' : 'text-white'}`}>
+              <span className={`app-subtext text-[10px] font-black ${isLight ? 'text-black' : 'text-white'}`}>
                 {knownPrinters.length} device{knownPrinters.length !== 1 ? 's' : ''} known
               </span>
               <button
@@ -462,7 +541,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 className="flex items-center justify-between p-3 rounded-xl bg-green-500/10 border border-green-500/20"
               >
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-bold text-green-500 uppercase tracking-widest">Connected</span>
+                  <span className="app-subtext text-xs font-bold text-green-500">Connected</span>
                   <span className="text-sm font-black truncate">{entry.saved.name}</span>
                 </div>
                 <button
@@ -476,7 +555,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             {knownPrinters.filter((e) => e.status === 'available').length > 0 && (
               <div className="space-y-2">
-                <span className={`text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black' : 'text-white'}`}>
+                <span className={`app-subtext text-[10px] font-black ${isLight ? 'text-black' : 'text-white'}`}>
                   Available (paired in browser)
                 </span>
                 {knownPrinters.filter((e) => e.status === 'available').map((entry) => {
@@ -490,7 +569,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     >
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-black truncate">{entry.saved.name}</div>
-                        <div className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isLight ? 'text-black' : 'text-white'}`}>
+                        <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
                           Ready to connect
                         </div>
                       </div>
@@ -509,7 +588,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             {knownPrinters.filter((e) => e.status === 'saved').length > 0 && (
               <div className="space-y-2">
-                <span className={`text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black' : 'text-white'}`}>
+                <span className={`app-subtext text-[10px] font-black ${isLight ? 'text-black' : 'text-white'}`}>
                   Saved printers
                 </span>
                 {knownPrinters.filter((e) => e.status === 'saved').map((entry) => {
@@ -523,7 +602,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     >
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-black truncate">{entry.saved.name}</div>
-                        <div className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isLight ? 'text-black' : 'text-white'}`}>
+                        <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
                           {entry.saved.lastConnected > 0
                             ? `Last used ${new Date(entry.saved.lastConnected).toLocaleDateString()}`
                             : 'Tap connect to pair again'}

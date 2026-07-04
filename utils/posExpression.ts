@@ -117,3 +117,15 @@ export const evaluatePosExpression = (expression: string): number =>
     (sum, item) => sum + item.price * item.quantity,
     0
   );
+
+const formatPosSegment = (item: PosLineItem): string => {
+  const priceStr = Number.isInteger(item.price) ? String(item.price) : String(item.price);
+  if (item.quantity === 1) return priceStr;
+  const qtyStr = Number.isInteger(item.quantity) ? String(item.quantity) : String(item.quantity);
+  return `${priceStr}x${qtyStr}`;
+};
+
+export const buildPosExpressionFromItems = (items: PosLineItem[]): string => {
+  if (!items.length) return '0';
+  return items.map(formatPosSegment).join('+');
+};

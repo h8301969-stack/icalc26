@@ -89,8 +89,8 @@ const WallpaperOverlay: React.FC<WallpaperOverlayProps> = ({
       onPointerDown={swipe.onPointerDown}
       onPointerUp={swipe.onPointerUp}
       onPointerCancel={swipe.onPointerCancel}
-      role="presentation"
-      aria-label="Locked. Tap or swipe anywhere to unlock."
+      role="main"
+      aria-label="Standby screen. Tap or swipe anywhere to unlock."
     >
       <BrandHeader />
 

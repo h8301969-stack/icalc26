@@ -96,7 +96,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
   return (
     <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-4 pointer-events-auto">
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-md"
+        className={`absolute inset-0 ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
         onClick={() => { resetAddForm(); onClose(); }}
         aria-hidden="true"
       />
@@ -205,7 +205,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                   <div className="flex-1 min-w-0">
                     <div className="font-black truncate">{profile.name}</div>
                     {isActive && (
-                      <div className="text-[10px] font-bold uppercase tracking-widest opacity-50 mt-0.5">
+                      <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isActive ? 'opacity-50' : ''}`}>
                         Active
                       </div>
                     )}

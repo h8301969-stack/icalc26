@@ -4,7 +4,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { evaluateExpression, safeEvaluate, CalculationError, isValidPartialExpression } from './calculator';
+import {
+  evaluateExpression,
+  safeEvaluate,
+  CalculationError,
+  isValidPartialExpression,
+  sanitizeClipboardExpression,
+} from './calculator';
 
 describe('Basic Operations', () => {
   it('Addition: 2 + 3 = 5', () => {
@@ -295,6 +301,26 @@ describe('safeEvaluate - Safe Evaluation', () => {
 
   it('safeEvaluate("0") = "0.00"', () => {
     expect(safeEvaluate('0')).toBe('0.00');
+  });
+});
+
+describe('sanitizeClipboardExpression', () => {
+  it('keeps math expressions and normalizes operators', () => {
+    expect(sanitizeClipboardExpression('2 * 3 + 4')).toBe('2×3+4');
+    expect(sanitizeClipboardExpression('10 / 2')).toBe('10÷2');
+  });
+
+  it('keeps POS quantity expressions', () => {
+    expect(sanitizeClipboardExpression('56x2+120x1')).toBe('56x2+120x1');
+  });
+
+  it('strips non-math text', () => {
+    expect(sanitizeClipboardExpression('56 ghs has been added to invoice')).toBe('56');
+    expect(sanitizeClipboardExpression('hello')).toBe('');
+  });
+
+  it('removes thousands separators', () => {
+    expect(sanitizeClipboardExpression('1,234.56+2')).toBe('1234.56+2');
   });
 });
 

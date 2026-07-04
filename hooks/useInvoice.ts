@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { CartLineItem, InvoiceActionLog, InvoicePrintLog } from '../types';
 import { InventoryItem } from './usePOS';
 import { storage } from './storage';
@@ -20,10 +20,16 @@ const matchInventoryByPrice = (
 const PAST_LOGS_KEY = 'past_invoice_logs';
 const PRINT_LOGS_KEY = 'invoice_print_logs';
 
+interface SegmentMeta {
+  timestamp: number;
+  profileName: string;
+}
+
 export const useInvoice = (
   expression: string,
   inventory: InventoryItem[],
-  currency = 'GHS'
+  currency = 'GHS',
+  profileName = 'Staff'
 ) => {
   const [invoiceName, setInvoiceName] = useState(() =>
     storage.get(INVOICE_NAME_KEY, 'Invoice #1')
@@ -36,6 +42,8 @@ export const useInvoice = (
   const [printLogs, setPrintLogs] = useState<InvoicePrintLog[]>(() =>
     storage.get(PRINT_LOGS_KEY, [])
   );
+
+  const segmentMetaRef = useRef<Map<string, SegmentMeta>>(new Map());
 
   useEffect(() => {
     storage.set(INVOICE_NAME_KEY, invoiceName);
@@ -59,13 +67,27 @@ export const useInvoice = (
 
   const currentLogs = useMemo((): InvoiceActionLog[] => {
     const segments = getLoggedSegments(expression);
+    const now = Date.now();
+    const metaMap = segmentMetaRef.current;
+
+    segments.forEach((segment) => {
+      if (!metaMap.has(segment)) {
+        metaMap.set(segment, { timestamp: now, profileName });
+      }
+    });
+    for (const key of [...metaMap.keys()]) {
+      if (!segments.includes(key)) metaMap.delete(key);
+    }
+
     return segments
       .map((segment, idx) => {
         const item = parsePosLineItems(segment)[0];
         if (!item) return null;
 
         const matched = matchInventoryByPrice(item.price, inventory);
+        const isUnidentified = !matched;
         const label = matched?.name ?? formatPriceLabel(item.price, currency);
+        const meta = metaMap.get(segment);
 
         return {
           id: `invoice-log-${idx}-${segment}`,
@@ -74,11 +96,13 @@ export const useInvoice = (
           price: item.price,
           quantity: item.quantity,
           invoiceName,
-          timestamp: Date.now() - (segments.length - idx) * 1000,
+          timestamp: meta?.timestamp ?? now,
+          isUnidentified,
+          profileName: meta?.profileName ?? profileName,
         };
       })
       .filter((log): log is NonNullable<typeof log> => log !== null) as InvoiceActionLog[];
-  }, [expression, inventory, invoiceName, currency]);
+  }, [expression, inventory, invoiceName, currency, profileName]);
 
   const actionLogs = useMemo(() => {
     return [...pastLogs, ...currentLogs];
@@ -89,12 +113,20 @@ export const useInvoice = (
     return safeEvaluate(expression);
   }, [expression]);
 
-  const saveCurrentInvoiceAndStartNew = () => {
+  const saveCurrentToPast = () => {
     if (currentLogs.length > 0) {
       setPastLogs((prev) => [...prev, ...currentLogs]);
     }
-    
-    // Increment invoice number
+  };
+
+  const switchToInvoice = (name: string) => {
+    setPastLogs((prev) => prev.filter((log) => log.invoiceName !== name));
+    setInvoiceName(name);
+  };
+
+  const saveCurrentInvoiceAndStartNew = () => {
+    saveCurrentToPast();
+
     const match = invoiceName.match(/Invoice #(\d+)/);
     let nextNum = 2;
     if (match) {
@@ -105,6 +137,21 @@ export const useInvoice = (
 
   const clearAllInvoices = () => {
     setPastLogs([]);
+  };
+
+  const resolveUnidentifiedPrice = (price: number, itemName: string) => {
+    setPastLogs((prev) =>
+      prev.map((log) =>
+        log.isUnidentified && Math.abs(log.price - price) < 0.001
+          ? {
+              ...log,
+              itemName,
+              isUnidentified: false,
+              message: `${itemName} has been added to ${log.invoiceName}`,
+            }
+          : log
+      )
+    );
   };
 
   const recordPrint = (name: string, total: string, items: CartLineItem[]) => {
@@ -128,7 +175,10 @@ export const useInvoice = (
     runningTotal,
     printLogs,
     saveCurrentInvoiceAndStartNew,
+    saveCurrentToPast,
+    switchToInvoice,
     clearAllInvoices,
     recordPrint,
+    resolveUnidentifiedPrice,
   };
 };

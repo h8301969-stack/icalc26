@@ -33,7 +33,7 @@ const InvoiceAttendantPicker: React.FC<InvoiceAttendantPickerProps> = ({
   return (
     <div className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center p-4 pointer-events-auto">
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        className={`absolute inset-0 ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
         onClick={onClose}
         aria-hidden="true"
       />

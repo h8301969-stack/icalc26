@@ -114,7 +114,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
   return (
     <div className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center p-4 pointer-events-auto">
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-md"
+        className={`absolute inset-0 ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
         onClick={onClose}
         aria-hidden="true"
       />
@@ -155,7 +155,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
           {printerName && (
             <div className="flex items-center justify-between p-3 rounded-xl bg-green-500/10 border border-green-500/20">
               <div className="min-w-0">
-                <span className="text-xs font-bold text-green-500 uppercase tracking-widest">Connected</span>
+                <span className="app-subtext text-xs font-bold text-green-500">Connected</span>
                 <div className="text-sm font-black truncate">{printerName}</div>
               </div>
               <span className="text-green-500 shrink-0"><Icons.Check size={18} /></span>
@@ -171,7 +171,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
               >
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-black truncate">{entry.saved.name}</div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest mt-0.5 opacity-50">
+                  <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
                     {entry.status === 'available' ? 'Ready to connect' : 'Saved printer'}
                   </div>
                 </div>
@@ -188,7 +188,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
           })}
 
           {knownPrinters.length === 0 && (
-            <div className="p-4 rounded-xl text-center text-xs font-bold opacity-60">
+            <div className={`app-subtext p-4 rounded-xl text-center text-xs font-bold ${isLight ? 'text-black/60' : 'text-white/60'}`}>
               No printers yet. Scan to pair your first device.
             </div>
           )}

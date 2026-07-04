@@ -1,4 +1,4 @@
-const CACHE_NAME = 'icalc-26-v5';
+const CACHE_NAME = 'icalc-26-v6';
 const SHELL_ASSETS = ['./', './index.html', './manifest.json', './offline.html'];
 
 const isDev = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
