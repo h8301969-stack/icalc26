@@ -42,7 +42,7 @@ const InvoiceDragHandle: React.FC<InvoiceDragHandleProps> = ({
     <div
       className={`touch-none select-none ${
         edgePinned
-          ? 'absolute bottom-0 left-0 right-0 z-30 h-10'
+          ? 'absolute bottom-0 left-0 right-0 z-20 h-10'
           : 'shrink-0 h-10'
       } ${
         disabled ? 'pointer-events-none' : 'cursor-grab active:cursor-grabbing pointer-events-auto'

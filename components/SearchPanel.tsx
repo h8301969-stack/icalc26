@@ -155,7 +155,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
 
   if (!isOpen) return null;
 
-  const panelBg = isLight ? 'bg-white/95 text-black' : 'bg-[#1c1c1e]/95 text-white';
+  const panelBg = isLight ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white';
   const rowHover = isLight ? 'hover:bg-black/5' : 'hover:bg-white/8';
   const muted = isLight ? 'text-zinc-500' : 'text-zinc-400';
 
@@ -184,7 +184,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
 
         {invoiceHits.length > 0 && (
           <section className="mb-2">
-            <p className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest ${muted}`}>
+            <p className={`app-subtext px-3 py-1.5 text-[10px] font-black ${muted}`}>
               Invoices
             </p>
             {invoiceHits.map((inv) => (
@@ -197,7 +197,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
               >
                 <div className="min-w-0">
                   <p className="text-sm font-bold truncate">{inv.name}</p>
-                  <p className={`text-[10px] font-semibold ${muted}`}>
+                  <p className={`app-subtext text-[10px] font-semibold ${muted}`}>
                     {inv.isCurrent ? 'Current' : 'Saved'} · {inv.itemCount} items
                   </p>
                 </div>
@@ -211,7 +211,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
 
         {inventoryHits.length > 0 && (
           <section>
-            <p className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest ${muted}`}>
+            <p className={`app-subtext px-3 py-1.5 text-[10px] font-black ${muted}`}>
               Inventory
             </p>
             {inventoryHits.map((hit) => {
@@ -226,7 +226,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-bold truncate">{hit.name}</p>
-                    <p className={`text-[10px] font-semibold ${muted}`}>
+                    <p className={`app-subtext text-[10px] font-semibold ${muted}`}>
                       {hit.category} · {hit.stock} in stock
                     </p>
                   </div>

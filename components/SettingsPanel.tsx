@@ -1,15 +1,24 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Icons } from '../constants';
-import { printerInstance, KnownPrinter, getBluetoothSupport } from '../utils/bluetoothPrinter';
+import {
+  printerInstance,
+  KnownPrinter,
+  getBluetoothSupport,
+  normalizeBluetoothError,
+} from '../utils/bluetoothPrinter';
 import { CartLineItem, UserProfile } from '../types';
 import ProfileAvatar from './ProfileAvatar';
 import ProfilePickerModal from './ProfilePickerModal';
 import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
+import { ADMIN_PROFILE_NAME, ensureAdminProfile } from '../utils/auth';
 
 interface SettingsSlice {
-  themeMode: 'light' | 'dark';
+  themeMode: 'light' | 'dark' | 'system';
   disableCalculatorCard?: boolean;
   layoutMode?: 'portrait' | 'landscape';
+  layoutModeAuto?: boolean;
+  invoiceSwitcherMode?: 'horizontal' | 'grid' | 'vertical';
+  invoiceSwitcherGridCols?: 3 | 4;
   standbyTimerSeconds?: number;
   profiles?: UserProfile[];
   activeProfileId?: string;
@@ -26,6 +35,11 @@ interface SettingsPanelProps {
   invoiceName?: string;
   currency?: string;
   onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
+  isLight?: boolean;
+  accountUsername?: string;
+  onChangePassword?: (current: string, newPassword: string) => Promise<{ error?: string; ok?: boolean }>;
+  onLogout?: () => void;
+  onVerifyAdminPassword?: (password: string) => Promise<{ error?: string; ok?: boolean }>;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
@@ -34,13 +48,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   settings,
   updateSettings: _updateSettings,
   onApplyAppearance,
+  isLight: isLightProp,
   cartItems = [],
   runningTotal = 0,
   invoiceName = 'Walk-in Customer',
   currency = '¢',
   onInvoicePrinted,
+  accountUsername,
+  onChangePassword,
+  onLogout,
+  onVerifyAdminPassword,
 }) => {
-  const isLight = settings.themeMode === 'light';
+  const isLight = isLightProp ?? settings.themeMode === 'light';
 
   // Bluetooth states
   const [printerName, setPrinterName] = useState<string | null>(null);
@@ -52,6 +71,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [printSuccess, setPrintSuccess] = useState(false);
   const [bluetoothSupport, setBluetoothSupport] = useState(getBluetoothSupport);
   const [isProfilePickerOpen, setIsProfilePickerOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [showPasswordPanel, setShowPasswordPanel] = useState(false);
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -66,14 +92,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     onClose();
   }, [onClose]);
 
-  const applyAppearance = useCallback((key: string, value: unknown) => {
-    _updateSettings({ [key]: value } as Partial<SettingsSlice>);
+  const applyAppearance = useCallback((keyOrPatch: string | Partial<SettingsSlice>, value?: unknown) => {
+    if (typeof keyOrPatch === 'string') {
+      _updateSettings({ [keyOrPatch]: value } as Partial<SettingsSlice>);
+    } else {
+      _updateSettings(keyOrPatch);
+    }
     onApplyAppearance?.();
   }, [_updateSettings, onApplyAppearance]);
 
   const cycleLayoutMode = useCallback(() => {
     const current = settings.layoutMode ?? 'portrait';
-    applyAppearance('layoutMode', current === 'portrait' ? 'landscape' : 'portrait');
+    applyAppearance({ layoutMode: current === 'portrait' ? 'landscape' : 'portrait', layoutModeAuto: false });
   }, [settings.layoutMode, applyAppearance]);
 
   const cycleCalculatorBackground = useCallback(() => {
@@ -136,7 +166,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       setConnectedId(printerInstance.getConnectedDeviceId());
       await refreshPrinterState();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to connect to printer.';
+      const message = normalizeBluetoothError(err).message;
       if (!message.toLowerCase().includes('cancel')) {
         setErrorMessage(message);
       }
@@ -155,7 +185,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       setConnectedId(printerInstance.getConnectedDeviceId());
       await refreshPrinterState();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to reconnect to printer.';
+      const message = normalizeBluetoothError(err).message;
       if (!message.toLowerCase().includes('cancel')) {
         setErrorMessage(message);
       }
@@ -181,15 +211,42 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const handleAddProfile = (name: string, avatarUrl: string) => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.toLowerCase() === ADMIN_PROFILE_NAME.toLowerCase()) return;
     const profile: UserProfile = {
       id: `profile-${Date.now()}`,
-      name,
+      name: trimmed,
       avatarUrl,
     };
     _updateSettings({
-      profiles: [...profiles, profile],
+      profiles: ensureAdminProfile([...profiles, profile]),
       activeProfileId: profile.id,
     });
+  };
+
+  const handleChangePasswordSubmit = async () => {
+    if (!onChangePassword) return;
+    setPasswordError(null);
+    setPasswordSuccess(false);
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New passwords do not match.');
+      return;
+    }
+    setIsChangingPassword(true);
+    try {
+      const result = await onChangePassword(currentPassword, newPassword);
+      if (result.error) {
+        setPasswordError(result.error);
+        return;
+      }
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordSuccess(true);
+      setTimeout(() => setPasswordSuccess(false), 3000);
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   const handleUpdateProfileAvatar = (profileId: string, avatarUrl: string) => {
@@ -321,13 +378,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onSelectProfile={handleSelectProfile}
           onAddProfile={handleAddProfile}
           onUpdateProfileAvatar={handleUpdateProfileAvatar}
+          onVerifyAdminPassword={onVerifyAdminPassword}
         />
 
         {/* Idle / Standby Screen */}
         <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
           <div className="flex items-center gap-3 mb-4">
             <span><Icons.Moon size={20} /></span>
-            <h3 className="text-sm font-black uppercase tracking-wider">Idle Screen</h3>
+            <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Idle Screen</h3>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -338,7 +396,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   key={option.value}
                   type="button"
                   onClick={() => _updateSettings({ standbyTimerSeconds: option.value })}
-                  className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all active:scale-95 ${
+                  className={`app-subtext px-3 py-2 rounded-xl text-[10px] font-black border transition-all active:scale-95 ${
                     isActive
                       ? 'bg-blue-500 text-white border-blue-500'
                       : isLight
@@ -356,8 +414,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* Appearance Settings */}
         <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
           <div className="flex items-center gap-3 mb-4">
-            <span>{settings.themeMode === 'light' ? <Icons.Sun size={20} /> : <Icons.Moon size={20} />}</span>
-            <h3 className="text-sm font-black uppercase tracking-wider">Appearance</h3>
+            <span>{isLight ? <Icons.Sun size={20} /> : <Icons.Moon size={20} />}</span>
+            <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Appearance</h3>
           </div>
 
           <div className="space-y-4">
@@ -367,15 +425,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
                 <button
                   onClick={() => _updateSettings({ themeMode: 'light' })}
-                  className={`px-4 py-1.5 flex items-center gap-1 transition-all ${settings.themeMode === 'light' ? 'bg-black text-white' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
+                  className={`px-3 py-1.5 flex items-center gap-1 transition-all ${settings.themeMode === 'light' ? 'bg-black text-white' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
                 >
                   <Icons.Sun size={14} /> Light
                 </button>
                 <button
                   onClick={() => _updateSettings({ themeMode: 'dark' })}
-                  className={`px-4 py-1.5 flex items-center gap-1 transition-all ${settings.themeMode === 'dark' ? 'bg-white text-black' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
+                  className={`px-3 py-1.5 flex items-center gap-1 transition-all ${settings.themeMode === 'dark' ? 'bg-white text-black' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
                 >
                   <Icons.Moon size={14} /> Dark
+                </button>
+                <button
+                  onClick={() => _updateSettings({ themeMode: 'system' })}
+                  className={`px-3 py-1.5 transition-all ${settings.themeMode === 'system' ? (isLight ? 'bg-black text-white' : 'bg-white text-black') : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
+                >
+                  Auto
                 </button>
               </div>
             </div>
@@ -384,7 +448,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <div className="flex items-center justify-between pt-2 border-t border-white/10">
               <div className="flex flex-col">
                 <span className="text-sm font-black">Layout</span>
-                <span className={`text-[10px] ${isLight ? 'text-black' : 'text-white'}`}>Portrait stack • landscape splits keypad left</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  {settings.layoutModeAuto !== false ? 'Auto from device orientation' : 'Manual layout override'}
+                </span>
               </div>
               <button
                 type="button"
@@ -400,11 +466,73 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </button>
             </div>
 
+            {/* Invoice switcher layout */}
+            <div className="pt-2 border-t border-white/10 space-y-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-sm font-black">Invoice switcher</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  How invoices appear when you open the switcher
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  { id: 'horizontal' as const, label: 'Horizontal', icon: Icons.Carousel },
+                  { id: 'grid' as const, label: 'Grid', icon: Icons.Grid },
+                  { id: 'vertical' as const, label: 'Vertical', icon: Icons.Stack },
+                ]).map(({ id, label, icon: Icon }) => {
+                  const active = (settings.invoiceSwitcherMode ?? 'horizontal') === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => applyAppearance({ invoiceSwitcherMode: id })}
+                      className={`app-subtext px-3 py-2 rounded-xl text-[10px] font-black border transition-all active:scale-95 flex items-center gap-1.5 ${
+                        active
+                          ? 'bg-blue-500 text-white border-blue-500'
+                          : isLight
+                            ? 'bg-zinc-100 border-zinc-200 text-black'
+                            : 'bg-white/5 border-white/5 text-white'
+                      }`}
+                    >
+                      <Icon size={14} />
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              {(settings.invoiceSwitcherMode ?? 'horizontal') === 'grid' && (
+                <div className="flex items-center justify-between">
+                  <span className={`app-subtext text-[10px] font-black ${isLight ? 'text-black/70' : 'text-white/70'}`}>
+                    Grid density
+                  </span>
+                  <div className="flex rounded-full overflow-hidden border text-[10px] font-black uppercase tracking-widest">
+                    {([3, 4] as const).map((cols) => {
+                      const active = (settings.invoiceSwitcherGridCols ?? 3) === cols;
+                      return (
+                        <button
+                          key={cols}
+                          type="button"
+                          onClick={() => applyAppearance({ invoiceSwitcherGridCols: cols })}
+                          className={`px-3 py-1.5 transition-all ${
+                            active
+                              ? isLight ? 'bg-black text-white' : 'bg-white text-black'
+                              : isLight ? 'bg-zinc-100 text-black' : 'bg-white/10 text-white'
+                          }`}
+                        >
+                          {cols}×{cols}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Calculator on background */}
             <div className="flex items-center justify-between pt-2 border-t border-white/10">
               <div className="flex flex-col">
                 <span className="text-sm font-black">Calculator on background</span>
-                <span className={`text-[10px] ${isLight ? 'text-black' : 'text-white'}`}>Remove card • fill more space, larger buttons</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>Remove card • fill more space, larger buttons</span>
               </div>
               <button
                 type="button"
@@ -422,7 +550,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
           <div className="flex items-center gap-3 mb-4">
             <span className="text-blue-500"><Icons.Printer size={22} /></span>
-            <h3 className="text-sm font-black uppercase tracking-wider">Bluetooth</h3>
+            <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Bluetooth</h3>
           </div>
 
           <div className="space-y-4">
@@ -442,7 +570,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             )}
 
             <div className="flex items-center justify-between gap-2">
-              <span className={`text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black' : 'text-white'}`}>
+              <span className={`app-subtext text-[10px] font-black ${isLight ? 'text-black' : 'text-white'}`}>
                 {knownPrinters.length} device{knownPrinters.length !== 1 ? 's' : ''} known
               </span>
               <button
@@ -462,7 +590,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 className="flex items-center justify-between p-3 rounded-xl bg-green-500/10 border border-green-500/20"
               >
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-bold text-green-500 uppercase tracking-widest">Connected</span>
+                  <span className="app-subtext text-xs font-bold text-green-500">Connected</span>
                   <span className="text-sm font-black truncate">{entry.saved.name}</span>
                 </div>
                 <button
@@ -476,7 +604,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             {knownPrinters.filter((e) => e.status === 'available').length > 0 && (
               <div className="space-y-2">
-                <span className={`text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black' : 'text-white'}`}>
+                <span className={`app-subtext text-[10px] font-black ${isLight ? 'text-black' : 'text-white'}`}>
                   Available (paired in browser)
                 </span>
                 {knownPrinters.filter((e) => e.status === 'available').map((entry) => {
@@ -490,7 +618,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     >
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-black truncate">{entry.saved.name}</div>
-                        <div className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isLight ? 'text-black' : 'text-white'}`}>
+                        <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
                           Ready to connect
                         </div>
                       </div>
@@ -509,7 +637,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             {knownPrinters.filter((e) => e.status === 'saved').length > 0 && (
               <div className="space-y-2">
-                <span className={`text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black' : 'text-white'}`}>
+                <span className={`app-subtext text-[10px] font-black ${isLight ? 'text-black' : 'text-white'}`}>
                   Saved printers
                 </span>
                 {knownPrinters.filter((e) => e.status === 'saved').map((entry) => {
@@ -523,7 +651,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     >
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-black truncate">{entry.saved.name}</div>
-                        <div className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isLight ? 'text-black' : 'text-white'}`}>
+                        <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
                           {entry.saved.lastConnected > 0
                             ? `Last used ${new Date(entry.saved.lastConnected).toLocaleDateString()}`
                             : 'Tap connect to pair again'}
@@ -580,6 +708,109 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
       </div>
+
+      {accountUsername && onChangePassword && onLogout && (
+        <div className={`shrink-0 border-t ${isLight ? 'border-zinc-200 bg-[#f2f2f7]' : 'border-white/8 bg-[#1c1c1e]'}`}>
+          {showPasswordPanel && (
+            <div className={`px-4 pt-4 pb-2 space-y-2 border-b ${isLight ? 'border-zinc-200' : 'border-white/8'}`}>
+              <div className="flex items-center justify-between">
+                <span className={`app-subtext text-[10px] font-black uppercase tracking-widest ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  Change password
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordPanel(false);
+                    setPasswordError(null);
+                    setCurrentPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                  }}
+                  aria-label="Close change password"
+                  className={`p-1.5 rounded-full ${isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+                >
+                  <Icons.X size={16} />
+                </button>
+              </div>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="Current password"
+                autoComplete="current-password"
+                className={`w-full p-3 rounded-xl outline-none font-black text-sm ${isLight ? 'bg-white border border-zinc-200 text-zinc-900' : 'bg-white/5 text-white'}`}
+              />
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="New password"
+                autoComplete="new-password"
+                className={`w-full p-3 rounded-xl outline-none font-black text-sm ${isLight ? 'bg-white border border-zinc-200 text-zinc-900' : 'bg-white/5 text-white'}`}
+              />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm new password"
+                autoComplete="new-password"
+                className={`w-full p-3 rounded-xl outline-none font-black text-sm ${isLight ? 'bg-white border border-zinc-200 text-zinc-900' : 'bg-white/5 text-white'}`}
+              />
+              {passwordError && (
+                <p className="text-red-500 text-[11px] font-bold">{passwordError}</p>
+              )}
+              {passwordSuccess && (
+                <p className="text-emerald-500 text-[11px] font-bold">Password updated.</p>
+              )}
+              <button
+                type="button"
+                onClick={() => void handleChangePasswordSubmit()}
+                disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}
+                className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
+                  isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+                }`}
+              >
+                {isChangingPassword ? (
+                  <>
+                    <span className="auth-spinner" aria-hidden="true" />
+                    Updating…
+                  </>
+                ) : (
+                  'Save new password'
+                )}
+              </button>
+            </div>
+          )}
+
+          <div className="px-4 py-3 flex items-center justify-between gap-3">
+            <p className={`app-subtext text-[10px] font-bold truncate ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+              {accountUsername}
+            </p>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowPasswordPanel((v) => !v)}
+                className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider active:scale-95 transition-all ${
+                  showPasswordPanel
+                    ? isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+                    : isLight ? 'bg-white border border-zinc-200 text-zinc-900' : 'bg-white/10 text-white'
+                }`}
+              >
+                Password
+              </button>
+              <button
+                type="button"
+                onClick={() => { handleClose(); onLogout(); }}
+                className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider active:scale-95 transition-all border ${
+                  isLight ? 'border-zinc-200 text-zinc-700' : 'border-white/15 text-white/80'
+                }`}
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

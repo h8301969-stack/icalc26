@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useLayoutEffect, useEffect, useCallback } from 'react';
-import { safeEvaluate } from './utils/calculator';
+import { safeEvaluate, sanitizeClipboardExpression } from './utils/calculator';
 import CalcButton from './components/CalcButton';
 import HistoryPanel from './components/HistoryPanel';
 import InvoiceDragHandle from './components/InvoiceDragHandle';
@@ -7,7 +7,7 @@ import SettingsPanel from './components/SettingsPanel';
 import SearchPanel from './components/SearchPanel';
 import BlurredBackground from './components/BlurredBackground';
 import POSDashboard from './components/POSDashboard';
-import WallpaperOverlay from './components/WallpaperOverlay';
+import AuthOverlay from './components/AuthOverlay';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Icons } from './constants';
@@ -15,13 +15,22 @@ import { usePWAPrompt } from './hooks/usePWAPrompt';
 import { useSettings } from './hooks/useSettings';
 import { useHistory } from './hooks/useHistory';
 import { useCalculator } from './hooks/useCalculator';
-import { useSwipeGesture } from './hooks/useGestures';
+
 import { useStandby } from './hooks/useStandby';
+import { useAuth } from './hooks/useAuth';
+import { ensureAdminProfile, getAccounts, isAdminProfile } from './utils/auth';
 import { usePOS, InventoryItem } from './hooks/usePOS';
 import { useInvoice } from './hooks/useInvoice';
+import { buildPosExpressionFromItems } from './utils/posExpression';
+import {
+  buildExpressionRenderSlices,
+  getUnidentifiedPriceRanges,
+} from './utils/expressionDisplay';
+import { CartLineItem } from './types';
 
 const AppContent: React.FC = () => {
-  const { settings, updateSettings, triggerHaptic, isLight, formatCurrency } = useSettings();
+  const { settings, updateSettings, triggerHaptic, isLight, formatCurrency, activeProfile } = useSettings();
+  const { account, signup, login, logout, syncProfiles, changePassword, verifyPassword } = useAuth();
   const disableCard = !!settings.disableCalculatorCard;
   const isLandscape = settings.layoutMode === 'landscape';
   const { history, saveResult } = useHistory();
@@ -29,7 +38,7 @@ const AppContent: React.FC = () => {
   const { 
     expression, calcError, inputChar, 
     toggleSign, finalize, handleUndo, handleRedo, clearExpression, deleteLast,
-    addInventoryItem, cursorPos, setCursorPos
+    addInventoryItem, pasteExpression, cursorPos, setCursorPos, setExpression
   } = useCalculator(saveResult, triggerHaptic);
 
   const displayResult = expression === '0' ? '0' : safeEvaluate(expression);
@@ -42,6 +51,8 @@ const AppContent: React.FC = () => {
   }, [displayResult, formatCurrency, settings.currency]);
   const showLiveResult = displayResult !== '0' && displayResult !== '0.00';
   const isDraggingCursor = useRef(false);
+  const activeProfileName = useMemo(() => activeProfile?.name ?? 'Staff', [activeProfile]);
+  const canViewTransactions = isAdminProfile(activeProfile);
   const {
     invoiceName,
     setInvoiceName,
@@ -49,18 +60,84 @@ const AppContent: React.FC = () => {
     actionLogs,
     runningTotal,
     saveCurrentInvoiceAndStartNew,
+    saveCurrentToPast,
+    switchToInvoice,
     printLogs,
     recordPrint,
-  } = useInvoice(expression, items, settings.currency);
+    resolveUnidentifiedPrice,
+  } = useInvoice(expression, items, settings.currency, activeProfileName);
 
   const [isUnlocked, setIsUnlocked] = useState(false);
 
   const lockScreen = useCallback(() => {
+    setIsHistoryOpen(false);
+    setIsPOSOpen(false);
+    setIsSettingsOpen(false);
+    setIsSearchOpen(false);
+    setSearchQuery('');
     setIsUnlocked(false);
   }, []);
 
   useStandby(isUnlocked, settings.standbyTimerSeconds ?? 0, lockScreen);
+
+  useEffect(() => {
+    if (!account) return;
+    const settingsProfiles = settings.profiles ?? [];
+    const settingsActiveId = settings.activeProfileId ?? '';
+    if (
+      account.activeProfileId === settingsActiveId &&
+      JSON.stringify(account.profiles) === JSON.stringify(ensureAdminProfile(settingsProfiles))
+    ) {
+      return;
+    }
+    syncProfiles(settingsProfiles, settingsActiveId);
+  }, [account, settings.profiles, settings.activeProfileId, syncProfiles]);
+
+  const handleAuthSuccess = useCallback((acc: NonNullable<typeof account>) => {
+    updateSettings({
+      profiles: acc.profiles,
+      activeProfileId: acc.activeProfileId,
+    });
+    triggerHaptic(2);
+    setIsUnlocked(true);
+  }, [updateSettings, triggerHaptic]);
+
+  const handleSignup = useCallback(async (username: string, inviteCode: string) => {
+    const result = await signup(username, inviteCode);
+    if (result.error) return { error: result.error };
+    if (!result.account) return { error: 'Could not create account.' };
+    return { account: result.account };
+  }, [signup]);
+
+  const handleLogin = useCallback(async (username: string, password: string) => {
+    const result = await login(username, password);
+    if (result.error) return { error: result.error };
+    if (!result.account) return { error: 'Could not sign in.' };
+    return { account: result.account };
+  }, [login]);
+
+  const handleLogout = useCallback(() => {
+    logout();
+    lockScreen();
+  }, [logout, lockScreen]);
+
+  const handleChangePassword = useCallback(async (current: string, newPass: string) => {
+    const result = await changePassword(current, newPass);
+    if (result.error) return { error: result.error };
+    triggerHaptic(2);
+    return { ok: true };
+  }, [changePassword, triggerHaptic]);
+
+  const handleVerifyAdminPassword = useCallback(async (password: string) => {
+    const result = await verifyPassword(password);
+    if (result.error) return { error: result.error };
+    triggerHaptic(2);
+    return { ok: true };
+  }, [verifyPassword, triggerHaptic]);
+
+  const authMode = getAccounts().length > 0 || account ? 'login' : 'signup';
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isHistoryPanelActive, setIsHistoryPanelActive] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPOSOpen, setIsPOSOpen] = useState(false);
   const [isPlusAnimating, setIsPlusAnimating] = useState(false);
@@ -70,14 +147,17 @@ const AppContent: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const searchAnchorRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const plusNewInvoicePendingRef = useRef(false);
   
-  const gestures = useSwipeGesture(() => setIsHistoryOpen(true));
   const { showPrompt, handleInstall, handleDismiss } = usePWAPrompt();
   const displayContentRef = useRef<HTMLPreElement>(null);
   const expressionScrollRef = useRef<HTMLDivElement>(null);
   const baseDisplayFontSize = isLandscape ? 32 : 36;
   const [maxCharsPerLine, setMaxCharsPerLine] = useState(12);
-  const edgePadding = disableCard ? '8%' : '1rem';
+  const edgePadding = disableCard ? '6%' : '0.625rem';
+  const keypadEdge = '2%';
+  const keypadGap = disableCard ? 'max(3px, 1.2%)' : '6px';
+  const keypadScale = 0.9;
 
   const expressionLineCount = useMemo(() => {
     if (expression === '0') return 1;
@@ -91,7 +171,7 @@ const AppContent: React.FC = () => {
   }, [expressionLineCount]);
 
   const displayFontSize = baseDisplayFontSize * expressionFontScale;
-  const liveResultFontSize = displayFontSize * 1.2;
+  const liveResultFontSize = displayFontSize * 1.2 * 0.92;
   const expressionLineHeight = 1.25;
   const visibleExpressionLines = 4;
 
@@ -132,6 +212,54 @@ const AppContent: React.FC = () => {
     return Math.max(0, Math.min(expression.length, charsBeforeLine + charPosInLine));
   }, [expression, maxCharsPerLine, displayFontSize, expressionLineHeight]);
 
+  const inventoryPrices = useMemo(
+    () => items.map((item) => item.price),
+    [items]
+  );
+
+  const unidentifiedPriceRanges = useMemo(
+    () => getUnidentifiedPriceRanges(expression, inventoryPrices),
+    [expression, inventoryPrices]
+  );
+
+  const expressionCursorPos = cursorPos ?? expression.length;
+
+  const expressionRenderSlices = useMemo(
+    () => buildExpressionRenderSlices(expression, expressionCursorPos, unidentifiedPriceRanges),
+    [expression, expressionCursorPos, unidentifiedPriceRanges]
+  );
+
+  const hasUnidentifiedPrices = unidentifiedPriceRanges.length > 0;
+  const [unidentifiedPriceBlinkRed, setUnidentifiedPriceBlinkRed] = useState(false);
+
+  useEffect(() => {
+    if (!hasUnidentifiedPrices) {
+      setUnidentifiedPriceBlinkRed(false);
+      return;
+    }
+
+    const BLINK_PERIOD_MS = 5000;
+    const BLINK_DURATION_MS = 200;
+    let offTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const flash = () => {
+      setUnidentifiedPriceBlinkRed(true);
+      if (offTimer !== undefined) clearTimeout(offTimer);
+      offTimer = setTimeout(() => {
+        setUnidentifiedPriceBlinkRed(false);
+        offTimer = undefined;
+      }, BLINK_DURATION_MS);
+    };
+
+    const intervalId = setInterval(flash, BLINK_PERIOD_MS);
+
+    return () => {
+      clearInterval(intervalId);
+      if (offTimer !== undefined) clearTimeout(offTimer);
+      setUnidentifiedPriceBlinkRed(false);
+    };
+  }, [hasUnidentifiedPrices]);
+
   // Keep movable blinker (cursor) within expression bounds
   useEffect(() => {
     if (cursorPos !== null && cursorPos > expression.length) {
@@ -164,8 +292,9 @@ const AppContent: React.FC = () => {
     };
   }, [baseDisplayFontSize, isLandscape, disableCard]);
   
-  const isAnyModalOpen = isHistoryOpen || isPOSOpen || isSearchOpen;
-  const isCardDimmed = isHistoryOpen || isPOSOpen;
+  const isCalculatorActive = isUnlocked && !isPOSOpen && !isSettingsOpen;
+  const isAnyModalOpen = isHistoryOpen || isPOSOpen || isSearchOpen || isSettingsOpen;
+  const isCalculatorHidden = isHistoryPanelActive || isPOSOpen;
 
   const closeSearch = () => {
     setIsSearchOpen(false);
@@ -177,7 +306,6 @@ const AppContent: React.FC = () => {
     setInvoiceName(name);
     closeSearch();
     triggerHaptic();
-    setIsHistoryOpen(true);
   };
 
   const handleSearchInventorySelect = (item: InventoryItem) => {
@@ -189,8 +317,31 @@ const AppContent: React.FC = () => {
     saveCurrentInvoiceAndStartNew();
     clearExpression();
     triggerHaptic(1);
-    setIsPlusAnimating(true);
   };
+
+  const handleSelectInvoice = useCallback((
+    name: string,
+    items: CartLineItem[],
+    options?: { keepOpen?: boolean }
+  ) => {
+    if (name !== invoiceName) {
+      saveCurrentToPast();
+    }
+    switchToInvoice(name);
+    const expr = buildPosExpressionFromItems(items);
+    setExpression(expr);
+    setCursorPos(expr === '0' ? 0 : expr.length);
+    if (!options?.keepOpen) {
+      setIsHistoryOpen(false);
+    }
+    triggerHaptic();
+  }, [invoiceName, saveCurrentToPast, switchToInvoice, setExpression, setCursorPos, triggerHaptic]);
+
+  useEffect(() => {
+    if (!isCalculatorActive || isSearchOpen) {
+      setIsHistoryOpen(false);
+    }
+  }, [isCalculatorActive, isSearchOpen]);
 
   // Declarative keypad definition (clean, no repetition)
   type KeyDef = {
@@ -234,9 +385,45 @@ const AppContent: React.FC = () => {
     inputChar(action);
   };
 
+  const copyExpressionToClipboard = useCallback(async (text?: string) => {
+    const raw = text ?? (expression === '0' ? '' : expression);
+    const sanitized = sanitizeClipboardExpression(raw);
+    if (!sanitized) return;
+    try {
+      await navigator.clipboard.writeText(sanitized);
+      triggerHaptic();
+    } catch {
+      // Clipboard API unavailable
+    }
+  }, [expression, triggerHaptic]);
+
+  const handleExpressionCopy = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
+    const selection = window.getSelection()?.toString() ?? '';
+    const raw = selection || (expression === '0' ? '' : expression);
+    const sanitized = sanitizeClipboardExpression(raw);
+    if (!sanitized) {
+      e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+    e.clipboardData.setData('text/plain', sanitized);
+    triggerHaptic();
+  }, [expression, triggerHaptic]);
+
+  const handleExpressionPaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const raw = e.clipboardData.getData('text/plain');
+    pasteExpression(raw);
+  }, [pasteExpression]);
+
   // Keyboard support for accessibility
   const handleKeyDown = (e: React.KeyboardEvent) => {
     const key = e.key;
+    const target = e.target as HTMLElement;
+    const isTextInput =
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.isContentEditable;
 
     if (key === 'Escape' && isSearchOpen) {
       closeSearch();
@@ -245,6 +432,19 @@ const AppContent: React.FC = () => {
     }
 
     if (isAnyModalOpen) return;
+
+    if ((e.ctrlKey || e.metaKey) && !isTextInput) {
+      if (key.toLowerCase() === 'c') {
+        void copyExpressionToClipboard();
+        e.preventDefault();
+        return;
+      }
+      if (key.toLowerCase() === 'v') {
+        e.preventDefault();
+        void navigator.clipboard.readText().then(pasteExpression).catch(() => {});
+        return;
+      }
+    }
     
     // Numbers
     if (/^\d$/.test(key)) {
@@ -279,20 +479,25 @@ const AppContent: React.FC = () => {
 
   return (
     <div className={`relative flex items-center justify-center h-dvh w-full overflow-hidden font-sans transition-colors duration-200 ${isLight ? 'bg-[#f2f2f7]' : 'bg-black'}`}
-         {...gestures} onKeyDown={handleKeyDown}
+         onKeyDown={handleKeyDown}
          role="main"
          aria-label="Calculator Application">
-      <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} />
-
-      {!isUnlocked && (
-        <WallpaperOverlay
+      {!isUnlocked ? (
+        <>
+        <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={false} />
+        <AuthOverlay
           isLight={isLight}
-          accentColor={settings.accentColor}
-          onEnter={() => { triggerHaptic(2); setIsUnlocked(true); }}
+          mode={authMode}
+          defaultUsername={account?.username ?? ''}
+          onSignup={handleSignup}
+          onLogin={handleLogin}
+          onAuthComplete={handleAuthSuccess}
         />
-      )}
-
-      <div className={`fixed inset-0 z-20 flex items-center justify-center transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) ${isUnlocked ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'}`}>
+        </>
+      ) : (
+      <>
+      <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={true} />
+      <div className={`fixed inset-0 z-20 flex items-center justify-center transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) opacity-100 scale-100 ${isCalculatorHidden ? 'opacity-0 invisible pointer-events-none' : ''}`}>
         <div 
           className={`relative flex flex-col overflow-hidden transition-all duration-500 ${
             isLandscape
@@ -302,17 +507,23 @@ const AppContent: React.FC = () => {
               : disableCard
                 ? 'w-[97%] h-[98%] sm:w-[95vw] sm:h-[96vh]'
                 : 'w-[94%] h-[96%] sm:w-[90vw] sm:h-[90vh] max-w-[430px] max-h-[932px] rounded-[26px]'
-          } ${disableCard ? `bg-transparent ${isLight ? 'text-black' : 'text-white'}` : `${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px)`} ${isCardDimmed ? 'blur-xl opacity-40 scale-[0.92]' : 'opacity-100'}`}
+          } ${
+            isSettingsOpen
+              ? `${isLight ? 'bg-[#f2f2f7] text-black' : 'bg-[#1c1c1e] text-white'}`
+              : disableCard
+                ? `bg-transparent ${isLight ? 'text-black' : 'text-white'}`
+                : `${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px)`
+          }`}
           style={{
-            paddingTop: 'max(1rem, env(safe-area-inset-top))',
-            paddingRight: 'max(1rem, env(safe-area-inset-right))',
-            paddingBottom: 0,
-            paddingLeft: 'max(1rem, env(safe-area-inset-left))'
+            paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+            paddingRight: 'max(0.625rem, env(safe-area-inset-right))',
+            paddingBottom: 'max(2.5rem, calc(2.5rem + env(safe-area-inset-bottom)))',
+            paddingLeft: 'max(0.625rem, env(safe-area-inset-left))'
           }}
         >
           {isSearchOpen && (
             <div
-              className="absolute inset-x-0 bottom-0 z-40 bg-black/25 backdrop-blur-xl transition-all duration-300 pointer-events-none"
+              className={`absolute inset-x-0 bottom-0 z-40 transition-all duration-300 pointer-events-none ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
               style={{ top: '3.25rem' }}
               aria-hidden="true"
             />
@@ -327,16 +538,27 @@ const AppContent: React.FC = () => {
               gap: 'max(0.15rem, calc(0.625rem - 0.8%))',
             }}
           >
-            <button 
-              onClick={handleNewInvoice} 
-              onAnimationEnd={() => setIsPlusAnimating(false)}
-              className={`pointer-events-auto h-8 w-8 shrink-0 rounded-full flex items-center justify-center transition-all duration-300 ${isPlusAnimating ? 'animate-plus-trigger' : ''} ${isSearchOpen ? 'blur-[2px] opacity-35' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`} 
+            <button
+              onClick={() => {
+                triggerHaptic(1);
+                plusNewInvoicePendingRef.current = true;
+                setIsPlusAnimating(true);
+              }}
+              onAnimationEnd={() => {
+                setIsPlusAnimating(false);
+                if (plusNewInvoicePendingRef.current) {
+                  plusNewInvoicePendingRef.current = false;
+                  handleNewInvoice();
+                }
+              }}
+              className={`pointer-events-auto h-8 w-8 shrink-0 rounded-full flex items-center justify-center transition-all duration-300 ${isPlusAnimating ? 'animate-plus-trigger' : ''} ${isSearchOpen ? 'blur-[2px] opacity-35' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`}
               style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 0 12px rgba(255,255,255,0.6), 0 0 4px rgba(255,255,255,0.3)' }}
               title="New Invoice"
+              aria-label="Start new invoice"
             >
               <Icons.Plus size={16} />
             </button>
-            
+
             <div
               ref={searchAnchorRef}
               className={`relative flex-1 min-w-0 z-[60] pointer-events-auto ${isSearchOpen ? 'isolate' : ''}`}
@@ -438,18 +660,19 @@ const AppContent: React.FC = () => {
           )}
 
           {/* ── Calculator body (portrait stack / landscape split) ── */}
-          <div className={`flex-1 flex min-h-0 overflow-hidden pb-10 ${isLandscape ? 'flex-row' : 'flex-col'}`}>
+          <div className={`flex-1 flex min-h-0 overflow-hidden ${isLandscape ? 'flex-row' : 'flex-col'}`}>
             {isLandscape && (
               <div
                 className={`relative z-10 shrink-0 grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
                 style={{
                   width: '52%',
-                  gap: disableCard ? 'max(3px, 1.2%)' : '8px',
-                  paddingLeft: edgePadding,
-                  paddingRight: disableCard ? '4%' : '0.75rem',
-                  paddingBottom: disableCard ? '5%' : '0.5rem',
-                  paddingTop: disableCard ? '2%' : '0.5rem',
-                  marginBottom: '-2%',
+                  gap: keypadGap,
+                  paddingLeft: keypadEdge,
+                  paddingRight: keypadEdge,
+                  paddingBottom: keypadEdge,
+                  paddingTop: keypadEdge,
+                  transform: `translateY(-3%) scale(${keypadScale})`,
+                  transformOrigin: 'left bottom',
                 }}
               >
                 {keypad.map((btn, idx) => (
@@ -491,7 +714,10 @@ const AppContent: React.FC = () => {
                 <div className="relative w-full max-w-full shrink-0">
                   <div
                   ref={expressionScrollRef}
-                  className="no-scrollbar w-full max-w-full text-center cursor-text select-none pointer-events-auto overflow-x-hidden"
+                  className="no-scrollbar w-full max-w-full text-center cursor-text select-text pointer-events-auto overflow-x-hidden"
+                  onCopy={handleExpressionCopy}
+                  onPaste={handleExpressionPaste}
+                  tabIndex={0}
                   style={{
                     height: `${displayFontSize * expressionLineHeight * visibleExpressionLines}px`,
                     overflowY: 'auto',
@@ -533,13 +759,29 @@ const AppContent: React.FC = () => {
                     }}
                   >
                     {expression === '0' ? <span style={{ opacity: 0.3 }}>0</span> : (
-                      (() => {
-                        const pos = (cursorPos ?? expression.length);
-                        const before = expression.slice(0, pos);
-                        const after = expression.slice(pos);
-                        return (
-                          <>
-                            {before}
+                      expressionRenderSlices.map((slice, idx) => (
+                        <React.Fragment key={`${idx}-${slice.text}-${slice.showCursorAfter}`}>
+                          {slice.role === 'price' ? (
+                            <span
+                              className={
+                                slice.unidentified
+                                  ? 'calc-unidentified-price font-num-bold'
+                                  : 'font-num-bold'
+                              }
+                              style={
+                                slice.unidentified && unidentifiedPriceBlinkRed
+                                  ? { color: '#ef4444' }
+                                  : undefined
+                              }
+                            >
+                              {slice.text}
+                            </span>
+                          ) : slice.role === 'quantity' || slice.role === 'separator' ? (
+                            <span className="font-num-light">{slice.text}</span>
+                          ) : (
+                            slice.text
+                          )}
+                          {slice.showCursorAfter && (
                             <span
                               className="inline-block w-[2px] align-middle animate-blink bg-current cursor-grab active:cursor-grabbing touch-none"
                               style={{
@@ -552,7 +794,7 @@ const AppContent: React.FC = () => {
                               aria-label="Move cursor"
                               aria-valuemin={0}
                               aria-valuemax={expression.length}
-                              aria-valuenow={pos}
+                              aria-valuenow={expressionCursorPos}
                               onPointerDown={(e) => {
                                 e.stopPropagation();
                                 isDraggingCursor.current = true;
@@ -571,14 +813,13 @@ const AppContent: React.FC = () => {
                                   e.currentTarget.releasePointerCapture(e.pointerId);
                                 }
                               }}
-                              onPointerCancel={(e) => {
+                              onPointerCancel={() => {
                                 isDraggingCursor.current = false;
                               }}
                             />
-                            {after}
-                          </>
-                        );
-                      })()
+                          )}
+                        </React.Fragment>
+                      ))
                     )}
                   </pre>
                 </div>
@@ -587,31 +828,32 @@ const AppContent: React.FC = () => {
 
               {/* Action toolbar */}
               <div
-                className={`flex-none flex justify-between gap-2 py-1.5 rounded-full border transition-all duration-300 ${isLandscape ? 'mb-2' : 'mb-2 mx-2'} ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white/60 border-black/5 text-black' : 'bg-black/20 border-white/10 text-white'}`}
+                className={`flex-none flex justify-between gap-1.5 py-[0.34rem] rounded-full border transition-all duration-300 self-center ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white/60 border-black/5 text-black' : 'bg-black/20 border-white/10 text-white'}`}
                 style={{
+                  width: '80%',
+                  marginTop: '2%',
+                  marginBottom: '0%',
+                  transform: 'translateY(2%)',
                   boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 8px 28px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)',
-                  marginLeft: isLandscape ? edgePadding : undefined,
-                  marginRight: isLandscape ? edgePadding : undefined,
-                  paddingLeft: isLandscape ? '0.75rem' : edgePadding,
-                  paddingRight: isLandscape ? '0.75rem' : edgePadding,
                 }}
               >
-                <button onClick={handleUndo} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Undo"><Icons.Undo size={16} /></button>
-                <button onClick={handleRedo} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Redo"><Icons.Redo size={16} /></button>
-                <button onClick={() => setIsPOSOpen(true)} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Trends"><Icons.Trends size={16} /></button>
-                <button onClick={deleteLast} className="flex-1 py-1.5 flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Delete"><Icons.Delete size={16} /></button>
+                <button onClick={handleUndo} className="flex-1 py-[0.34rem] flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Undo"><Icons.Undo size={14} /></button>
+                <button onClick={handleRedo} className="flex-1 py-[0.34rem] flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Redo"><Icons.Redo size={14} /></button>
+                <button onClick={() => setIsPOSOpen(true)} className="flex-1 py-[0.34rem] flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Trends"><Icons.Trends size={14} /></button>
+                <button onClick={deleteLast} className="flex-1 py-[0.34rem] flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Delete"><Icons.Delete size={14} /></button>
               </div>
             </div>
 
             {!isLandscape && (
               <div
-                className={`relative z-10 flex-[1.3] grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+                className={`relative z-30 flex-[1.3] grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
                 style={{
-                  gap: disableCard ? 'max(3px, 1.2%)' : '8px',
-                  paddingLeft: edgePadding,
-                  paddingRight: edgePadding,
-                  paddingBottom: disableCard ? '5%' : '0.5rem',
-                  marginBottom: '-2%',
+                  gap: keypadGap,
+                  paddingLeft: keypadEdge,
+                  paddingRight: keypadEdge,
+                  paddingBottom: keypadEdge,
+                  transform: `translateY(-3%) scale(${keypadScale})`,
+                  transformOrigin: 'center bottom',
                 }}
               >
                 {keypad.map((btn, idx) => (
@@ -632,9 +874,10 @@ const AppContent: React.FC = () => {
           </div>
 
           <InvoiceDragHandle
-            disabled={isAnyModalOpen}
+            disabled={!isCalculatorActive || isAnyModalOpen}
             edgePinned
             onDragOpen={() => {
+              if (!isCalculatorActive) return;
               triggerHaptic();
               setIsHistoryOpen(true);
             }}
@@ -643,7 +886,8 @@ const AppContent: React.FC = () => {
           <SettingsPanel
             isOpen={isSettingsOpen} 
             onClose={() => setIsSettingsOpen(false)} 
-            settings={settings} 
+            settings={settings}
+            isLight={isLight}
             updateSettings={(keyOrPatch, value) => {
               if (typeof keyOrPatch === 'string') updateSettings({ [keyOrPatch]: value } as Partial<typeof settings>);
               else updateSettings(keyOrPatch);
@@ -657,12 +901,16 @@ const AppContent: React.FC = () => {
             invoiceName={invoiceName}
             currency={settings.currency}
             onInvoicePrinted={recordPrint}
+            accountUsername={account?.username}
+            onChangePassword={handleChangePassword}
+            onLogout={handleLogout}
+            onVerifyAdminPassword={handleVerifyAdminPassword}
           />
         </div>
       </div>
 
       <HistoryPanel
-        isOpen={isHistoryOpen}
+        isOpen={isHistoryOpen && isCalculatorActive}
         onClose={() => setIsHistoryOpen(false)}
         isLight={isLight}
         currency={settings.currency}
@@ -675,6 +923,12 @@ const AppContent: React.FC = () => {
         profiles={settings.profiles ?? []}
         activeProfileId={settings.activeProfileId ?? ''}
         onInvoicePrinted={recordPrint}
+        onSelectInvoice={handleSelectInvoice}
+        switcherMode={settings.invoiceSwitcherMode ?? 'horizontal'}
+        switcherGridCols={settings.invoiceSwitcherGridCols ?? 3}
+        onSwitcherModeChange={(mode) => updateSettings({ invoiceSwitcherMode: mode })}
+        onSwitcherGridColsChange={(cols) => updateSettings({ invoiceSwitcherGridCols: cols })}
+        onActiveChange={setIsHistoryPanelActive}
       />
       <POSDashboard
         history={history}
@@ -699,8 +953,16 @@ const AppContent: React.FC = () => {
           else updateSettings(keyOrPatch);
         }}
         onInvoicePrinted={recordPrint}
+        onResolveUnidentifiedPrice={resolveUnidentifiedPrice}
+        canViewTransactions={canViewTransactions}
+        accountUsername={account?.username}
+        onChangePassword={handleChangePassword}
+        onLogout={handleLogout}
+        onVerifyAdminPassword={handleVerifyAdminPassword}
       />
       <PWAInstallPrompt showPrompt={showPrompt} onInstall={handleInstall} onDismiss={handleDismiss} />
+      </>
+      )}
     </div>
   );
 };

@@ -9,6 +9,7 @@ export interface ActivityLogEntry {
   action: string;
   time: string;
   timestamp: number;
+  profileName?: string;
 }
 
 export interface PurchaseRecord {

@@ -7,7 +7,7 @@
   
   --animate-ripple: ripple 0.6s linear;
   --animate-fade-in: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  --animate-insight-pop: insight-pop 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-insight-pop: insight-pop 0.42s cubic-bezier(0.32, 0.72, 0, 1) forwards;
   --animate-plus-trigger: plus-trigger 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   --animate-live-breathe: live-breathe 3.5s ease-in-out infinite;
   --animate-live-spring: live-spring 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -21,8 +21,8 @@
     to { opacity: 1; transform: translateY(0); }
   }
   @keyframes insight-pop {
-    from { opacity: 0; transform: scale(0.9) translateY(60px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
+    from { opacity: 0; transform: scale(0.96) translate3d(0, 32px, 0); }
+    to { opacity: 1; transform: scale(1) translate3d(0, 0, 0); }
   }
   @keyframes plus-trigger {
     0% { transform: scale(1) rotate(0deg); }
@@ -46,11 +46,124 @@
     70% { transform: scale(0.98); }
     100% { transform: scale(1); }
   }
+
+  @keyframes auth-spin {
+    to { transform: rotate(360deg); }
+  }
+}
+
+.auth-spinner {
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: auth-spin 0.65s linear infinite;
+}
+
+@keyframes auth-ring-orbit {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes auth-ring-orbit-reverse {
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes auth-loading-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.98); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes auth-loading-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 24px rgba(10, 132, 255, 0.22),
+      0 16px 48px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 42px rgba(10, 132, 255, 0.48),
+      0 20px 56px rgba(0, 0, 0, 0.42);
+  }
+}
+
+@keyframes auth-loading-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.auth-loading-overlay {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.auth-loading-overlay--light {
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.auth-loading-card {
+  animation: auth-loading-glow 2.2s ease-in-out infinite;
+}
+
+.auth-loading-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.auth-loading-ring--outer {
+  border-top-color: #0a84ff;
+  border-right-color: rgba(10, 132, 255, 0.28);
+  animation: auth-ring-orbit 1.15s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.auth-loading-ring--inner {
+  inset: 10px;
+  border-bottom-color: rgba(255, 255, 255, 0.75);
+  border-left-color: rgba(255, 255, 255, 0.2);
+  animation: auth-ring-orbit-reverse 0.9s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.auth-loading-logo {
+  animation: unlock-logo-breathe 1.35s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+
+.auth-loading-status {
+  animation: auth-loading-pulse 1.6s ease-in-out infinite;
+}
+
+.auth-loading-bar {
+  height: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.auth-loading-bar-fill {
+  height: 100%;
+  width: 45%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    #0a84ff 35%,
+    rgba(255, 255, 255, 0.95) 50%,
+    #0a84ff 65%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: auth-loading-shimmer 1.35s linear infinite;
 }
 
 /* Blinking caret for movable expression cursor */
 .animate-blink {
   animation: blink 1s step-end infinite;
+}
+
+.calc-unidentified-price {
+  font-weight: 700;
 }
 
 /* Base overrides and glassmorphism helpers */
@@ -102,21 +215,82 @@ body {
 }
 
 .pos-dashboard-card-glass {
-  background: rgba(255, 255, 255, 0.07);
-  backdrop-filter: blur(28px) saturate(1.35);
-  -webkit-backdrop-filter: blur(28px) saturate(1.35);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px) saturate(1.65);
+  -webkit-backdrop-filter: blur(24px) saturate(1.65);
   box-shadow:
     0 10px 36px rgba(0, 0, 0, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .pos-dashboard-card-glass:hover {
-  background: rgba(255, 255, 255, 0.11);
+  background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.18);
   box-shadow:
     0 16px 44px rgba(0, 0, 0, 0.48),
     0 0 28px rgba(255, 255, 255, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.pos-dashboard-card-motion {
+  transition:
+    transform 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+    box-shadow 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+    background-color 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+    border-color 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+
+.pos-dashboard-root {
+  transition: opacity 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.pos-dashboard-root--open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pos-dashboard-root--closed {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pos-dashboard-root--open .pos-dashboard-shell {
+  animation: dashboard-ios-enter 0.42s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@keyframes dashboard-ios-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 24px, 0) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.pos-dashboard-shell {
+  transform: translateZ(0);
+  will-change: transform, opacity, filter;
+  transition:
+    transform 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+    filter 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.pos-dashboard-shell--light {
+  background: #f2f2f7;
+}
+
+.pos-dashboard-shell--dark {
+  background: #0a0a0c;
+}
+
+.pos-dashboard-shell--dimmed {
+  transform: translateZ(0) scale(0.985);
+  filter: brightness(0.92) saturate(0.95);
+  opacity: 0.88;
 }
 
 /* Utility classes and accessibility overrides */
@@ -182,18 +356,13 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .unlock-logo-wrap {
   border-radius: 18px;
   overflow: hidden;
-  box-shadow:
-    0 0 22px rgba(10, 132, 255, 0.42),
-    0 10px 28px rgba(0, 0, 0, 0.48);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.48);
   animation: unlock-logo-breathe 3.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
   transition: box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .unlock-logo-wrap:hover {
-  box-shadow:
-    0 0 30px rgba(255, 255, 255, 0.82),
-    0 0 52px rgba(255, 255, 255, 0.38),
-    0 14px 34px rgba(255, 255, 255, 0.22);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.52);
 }
 
 .unlock-brand-26 {
@@ -254,18 +423,25 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   font-weight: 800;
 }
 
-.pos-dashboard .pos-subtext {
+/* Subtext: lowercase body, bold capital first letter ("low starting with block") */
+.app-subtext,
+.pos-subtext,
+.low-block {
   text-transform: lowercase;
   letter-spacing: 0.04em;
 }
+.app-subtext::first-letter,
+.pos-subtext::first-letter,
+.low-block::first-letter {
+  text-transform: uppercase;
+  font-weight: 900;
+}
 
-/* App-wide hint / helper subtext — matches "Scan for new printer" */
+/* App-wide hint / helper subtext */
 .app-subtext {
   font-family: var(--font-text);
   font-size: 0.75rem;
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
   line-height: 1.35;
 }
 
@@ -274,9 +450,10 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 /* Mobile dashboard — compact, uniform sizing (≈13px base, WhatsApp/X-like density) */
 @media (max-width: 768px) {
   .pos-dashboard {
-    font-size: 13px;
+    font-size: clamp(12px, 3.4vw, 13px);
     line-height: 1.35;
     font-family: var(--font-text);
+    transition: font-size 0.28s cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   .pos-dashboard .text-7xl,
@@ -353,4 +530,23 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   height: min(calc(min(78vw, 340px) * 13 / 6), calc(100dvh - 3rem));
   max-height: calc(100dvh - 3rem);
   flex-shrink: 0;
+}
+
+/* Invoice switcher — thermal receipt proportions (58mm / 25mm mini printer) */
+.invoice-receipt-stage {
+  flex-shrink: 0;
+  max-height: calc(100dvh - 7.5rem);
+  aspect-ratio: 6 / 13;
+}
+.invoice-receipt-stage--58mm {
+  width: min(320px, 78vw, 384px);
+  height: min(calc(min(320px, 78vw, 384px) * 13 / 6), calc(100dvh - 7.5rem));
+}
+.invoice-receipt-stage--25mm {
+  width: min(168px, 48vw, 192px);
+  height: min(calc(min(168px, 48vw, 192px) * 13 / 6), calc(100dvh - 7.5rem));
+}
+.invoice-receipt-line {
+  font-family: "Courier New", Courier, monospace;
+  letter-spacing: -0.02em;
 }

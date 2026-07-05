@@ -1,5 +1,10 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { safeEvaluate, evaluateExpression, CalculationError } from '../utils/calculator';
+import {
+  safeEvaluate,
+  evaluateExpression,
+  CalculationError,
+  sanitizeClipboardExpression,
+} from '../utils/calculator';
 import {
   cleanPosExpressionForEval,
   evaluatePosExpression,
@@ -148,13 +153,8 @@ export const useCalculator = (
 
   const finalize = useCallback(() => {
     triggerHaptic(2);
-    const finalRes = runningResult;
-    onEvaluate(expression, finalRes);
-    setIsResultMode(true);
-    pushToUndo(expression);
-    setExpression(finalRes);
-    setCursorPos(finalRes.length);
-  }, [expression, runningResult, triggerHaptic, onEvaluate, pushToUndo]);
+    onEvaluate(expression, runningResult);
+  }, [expression, runningResult, triggerHaptic, onEvaluate]);
 
   const handleUndo = useCallback(() => {
     if (undoStack.length === 0) return;
@@ -200,6 +200,29 @@ export const useCalculator = (
     setIsResultMode(false);
   }, [triggerHaptic, cursorPos]);
 
+  const pasteExpression = useCallback((raw: string) => {
+    const sanitized = sanitizeClipboardExpression(raw);
+    if (!sanitized) return;
+
+    triggerHaptic();
+    pushToUndo(expression);
+    setIsResultMode(false);
+
+    setExpression((prev) => {
+      let pos = cursorPos;
+      if (pos < 0 || pos > prev.length) pos = prev.length;
+
+      if (prev === '0') {
+        setCursorPos(sanitized.length);
+        return sanitized;
+      }
+
+      const newExpr = prev.slice(0, pos) + sanitized + prev.slice(pos);
+      setCursorPos(pos + sanitized.length);
+      return newExpr;
+    });
+  }, [expression, cursorPos, triggerHaptic, pushToUndo]);
+
   const addInventoryItem = useCallback((price: number) => {
     triggerHaptic();
     pushToUndo(expression);
@@ -237,6 +260,7 @@ export const useCalculator = (
     clearExpression,
     deleteLast,
     addInventoryItem,
+    pasteExpression,
     cursorPos,
     setCursorPos,
   };

@@ -4,7 +4,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { evaluateExpression, safeEvaluate, CalculationError, isValidPartialExpression } from './calculator';
+import {
+  evaluateExpression,
+  safeEvaluate,
+  CalculationError,
+  isValidPartialExpression,
+  sanitizeClipboardExpression,
+} from './calculator';
 
 describe('Basic Operations', () => {
   it('Addition: 2 + 3 = 5', () => {
@@ -298,6 +304,26 @@ describe('safeEvaluate - Safe Evaluation', () => {
   });
 });
 
+describe('sanitizeClipboardExpression', () => {
+  it('keeps math expressions and normalizes operators', () => {
+    expect(sanitizeClipboardExpression('2 * 3 + 4')).toBe('2×3+4');
+    expect(sanitizeClipboardExpression('10 / 2')).toBe('10÷2');
+  });
+
+  it('keeps POS quantity expressions', () => {
+    expect(sanitizeClipboardExpression('56x2+120x1')).toBe('56x2+120x1');
+  });
+
+  it('strips non-math text', () => {
+    expect(sanitizeClipboardExpression('56 ghs has been added to invoice')).toBe('56');
+    expect(sanitizeClipboardExpression('hello')).toBe('');
+  });
+
+  it('removes thousands separators', () => {
+    expect(sanitizeClipboardExpression('1,234.56+2')).toBe('1234.56+2');
+  });
+});
+
 describe('isValidPartialExpression - Validation', () => {
   it('isValidPartialExpression("5") = true', () => {
     expect(isValidPartialExpression('5')).toBe(true);
@@ -347,5 +373,39 @@ describe('Real-world Scenarios', () => {
 
   it('Complex: (5 + 3) * (4 - 1) / 2 = 12', () => {
     expect(evaluateExpression('(5+3)*(4-1)/2')).toBe(12);
+  });
+});
+
+import {
+  getUnidentifiedPriceRanges,
+  buildExpressionRenderSlices,
+} from './expressionDisplay';
+
+describe('expressionDisplay', () => {
+  it('flags prices not in inventory', () => {
+    const ranges = getUnidentifiedPriceRanges('45x+76', [45, 50]);
+    expect(ranges).toEqual([{ start: 4, end: 6, price: 76 }]);
+  });
+
+  it('ignores standard calculator expressions', () => {
+    expect(getUnidentifiedPriceRanges('2+3*4', [2, 3])).toEqual([]);
+  });
+
+  it('builds render slices with cursor', () => {
+    const ranges = [{ start: 0, end: 2, price: 76 }];
+    const slices = buildExpressionRenderSlices('76', 2, ranges);
+    expect(slices).toEqual([
+      { text: '76', unidentified: true, showCursorAfter: true, role: 'price' },
+    ]);
+  });
+
+  it('keeps item amounts bold and quantities light in POS expressions', () => {
+    const slices = buildExpressionRenderSlices('45x2+76', 7, []);
+    expect(slices).toEqual([
+      { text: '45', unidentified: false, showCursorAfter: false, role: 'price' },
+      { text: 'x2', unidentified: false, showCursorAfter: false, role: 'quantity' },
+      { text: '+', unidentified: false, showCursorAfter: false, role: 'separator' },
+      { text: '76', unidentified: false, showCursorAfter: true, role: 'price' },
+    ]);
   });
 });
