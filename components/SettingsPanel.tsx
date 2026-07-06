@@ -11,14 +11,18 @@ import ProfileAvatar from './ProfileAvatar';
 import ProfilePickerModal from './ProfilePickerModal';
 import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
 import { ADMIN_PROFILE_NAME, ensureAdminProfile } from '../utils/auth';
+import { EXPRESSION_VIEW_OPTIONS } from '../utils/expressionDisplay';
+import { RECEIPT_LAYOUT_OPTIONS } from '../utils/receiptLayout';
 
 interface SettingsSlice {
   themeMode: 'light' | 'dark' | 'system';
   disableCalculatorCard?: boolean;
   layoutMode?: 'portrait' | 'landscape';
   layoutModeAuto?: boolean;
-  invoiceSwitcherMode?: 'horizontal' | 'grid' | 'vertical';
-  invoiceSwitcherGridCols?: 3 | 4;
+  invoiceSwitcherMode?: 'horizontal' | 'grid' | 'vertical' | 'list';
+  expressionViewMode?: 'auto' | 'list';
+  receiptLayoutMode?: 'summary' | 'full';
+
   standbyTimerSeconds?: number;
   profiles?: UserProfile[];
   activeProfileId?: string;
@@ -27,6 +31,7 @@ interface SettingsSlice {
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  focusSectionIndex?: number;
   settings: SettingsSlice;
   updateSettings: (keyOrPatch: string | Partial<SettingsSlice>, value?: unknown) => void;
   onApplyAppearance?: () => void;
@@ -44,7 +49,8 @@ interface SettingsPanelProps {
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
   isOpen, 
-  onClose, 
+  onClose,
+  focusSectionIndex = 0,
   settings,
   updateSettings: _updateSettings,
   onApplyAppearance,
@@ -80,8 +86,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [showPasswordPanel, setShowPasswordPanel] = useState(false);
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
   const closeRef = useRef<HTMLButtonElement>(null);
   const lastFocusedRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const section = sectionRefs.current[focusSectionIndex];
+    if (!section) return;
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [focusSectionIndex, isOpen]);
 
   const handleClose = useCallback(() => {
     const panel = panelRef.current;
@@ -302,7 +317,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         itemsToPrint,
         totalToPrint,
         currency,
-        activeProfile?.name
+        activeProfile?.name,
+        settings.receiptLayoutMode ?? 'summary'
       );
       if (!ok) return;
       onInvoicePrinted?.(titleToPrint, String(totalToPrint), itemsToPrint);
@@ -338,10 +354,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </button>
       </div>
       
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
 
         {/* Profile */}
-        <div className={`p-8 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
+        <div
+          ref={(el) => { sectionRefs.current[0] = el; }}
+          className={`p-8 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
+        >
           <input
             ref={avatarFileInputRef}
             type="file"
@@ -382,7 +401,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         />
 
         {/* Idle / Standby Screen */}
-        <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
+        <div
+          ref={(el) => { sectionRefs.current[1] = el; }}
+          className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
+        >
           <div className="flex items-center gap-3 mb-4">
             <span><Icons.Moon size={20} /></span>
             <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Idle Screen</h3>
@@ -412,7 +434,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
         {/* Appearance Settings */}
-        <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
+        <div
+          ref={(el) => { sectionRefs.current[2] = el; }}
+          className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
+        >
           <div className="flex items-center gap-3 mb-4">
             <span>{isLight ? <Icons.Sun size={20} /> : <Icons.Moon size={20} />}</span>
             <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Appearance</h3>
@@ -477,8 +502,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <div className="flex flex-wrap gap-2">
                 {([
                   { id: 'horizontal' as const, label: 'Horizontal', icon: Icons.Carousel },
-                  { id: 'grid' as const, label: 'Grid', icon: Icons.Grid },
                   { id: 'vertical' as const, label: 'Vertical', icon: Icons.Stack },
+                  { id: 'grid' as const, label: 'Scattered', icon: Icons.Grid },
+                  { id: 'list' as const, label: 'List', icon: Icons.List },
                 ]).map(({ id, label, icon: Icon }) => {
                   const active = (settings.invoiceSwitcherMode ?? 'horizontal') === id;
                   return (
@@ -500,32 +526,68 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   );
                 })}
               </div>
-              {(settings.invoiceSwitcherMode ?? 'horizontal') === 'grid' && (
-                <div className="flex items-center justify-between">
-                  <span className={`app-subtext text-[10px] font-black ${isLight ? 'text-black/70' : 'text-white/70'}`}>
-                    Grid density
-                  </span>
-                  <div className="flex rounded-full overflow-hidden border text-[10px] font-black uppercase tracking-widest">
-                    {([3, 4] as const).map((cols) => {
-                      const active = (settings.invoiceSwitcherGridCols ?? 3) === cols;
-                      return (
-                        <button
-                          key={cols}
-                          type="button"
-                          onClick={() => applyAppearance({ invoiceSwitcherGridCols: cols })}
-                          className={`px-3 py-1.5 transition-all ${
-                            active
-                              ? isLight ? 'bg-black text-white' : 'bg-white text-black'
-                              : isLight ? 'bg-zinc-100 text-black' : 'bg-white/10 text-white'
-                          }`}
-                        >
-                          {cols}×{cols}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+            </div>
+
+            {/* Expression view */}
+            <div className="pt-2 border-t border-white/10 space-y-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-sm font-black">Expression view</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  Auto wraps to fit · List breaks after each +
+                </span>
+              </div>
+              <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
+                {EXPRESSION_VIEW_OPTIONS.map(({ id, label }) => {
+                  const active = (settings.expressionViewMode ?? 'auto') === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => applyAppearance({ expressionViewMode: id })}
+                      className={`flex-1 py-2.5 transition-all ${
+                        active
+                          ? isLight
+                            ? 'bg-black text-white'
+                            : 'bg-white text-black'
+                          : 'opacity-50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Share & print receipt */}
+            <div className="pt-2 border-t border-white/10 space-y-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-sm font-black">Invoice print style</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  Share image and Bluetooth receipt layout
+                </span>
+              </div>
+              <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
+                {RECEIPT_LAYOUT_OPTIONS.map(({ id, label }) => {
+                  const active = (settings.receiptLayoutMode ?? 'summary') === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => applyAppearance({ receiptLayoutMode: id })}
+                      className={`flex-1 py-2.5 transition-all ${
+                        active
+                          ? isLight
+                            ? 'bg-black text-white'
+                            : 'bg-white text-black'
+                          : 'opacity-50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Calculator on background */}
@@ -547,7 +609,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
         {/* Bluetooth / BLE Printer */}
-        <div className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}>
+        <div
+          ref={(el) => { sectionRefs.current[3] = el; }}
+          className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
+        >
           <div className="flex items-center gap-3 mb-4">
             <span className="text-blue-500"><Icons.Printer size={22} /></span>
             <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Bluetooth</h3>

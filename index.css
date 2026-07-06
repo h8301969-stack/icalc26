@@ -92,6 +92,66 @@
   100% { background-position: -200% 0; }
 }
 
+@keyframes auth-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-auth-card-enter {
+  animation: auth-card-enter 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes auth-settings-enter {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes auth-settings-cycle {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-auth-settings-enter {
+  animation: auth-settings-enter 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-auth-settings-cycle {
+  animation: auth-settings-cycle 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes auth-calc-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-auth-calc-enter {
+  animation: auth-calc-enter 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 .auth-loading-overlay {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -155,6 +215,18 @@
   );
   background-size: 200% 100%;
   animation: auth-loading-shimmer 1.35s linear infinite;
+}
+
+@keyframes auth-signup-progress {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
+.auth-loading-bar-fill--signup {
+  width: 0%;
+  animation: auth-signup-progress 15s linear forwards;
+  background: linear-gradient(90deg, #0a84ff 0%, rgba(10, 132, 255, 0.85) 100%);
+  background-size: 100% 100%;
 }
 
 /* Blinking caret for movable expression cursor */
@@ -549,4 +621,18 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .invoice-receipt-line {
   font-family: "Courier New", Courier, monospace;
   letter-spacing: -0.02em;
+}
+
+/* Fallback when Screen Orientation API cannot lock on mobile */
+.calc-force-landscape {
+  width: 100vh !important;
+  height: 100vw !important;
+  max-width: none !important;
+  max-height: none !important;
+  top: 50% !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%) rotate(90deg) !important;
+  transform-origin: center center;
 }

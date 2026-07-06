@@ -14,6 +14,7 @@ const INVITE_SET = new Set(INVITE_PASSWORDS.map((c) => c.toUpperCase()));
 export interface AppAccount {
   id: string;
   username: string;
+  email?: string;
   passwordHash: string;
   createdAt: number;
   profiles: UserProfile[];
@@ -81,6 +82,39 @@ export const findAccountByUsername = (username: string): AppAccount | undefined 
   return getAccounts().find((a) => normalizeUsername(a.username) === key);
 };
 
+const DEV_GUEST_ACCOUNT_ID = 'account-dev-guest';
+const DEV_GUEST_PROFILE_ID = 'profile-dev-guest';
+const DEV_GUEST_USERNAME = 'dev';
+
+/** Local-only guest account for skipping auth during `npm run dev`. */
+export const getOrCreateDevGuestAccount = (): AppAccount => {
+  const existing = getAccountById(DEV_GUEST_ACCOUNT_ID);
+  if (existing) {
+    setAuthSession({ accountId: existing.id, username: existing.username });
+    return existing;
+  }
+
+  const userProfile: UserProfile = {
+    id: DEV_GUEST_PROFILE_ID,
+    name: DEV_GUEST_USERNAME,
+    avatarUrl: '',
+    isSystem: false,
+  };
+  const profiles = ensureAdminProfile([userProfile]);
+  const account: AppAccount = {
+    id: DEV_GUEST_ACCOUNT_ID,
+    username: DEV_GUEST_USERNAME,
+    passwordHash: '',
+    createdAt: Date.now(),
+    profiles,
+    activeProfileId: userProfile.id,
+  };
+
+  saveAccounts([...getAccounts(), account]);
+  setAuthSession({ accountId: account.id, username: account.username });
+  return account;
+};
+
 export const signupWithInvite = async (
   username: string,
   inviteCode: string
@@ -121,12 +155,20 @@ export const signupWithInvite = async (
   return { account };
 };
 
+const resolveLoginUsername = (identifier: string): string => {
+  const trimmed = identifier.trim();
+  if (!trimmed.includes('@')) return trimmed;
+  const [local, domain] = trimmed.split('@');
+  if (domain?.toLowerCase() === 'icalc.users') return local;
+  return local;
+};
+
 export const loginAccount = async (
   username: string,
   password: string
 ): Promise<{ account: AppAccount; error?: never } | { account?: never; error: string }> => {
-  const trimmedName = username.trim();
-  if (!trimmedName || !password) return { error: 'Enter username and password.' };
+  const trimmedName = resolveLoginUsername(username);
+  if (!trimmedName || !password) return { error: 'Enter username or email and password.' };
 
   const account = findAccountByUsername(trimmedName);
   if (!account) return { error: 'Account not found.' };

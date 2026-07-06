@@ -11,8 +11,10 @@ import {
   type PaperWidth,
 } from '../utils/receiptLayout';
 import { storage } from '../hooks/storage';
+import { resolveWallpaperImage } from '../utils/wallpapers';
 import InvoiceAttendantPicker from './InvoiceAttendantPicker';
 import PrinterConnectModal from './PrinterConnectModal';
+import { shareInvoiceAsImage, type ShareReceiptSettings } from '../utils/invoiceShareImage';
 
 const ATTENDANT_NAMES_KEY = 'invoice_attendant_names';
 
@@ -31,18 +33,23 @@ interface HistoryPanelProps {
   activeProfileId: string;
   onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
   onSelectInvoice?: (name: string, items: CartLineItem[], options?: { keepOpen?: boolean }) => void;
-  switcherMode?: 'horizontal' | 'grid' | 'vertical';
-  switcherGridCols?: 3 | 4;
-  onSwitcherModeChange?: (mode: 'horizontal' | 'grid' | 'vertical') => void;
-  onSwitcherGridColsChange?: (cols: 3 | 4) => void;
+  switcherMode?: 'horizontal' | 'grid' | 'vertical' | 'list';
+  onSwitcherModeChange?: (mode: 'horizontal' | 'grid' | 'vertical' | 'list') => void;
   onActiveChange?: (active: boolean) => void;
+  wallpapers?: { image: string }[];
+  shareReceiptSettings?: ShareReceiptSettings;
 }
 
 const SWITCHER_LAYOUT_OPTIONS = [
   { id: 'horizontal' as const, label: 'Horizontal carousel', icon: Icons.Carousel },
   { id: 'vertical' as const, label: 'Vertical stack', icon: Icons.Stack },
-  { id: 'grid' as const, label: 'Grid view', icon: Icons.Grid },
+  { id: 'grid' as const, label: 'Scattered grid', icon: Icons.Grid },
+  { id: 'list' as const, label: 'List view', icon: Icons.List },
 ];
+
+const LONG_PRESS_MS = 480;
+const SCATTERED_GRID_MIN_TILE = 'min(100%, 148px)';
+const SCATTERED_GRID_GAP = '1.1rem';
 
 interface InvoiceCard {
   id: string;
@@ -54,7 +61,6 @@ interface InvoiceCard {
 }
 
 const DRAG_FACTOR = 1.25;
-const VERTICAL_STRIP_HEIGHT = 52;
 const SWIPE_THRESHOLD = 22;
 
 const HistoryPanel: React.FC<HistoryPanelProps> = ({
@@ -73,10 +79,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   onInvoicePrinted,
   onSelectInvoice,
   switcherMode = 'horizontal',
-  switcherGridCols = 3,
   onSwitcherModeChange,
-  onSwitcherGridColsChange,
   onActiveChange,
+  wallpapers = [],
+  shareReceiptSettings = { layoutMode: 'summary' },
 }) => {
   const [attendantNames, setAttendantNames] = useState<Record<string, string>>(() =>
     storage.get(ATTENDANT_NAMES_KEY, {})
@@ -85,8 +91,11 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const [printerModalOpen, setPrinterModalOpen] = useState(false);
   const [pendingPrintCard, setPendingPrintCard] = useState<InvoiceCard | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [attendantPickerInvoice, setAttendantPickerInvoice] = useState<string | null>(null);
   const [receiptPaperWidth, setReceiptPaperWidth] = useState<PaperWidth>(() => printerInstance.paperWidth);
+  const [wallpaperSlide, setWallpaperSlide] = useState(0);
+  const wallpaperSlides = wallpapers.length > 0 ? wallpapers : [{ image: '' }];
 
   const activeProfile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
   const receiptSpec = useMemo(() => getReceiptSpec(receiptPaperWidth), [receiptPaperWidth]);
@@ -105,6 +114,14 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     if (!isOpen) return;
     setReceiptPaperWidth(printerInstance.paperWidth);
   }, [isOpen, printerModalOpen, isPrinting]);
+
+  useEffect(() => {
+    if (wallpaperSlides.length <= 1) return;
+    const timer = setInterval(() => {
+      setWallpaperSlide((prev) => (prev + 1) % wallpaperSlides.length);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [wallpaperSlides.length]);
 
   const getAttendantForInvoice = useCallback(
     (name: string) => attendantNames[name] ?? activeProfile?.name ?? 'Staff',
@@ -131,7 +148,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         items,
         printerInstance.paperWidth,
         !!attendant,
-        currency
+        currency,
+        shareReceiptSettings.layoutMode
       );
       logReceiptPrint('validate', {
         context: 'invoice_switcher',
@@ -167,7 +185,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         items,
         numericTotal,
         currency,
-        attendant
+        attendant,
+        shareReceiptSettings.layoutMode
       );
 
       if (ok) {
@@ -189,7 +208,32 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       });
       return { ok: false, errors: ['Printer busy or print aborted.'] };
     },
-    [currency, getAttendantForInvoice]
+    [currency, getAttendantForInvoice, shareReceiptSettings.layoutMode]
+  );
+
+  const handleShareClick = useCallback(
+    async (card: InvoiceCard) => {
+      if (isSharing || (shareReceiptSettings.layoutMode === 'full' && card.items.length === 0)) return;
+      setIsSharing(true);
+      try {
+        const result = await shareInvoiceAsImage(
+          {
+            invoiceName: card.name,
+            total: card.total,
+            currency,
+            attendantName: getAttendantForInvoice(card.name),
+            items: card.items,
+          },
+          shareReceiptSettings
+        );
+        if (!result.ok) {
+          alert(result.error || 'Could not share invoice.');
+        }
+      } finally {
+        setIsSharing(false);
+      }
+    },
+    [currency, getAttendantForInvoice, isSharing, shareReceiptSettings]
   );
 
   const handlePrintClick = useCallback(
@@ -298,7 +342,12 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   }, [actionLogs, cartItems, invoiceName, runningTotal]);
 
   const [activeIdx, setActiveIdx] = useState(0);
-  const [gridZoomed, setGridZoomed] = useState(false);
+  const [focusZoomed, setFocusZoomed] = useState(false);
+  const listLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listLongPressFired = useRef(false);
+  const listLongPressIdx = useRef<number | null>(null);
+
+  const isBrowseMode = switcherMode === 'grid' || switcherMode === 'list';
 
   const activeReceiptValidation = useMemo(() => {
     const card = cards[activeIdx];
@@ -342,7 +391,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     if (isOpen) {
       setMounted(true);
       setActiveIdx(Math.max(0, cards.length - 1));
-      setGridZoomed(false);
+      setFocusZoomed(false);
       lastFocusedRef.current = document.activeElement as HTMLElement | null;
       const id = requestAnimationFrame(() => closeRef.current?.focus({ preventScroll: true }));
       return () => cancelAnimationFrame(id);
@@ -382,12 +431,44 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     onSelectInvoice?.(card.name, card.items, options);
   }, [cards, onSelectInvoice]);
 
+  const openInvoiceFocus = useCallback((idx: number) => {
+    if (idx < 0 || idx >= cards.length) return;
+    setActiveIdx(idx);
+    setFocusZoomed(true);
+    if ('vibrate' in navigator) navigator.vibrate(10);
+  }, [cards.length]);
+
+  const confirmInvoiceToExpression = useCallback((idx: number = activeIdx) => {
+    if (idx < 0 || idx >= cards.length) return;
+    selectInvoice(idx);
+    setFocusZoomed(false);
+  }, [activeIdx, cards.length, selectInvoice]);
+
+  const cancelListLongPress = useCallback(() => {
+    if (listLongPressTimer.current) {
+      clearTimeout(listLongPressTimer.current);
+      listLongPressTimer.current = null;
+    }
+    listLongPressIdx.current = null;
+  }, []);
+
+  const startListLongPress = useCallback((idx: number) => {
+    cancelListLongPress();
+    listLongPressIdx.current = idx;
+    listLongPressFired.current = false;
+    listLongPressTimer.current = setTimeout(() => {
+      listLongPressFired.current = true;
+      openInvoiceFocus(idx);
+      listLongPressTimer.current = null;
+    }, LONG_PRESS_MS);
+  }, [cancelListLongPress, openInvoiceFocus]);
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (switcherMode === 'grid' && gridZoomed) {
-          setGridZoomed(false);
+        if (isBrowseMode && focusZoomed) {
+          setFocusZoomed(false);
           return;
         }
         handleClose();
@@ -403,10 +484,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, handleClose, cards.length, switcherMode, activeIdx, previewInvoice, gridZoomed]);
+  }, [isOpen, handleClose, cards.length, switcherMode, activeIdx, previewInvoice, focusZoomed, isBrowseMode]);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
-    if (switcherMode === 'grid') return;
+    if (isBrowseMode) return;
     if ((e.target as HTMLElement).closest('input, button, textarea')) return;
     dragStartX.current = e.clientX;
     dragStartY.current = e.clientY;
@@ -415,10 +496,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     setIsDragging(true);
     setDragDelta(0);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, [switcherMode]);
+  }, [isBrowseMode]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isDragging || switcherMode === 'grid') return;
+    if (!isDragging || isBrowseMode) return;
     const dx = e.clientX - dragStartX.current;
     const dy = e.clientY - dragStartY.current;
     const primaryAxis = switcherMode === 'vertical' ? 'y' : 'x';
@@ -432,7 +513,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   }, [isDragging, switcherMode]);
 
   const onPointerUp = useCallback(() => {
-    if (!isDragging || switcherMode === 'grid') return;
+    if (!isDragging || isBrowseMode) return;
     setIsDragging(false);
     const primaryAxis = switcherMode === 'vertical' ? 'y' : 'x';
     if (dragAxis.current === primaryAxis) {
@@ -459,12 +540,16 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       suppressClickSelectRef.current = false;
       return;
     }
-    selectInvoice(idx);
-  }, [selectInvoice]);
+    if (idx === activeIdx) {
+      confirmInvoiceToExpression(idx);
+    } else {
+      previewInvoice(idx);
+    }
+  }, [activeIdx, confirmInvoiceToExpression, previewInvoice]);
 
   const handleSwitcherModeChange = useCallback(
-    (mode: 'horizontal' | 'grid' | 'vertical') => {
-      if (mode !== 'grid') setGridZoomed(false);
+    (mode: 'horizontal' | 'grid' | 'vertical' | 'list') => {
+      if (mode !== 'grid' && mode !== 'list') setFocusZoomed(false);
       setDragDelta(0);
       setIsDragging(false);
       dragAxis.current = 'none';
@@ -473,7 +558,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     [onSwitcherModeChange]
   );
 
-  const panelBg = isLight ? 'bg-[#f0f0f5]' : 'bg-[#0e0e12]';
   const textMuted = isLight ? 'text-zinc-400' : 'text-zinc-500';
 
   if (!mounted) return null;
@@ -550,46 +634,49 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         zIndex: 90,
         transformOrigin: 'center center',
         isActive: false,
-        isStrip: false,
         hidden: true,
       };
     }
 
-    let translateY = 0;
+    let translateY = '0px';
+    let translateX = 0;
     let scale = 1;
-    let opacity = 1;
+    let opacity = 0;
     let blurPx = 0;
     let zIndex = 100;
-    const isActive = relativePos === 0;
-    const isStrip = !isActive;
+    let transformOrigin = 'center center';
 
-    if (isActive) {
-      translateY = dragDelta;
+    if (relativePos === 0) {
+      opacity = 1;
       zIndex = 120;
+      translateY = `${dragDelta}px`;
     } else if (relativePos === -1) {
-      translateY = 10 + dragDelta * 0.35;
+      translateX = 6;
       scale = 0.98;
-      opacity = 0.88;
-      blurPx = 1;
+      opacity = 0.9;
+      blurPx = 2.5;
       zIndex = 119;
+      transformOrigin = 'center bottom';
+      translateY = `calc(-65% + ${dragDelta}px)`;
     } else {
-      translateY = -10 + dragDelta * 0.35;
-      scale = 0.96;
-      opacity = 0.82;
-      blurPx = 1.5;
-      zIndex = 118;
+      translateX = 6;
+      scale = 0.98;
+      opacity = 0.9;
+      blurPx = 2.5;
+      zIndex = 119;
+      transformOrigin = 'center top';
+      translateY = `calc(65% + ${dragDelta}px)`;
     }
 
     return {
-      translateX: '0px',
-      translateY: `${translateY}px`,
+      translateX: `${translateX}px`,
+      translateY,
       scale,
       opacity,
       blurPx,
       zIndex,
-      transformOrigin: 'center center',
-      isActive,
-      isStrip,
+      transformOrigin,
+      isActive: relativePos === 0,
       hidden: false,
     };
   };
@@ -623,17 +710,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             : 'bg-white/10 backdrop-blur-xl text-white border-white/15 hover:bg-white/20'
       }`;
 
-    const densityBtnClass = (active: boolean) =>
-      `w-9 h-9 rounded-full flex items-center justify-center text-[9px] font-black transition-all active:scale-90 border ${
-        active
-          ? isLight
-            ? 'bg-zinc-900 text-white border-zinc-900'
-            : 'bg-white text-black border-white'
-          : isLight
-            ? 'bg-white/60 backdrop-blur-xl text-black border-black/10'
-            : 'bg-white/8 backdrop-blur-xl text-white border-white/12'
-      }`;
-
     return (
       <div
         className={`absolute top-0 left-0 right-0 z-30 pt-5 px-4 sm:px-5 flex items-center justify-between gap-3 pointer-events-none transition-opacity duration-280 ${
@@ -663,22 +739,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             );
           })}
 
-          {switcherMode === 'grid' && onSwitcherGridColsChange && (
-            <div className={`flex items-center gap-1.5 ml-1 pl-2 border-l ${isLight ? 'border-black/10' : 'border-white/15'}`}>
-              {([3, 4] as const).map((cols) => (
-                <button
-                  key={cols}
-                  type="button"
-                  onClick={() => onSwitcherGridColsChange(cols)}
-                  aria-label={`${cols} by ${cols} grid`}
-                  aria-pressed={switcherGridCols === cols}
-                  className={densityBtnClass(switcherGridCols === cols)}
-                >
-                  {cols}×{cols}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         <div className="pointer-events-auto shrink-0">
@@ -688,51 +748,47 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     );
   };
 
+  const scatterRotate = (idx: number) => ((idx % 5) - 2) * 1.4;
+
   const renderGridTile = (card: InvoiceCard, idx: number) => {
     const isSelected = idx === activeIdx;
     const isPaid = printedNames.has(card.name);
-    const isBlurredPeer = gridZoomed && !isSelected;
-    const isHiddenSelected = gridZoomed && isSelected;
+    const isHiddenSelected = focusZoomed && isSelected;
 
     return (
       <button
         key={card.id}
         type="button"
-        onClick={() => {
-          selectInvoice(idx, { keepOpen: true });
-          setGridZoomed(true);
-        }}
-        className={`text-left rounded-2xl p-3 sm:p-4 w-full aspect-[6/13] flex flex-col gap-1.5 transition-all duration-300 active:scale-[0.97] border ${
-          isSelected && !gridZoomed
-            ? 'bg-black text-white border-black shadow-lg'
+        onClick={() => openInvoiceFocus(idx)}
+        className={`text-left rounded-2xl w-full aspect-[6/13] flex flex-col transition-all duration-300 active:scale-[0.97] border p-3.5 sm:p-4 gap-2 ${
+          isSelected && !focusZoomed
+            ? 'bg-black text-white border-black shadow-lg ring-2 ring-white/20'
             : isLight
-              ? 'bg-white border-black/8 hover:bg-black/[0.03] text-black'
-              : 'bg-white/8 border-white/10 hover:bg-white/12 text-white'
-        } ${isHiddenSelected ? 'opacity-0 scale-75 pointer-events-none' : ''}`}
+              ? 'bg-white/95 border-black/8 hover:bg-white text-black shadow-sm'
+              : 'bg-white/12 border-white/12 hover:bg-white/18 text-white'
+        } ${isHiddenSelected ? 'opacity-0 pointer-events-none' : ''} ${focusZoomed && !isHiddenSelected ? 'pointer-events-none' : ''}`}
         style={{
-          filter: isBlurredPeer ? 'blur(8px)' : 'none',
-          opacity: isHiddenSelected ? 0 : isBlurredPeer ? 0.42 : 1,
-          transform: isBlurredPeer ? 'scale(0.94)' : isHiddenSelected ? 'scale(0.75)' : 'scale(1)',
+          transform: focusZoomed ? undefined : `rotate(${scatterRotate(idx)}deg)`,
         }}
         aria-hidden={isHiddenSelected}
         tabIndex={isHiddenSelected ? -1 : 0}
       >
         <div className="flex items-start justify-between gap-1">
-          <span className={`app-subtext text-[8px] font-black ${isSelected ? 'opacity-70' : 'opacity-45'}`}>
+          <span className={`app-subtext text-[9px] font-black ${isSelected ? 'opacity-70' : 'opacity-45'}`}>
             {card.isCurrent ? 'Current' : isPaid ? 'Paid' : 'Saved'}
           </span>
-          <span className={`app-subtext text-[9px] font-black shrink-0 ${isSelected ? 'opacity-80' : 'opacity-55'}`}>
+          <span className={`app-subtext text-[10px] font-black shrink-0 ${isSelected ? 'opacity-80' : 'opacity-55'}`}>
             {card.items.length}
           </span>
         </div>
-        <div className="text-[11px] font-black tracking-tight leading-tight line-clamp-2 min-h-[2.4em]">
+        <div className="text-[12px] sm:text-[13px] font-black tracking-tight leading-tight line-clamp-3 min-h-[2.8em]">
           {card.name}
         </div>
-        <div className={`app-subtext text-[10px] font-black mt-auto ${isSelected ? 'opacity-90' : 'opacity-60'}`}>
+        <div className={`app-subtext text-[11px] font-black mt-auto ${isSelected ? 'opacity-90' : 'opacity-60'}`}>
           {currency} {card.total}
         </div>
         {card.items.length > 0 && (
-          <div className={`app-subtext text-[8px] font-semibold leading-snug line-clamp-2 invoice-receipt-line ${isSelected ? 'opacity-65' : 'opacity-45'}`}>
+          <div className={`app-subtext text-[9px] font-semibold leading-snug line-clamp-2 invoice-receipt-line ${isSelected ? 'opacity-65' : 'opacity-45'}`}>
             {formatReceiptItemLine(
               card.items[0].name || 'Item 1',
               card.items[0].quantity,
@@ -747,20 +803,87 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     );
   };
 
-  const renderVerticalStrip = (card: InvoiceCard) => {
+  const renderListRow = (card: InvoiceCard, idx: number) => {
+    const isSelected = idx === activeIdx;
     const isPaid = printedNames.has(card.name);
 
     return (
-      <div className="h-full px-4 flex items-center justify-between gap-3 border-b border-black/8 bg-white text-black">
-        <div className="min-w-0 flex items-center gap-2">
-          <span className="app-subtext text-[9px] font-black opacity-45 shrink-0 text-black/60">
-            {card.isCurrent ? 'Current' : isPaid ? 'Paid' : 'Saved'}
-          </span>
-          <span className="text-sm font-black tracking-tight truncate">{card.name}</span>
+      <button
+        key={card.id}
+        type="button"
+        onPointerDown={() => startListLongPress(idx)}
+        onPointerUp={cancelListLongPress}
+        onPointerCancel={cancelListLongPress}
+        onClick={() => {
+          if (listLongPressFired.current) {
+            listLongPressFired.current = false;
+            return;
+          }
+          if (idx === activeIdx) {
+            confirmInvoiceToExpression(idx);
+          } else {
+            setActiveIdx(idx);
+          }
+        }}
+        className={`w-full text-left rounded-2xl px-4 py-3.5 border flex items-center gap-3 transition-all duration-200 active:scale-[0.99] ${
+          isSelected
+            ? isLight
+              ? 'bg-black text-white border-black shadow-md'
+              : 'bg-white text-black border-white shadow-md'
+            : isLight
+              ? 'bg-white/95 border-black/8 text-black hover:bg-white'
+              : 'bg-white/10 border-white/12 text-white hover:bg-white/16'
+        } ${focusZoomed ? 'pointer-events-none' : ''}`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className={`app-subtext text-[9px] font-black ${isSelected ? 'opacity-70' : 'opacity-45'}`}>
+              {card.isCurrent ? 'Current' : isPaid ? 'Paid' : 'Saved'}
+            </span>
+            <span className={`app-subtext text-[9px] font-black ${isSelected ? 'opacity-60' : 'opacity-40'}`}>
+              {card.items.length} items
+            </span>
+          </div>
+          <div className="text-sm font-black tracking-tight truncate">{card.name}</div>
         </div>
-        <span className="text-xs font-black shrink-0 opacity-70">
+        <div className={`app-subtext text-xs font-black shrink-0 ${isSelected ? 'opacity-90' : 'opacity-65'}`}>
           {currency} {card.total}
-        </span>
+        </div>
+      </button>
+    );
+  };
+
+  const renderFocusOverlay = () => {
+    if (!focusZoomed || !cards[activeIdx]) return null;
+
+    return (
+      <div
+        className={`absolute inset-0 z-20 transition-all duration-500 ${
+          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={() => setFocusZoomed(false)}
+        role="presentation"
+      >
+        <div className="absolute inset-0 bg-black/35 backdrop-blur-md" aria-hidden="true" />
+
+        <div className="relative z-10 flex items-center justify-center h-full p-4 pb-6 sm:pb-4 pt-[4.75rem] sm:pt-20 pointer-events-none">
+          <div
+            className={`relative ${receiptStageClass} select-none pointer-events-auto transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer ${
+              isOpen ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-[0.88] translate-y-6'
+            }`}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Invoice card: ${cards[activeIdx].name}. Tap to continue in calculator.`}
+            onClick={(e) => {
+              e.stopPropagation();
+              confirmInvoiceToExpression(activeIdx);
+            }}
+          >
+            <div className="absolute inset-0 flex flex-col rounded-[32px] overflow-hidden bg-white text-black shadow-[0_32px_96px_rgba(0,0,0,0.65)] ring-1 ring-white/20">
+              {renderCardBody(cards[activeIdx], true)}
+            </div>
+          </div>
+        </div>
       </div>
     );
   };
@@ -773,26 +896,33 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     const compact = receiptPaperWidth === '25mm';
     const lineSize = compact ? 'text-[10px]' : 'text-xs';
     const metaSize = compact ? 'text-[8px]' : 'text-[9px]';
+    const isSummaryReceipt = shareReceiptSettings.layoutMode === 'summary';
 
     return (
       <div className={`flex-1 flex flex-col min-h-0 text-black invoice-receipt-line ${compact ? 'px-2 py-2 gap-1' : 'px-3 py-3 gap-1.5'}`}>
         <div className="text-center shrink-0">
           <div className={`font-bold uppercase tracking-tight ${lineSize}`}>{titleDisplay}</div>
-          <div className={`opacity-50 ${metaSize}`}>iCalc Spatial POS Receipt</div>
+          {!isSummaryReceipt && (
+            <div className={`opacity-50 ${metaSize}`}>iCalc Spatial POS Receipt</div>
+          )}
           {isActive && (
-            <div className={`opacity-45 ${metaSize}`}>
-              Served by: {truncateReceiptText(attendant, receiptSpec.maxCols - 11)}
+            <div className={`opacity-45 ${metaSize} ${isSummaryReceipt ? 'italic mt-1' : ''}`}>
+              {isSummaryReceipt ? `served by ${truncateReceiptText(attendant, receiptSpec.maxCols - 11)}` : `Served by: ${truncateReceiptText(attendant, receiptSpec.maxCols - 11)}`}
             </div>
           )}
         </div>
 
-        <div className={`opacity-30 text-center ${metaSize}`}>{rule}</div>
+        {!isSummaryReceipt && <div className={`opacity-30 text-center ${metaSize}`}>{rule}</div>}
 
         <div
-          className="flex-1 overflow-y-auto flex flex-col gap-0.5 custom-scrollbar"
+          className={`flex-1 overflow-y-auto flex flex-col gap-0.5 custom-scrollbar ${isSummaryReceipt ? 'justify-center' : ''}`}
           style={{ touchAction: 'pan-y' }}
         >
-          {card.items.length === 0 ? (
+          {isSummaryReceipt ? (
+            <div className={`text-center font-bold tabular-nums ${compact ? 'text-lg' : 'text-2xl'}`} style={{ fontFamily: 'Montserrat, Candara, sans-serif' }}>
+              {currency}{card.total}
+            </div>
+          ) : card.items.length === 0 ? (
             <div
               className={textMuted}
               style={{
@@ -832,10 +962,14 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           )}
         </div>
 
-        <div className={`opacity-30 text-center ${metaSize}`}>{rule}</div>
-        <div className={`text-right font-bold tabular-nums ${lineSize}`}>
-          TOTAL: {currency}{card.total}
-        </div>
+        {!isSummaryReceipt && (
+          <>
+            <div className={`opacity-30 text-center ${metaSize}`}>{rule}</div>
+            <div className={`text-right font-bold tabular-nums ${lineSize}`}>
+              TOTAL: {currency}{card.total}
+            </div>
+          </>
+        )}
 
         {isActive && activeReceiptValidation && activeReceiptValidation.warnings.length > 0 && (
           <div className="shrink-0 mt-1 px-1.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200/80 text-[8px] leading-snug text-amber-900">
@@ -878,10 +1012,24 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
+            void handleShareClick(card);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          disabled={isSharing || isPrinting || card.items.length === 0}
+          className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center bg-blue-500 text-white shadow-[0_8px_24px_rgba(59,130,246,0.35)] active:scale-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          aria-label="Share invoice as image"
+          title="Share (WhatsApp, etc.)"
+        >
+          <Icons.Share size={17} />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
             void handlePrintClick(card);
           }}
           onPointerDown={(e) => e.stopPropagation()}
-          disabled={isPrinting || card.items.length === 0}
+          disabled={isPrinting || isSharing || card.items.length === 0}
           className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center bg-emerald-500 text-white shadow-[0_8px_24px_rgba(0,0,0,0.22),0_0_14px_rgb(16,185,129)] active:scale-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           aria-label="Print and mark paid"
         >
@@ -938,13 +1086,13 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           )}
         </div>
 
-        {isActive && (switcherMode !== 'grid' || gridZoomed) && (
+        {isActive && (!isBrowseMode || focusZoomed) && (
           <div className="flex items-center gap-2 shrink-0">
-            {switcherMode === 'grid' && gridZoomed && (
+            {isBrowseMode && focusZoomed && (
               <button
                 type="button"
-                onClick={() => setGridZoomed(false)}
-                aria-label="Back to invoice grid"
+                onClick={() => setFocusZoomed(false)}
+                aria-label="Back to invoice browse view"
                 className={`p-2.5 rounded-full transition-colors duration-150 shrink-0 ${
                   isLight ? 'text-black hover:bg-black/8' : 'text-white hover:bg-white/8'
                 }`}
@@ -976,7 +1124,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             <button
               key={i}
               aria-label={`Go to card ${i + 1}`}
-              onClick={() => selectInvoice(i)}
+              onClick={() => (i === activeIdx ? confirmInvoiceToExpression(i) : previewInvoice(i))}
               style={{
                 width: i === activeIdx ? 20 : 6,
                 height: 6,
@@ -1007,21 +1155,47 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       ref={rootRef}
       inert={!isOpen ? true : undefined}
       className={`fixed inset-0 z-120 transition-all duration-280 ${
-        switcherMode === 'grid'
+        isBrowseMode
           ? ''
           : 'flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 pt-[4.75rem] sm:pt-20'
       } ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
     >
       <div
-        className={`absolute inset-0 transition-opacity duration-280 ${
-          isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'
-        } ${isOpen ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 overflow-hidden transition-opacity duration-280 ${
+          isOpen ? 'opacity-100' : 'opacity-0'
+        }`}
         onClick={() => {
-          if (switcherMode === 'grid' && gridZoomed) setGridZoomed(false);
+          if (isBrowseMode && focusZoomed) setFocusZoomed(false);
           else handleClose();
         }}
         aria-hidden="true"
-      />
+      >
+        {wallpaperSlides.map((slide, index) => {
+          const imageUrl = resolveWallpaperImage(slide.image);
+          if (!imageUrl) return null;
+
+          return (
+            <div
+              key={`${imageUrl}-${index}`}
+              className={`absolute inset-[-12%] transition-opacity duration-[2000ms] ease-in-out ${
+                index === wallpaperSlide ? 'opacity-100' : 'opacity-0'
+              }`}
+            >
+              <div
+                className="wallpaper-layer wallpaper-layer--sharp absolute inset-0 bg-cover bg-center bg-no-repeat"
+                style={{ backgroundImage: `url("${imageUrl}")` }}
+              />
+            </div>
+          );
+        })}
+
+        <div
+          className={`absolute inset-0 transition-colors duration-700 ${
+            isLight ? 'bg-white/30' : 'bg-black/40'
+          }`}
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/20" />
+      </div>
 
       {renderSwitcherLayoutToolbar()}
 
@@ -1030,47 +1204,61 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           <div
             className={`absolute inset-0 z-10 flex flex-col transition-all duration-500 ${
               isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-            }`}
+            } ${focusZoomed ? 'pointer-events-none' : ''}`}
             role="region"
-            aria-label="Invoice grid"
+            aria-label="Invoice scattered grid"
           >
-            <div className="shrink-0 px-5 pt-[4.5rem] pb-3">
-              <div className={`text-sm font-black tracking-tight ${isLight ? 'text-black' : 'text-white'}`}>
+            <div className={`shrink-0 px-5 pt-[4.5rem] pb-3 transition-all duration-500 ${focusZoomed ? 'blur-md opacity-40' : ''}`}>
+              <div className="text-sm font-black tracking-tight text-white drop-shadow-sm">
                 Invoices
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-6 sm:px-5 sm:pb-8">
+            <div
+              className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-6 sm:px-5 sm:pb-8 transition-all duration-500 ${
+                focusZoomed ? 'blur-xl brightness-[0.45] scale-[0.96]' : ''
+              }`}
+            >
               <div
-                className={`grid gap-2 sm:gap-3 min-h-full content-start ${
-                  switcherGridCols === 4 ? 'grid-cols-4' : 'grid-cols-3'
-                }`}
+                className="grid min-h-full content-start"
+                style={{
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${SCATTERED_GRID_MIN_TILE}, 1fr))`,
+                  gap: SCATTERED_GRID_GAP,
+                }}
               >
                 {cards.map((card, idx) => renderGridTile(card, idx))}
               </div>
             </div>
           </div>
+          {renderFocusOverlay()}
+        </>
+      ) : switcherMode === 'list' ? (
+        <>
+          <div
+            className={`absolute inset-0 z-10 flex flex-col transition-all duration-500 ${
+              isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            } ${focusZoomed ? 'pointer-events-none' : ''}`}
+            role="region"
+            aria-label="Invoice list"
+          >
+            <div className={`shrink-0 px-5 pt-[4.5rem] pb-3 transition-all duration-500 ${focusZoomed ? 'blur-md opacity-40' : ''}`}>
+              <div className="text-sm font-black tracking-tight text-white drop-shadow-sm">
+                Invoices
+              </div>
+              <p className="app-subtext text-[10px] text-white/50 mt-1">Hold to preview · Tap focused to continue</p>
+            </div>
 
-          {gridZoomed && cards[activeIdx] && (
             <div
-              className={`absolute inset-0 z-20 flex items-center justify-center p-4 pb-6 sm:pb-4 pt-[4.75rem] sm:pt-20 pointer-events-none transition-all duration-500 ${
-                isOpen ? 'opacity-100' : 'opacity-0'
+              className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-6 sm:px-5 sm:pb-8 transition-all duration-500 ${
+                focusZoomed ? 'blur-xl brightness-[0.45] scale-[0.96]' : ''
               }`}
             >
-              <div
-                className={`relative ${receiptStageClass} select-none pointer-events-auto transition-all duration-500 ${
-                  isOpen ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-90 translate-y-8'
-                }`}
-                role="dialog"
-                aria-modal="true"
-                aria-label={`Invoice card: ${cards[activeIdx].name}`}
-              >
-                <div className="absolute inset-0 flex flex-col rounded-[32px] overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
-                  {renderCardBody(cards[activeIdx], true)}
-                </div>
+              <div className="flex flex-col gap-2.5 min-h-full">
+                {cards.map((card, idx) => renderListRow(card, idx))}
               </div>
             </div>
-          )}
+          </div>
+          {renderFocusOverlay()}
         </>
       ) : (
       <div
@@ -1100,7 +1288,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
               zIndex,
               transformOrigin,
               isActive,
-              isStrip,
               hidden,
             } = getVerticalCardStyle(idx);
 
@@ -1113,13 +1300,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 inert={!isActive || !isOpen ? true : undefined}
                 role={isActive ? 'dialog' : undefined}
                 aria-modal={isActive ? true : undefined}
-                className={`absolute left-0 right-0 flex flex-col rounded-[32px] overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)] ${
-                  isStrip ? 'mx-3' : 'inset-0'
-                }`}
+                className="absolute inset-0 flex flex-col rounded-[32px] overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
                 style={{
-                  top: isStrip ? (idx < activeIdx ? 0 : 'auto') : 0,
-                  bottom: isStrip && idx > activeIdx ? 0 : 'auto',
-                  height: isStrip ? VERTICAL_STRIP_HEIGHT : '100%',
                   transform: `translateX(${translateX}) translateY(${translateY}) scale(${scale})`,
                   transformOrigin,
                   opacity,
@@ -1133,7 +1315,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 }}
                 onClick={() => handleCardSelectClick(idx)}
               >
-                {isStrip ? renderVerticalStrip(card) : renderCardBody(card, isActive)}
+                {renderCardBody(card, isActive)}
               </div>
             );
           })

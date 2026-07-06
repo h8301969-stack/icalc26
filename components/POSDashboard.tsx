@@ -1,9 +1,18 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import { HistoryItem, InvoiceActionLog, InvoicePrintLog, CartLineItem } from '../types';
+import {
+  HistoryItem,
+  InvoiceActionLog,
+  InvoicePrintLog,
+  CartLineItem,
+  POSRequest,
+  RestockLineItem,
+  RestockNote,
+  SupplierRecord,
+} from '../types';
 import { formatPosLineItemDisplay, formatPriceLabel, parsePosLineItems } from '../utils/posExpression';
 import { Icons } from '../constants';
 import { InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS';
-import { storage } from '../hooks/storage';
+
 import SettingsPanel from './SettingsPanel';
 import { WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
 
@@ -13,6 +22,12 @@ interface POSDashboardProps {
   setItems: React.Dispatch<React.SetStateAction<InventoryItem[]>>;
   purchases: PurchaseRecord[];
   setPurchases: React.Dispatch<React.SetStateAction<PurchaseRecord[]>>;
+  suppliers: SupplierRecord[];
+  setSuppliers: React.Dispatch<React.SetStateAction<SupplierRecord[]>>;
+  requests: POSRequest[];
+  setRequests: React.Dispatch<React.SetStateAction<POSRequest[]>>;
+  restocks: RestockNote[];
+  setRestocks: React.Dispatch<React.SetStateAction<RestockNote[]>>;
   invoiceActionLogs: InvoiceActionLog[];
   invoiceName: string;
   cartItems: CartLineItem[];
@@ -31,7 +46,7 @@ interface POSDashboardProps {
     profiles?: import('../types').UserProfile[];
     activeProfileId?: string;
     currency?: string;
-    invoiceSwitcherGridCols?: 3 | 4;
+
   };
   updateSettings: (keyOrPatch: string | Record<string, unknown>, value?: unknown) => void;
   onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
@@ -72,41 +87,7 @@ interface InvoiceCard {
   latestTimestamp: number;
 }
 
-type RequestStatus = 'pending' | 'delivered' | 'outofstock';
-
-interface RequestItem {
-  id: string;
-  requester: string;
-  notes: string;
-  status: RequestStatus;
-  timestamp: number;
-  itemCount: number;
-  total: number;
-}
-
-interface RestockLineItem {
-  itemId: string;
-  name: string;
-  qty: number;
-}
-
-interface RestockNote {
-  id: string;
-  title: string;
-  notes: string;
-  timestamp: number;
-  lineItems: RestockLineItem[];
-}
-
-interface SupplierRecord {
-  id: string;
-  name: string;
-  lastReceivedAt: number;
-  totalItemsReceived: number;
-  productIds: string[];
-}
-
-const SUPPLIERS_STORAGE_KEY = 'pos_suppliers';
+type RequestStatus = POSRequest['status'];
 const RESTOCK_DRAG_FACTOR = 1.25;
 const RESTOCK_VERTICAL_STRIP_HEIGHT = 52;
 const RESTOCK_SWIPE_THRESHOLD = 22;
@@ -189,6 +170,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   items,
   setItems,
   purchases,
+  suppliers,
+  setSuppliers,
+  requests,
+  setRequests,
+  restocks,
+  setRestocks,
   invoiceActionLogs,
   invoiceName,
   cartItems,
@@ -252,7 +239,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   // Requests feature states
   const [requestTab, setRequestTab] = useState<'pending' | 'delivered' | 'outofstock'>('pending');
   const [showAddRequestPopup, setShowAddRequestPopup] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<RequestItem | null>(null);
+  const [selectedRequest, setSelectedRequest] = useState<POSRequest | null>(null);
   const [newRequesterName, setNewRequesterName] = useState('');
   const [requestNotes, setRequestNotes] = useState('');
 
@@ -264,7 +251,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [restockSearchQuery, setRestockSearchQuery] = useState('');
   const [showRestockSearch, setShowRestockSearch] = useState(false);
   const [restockFreeNotes, setRestockFreeNotes] = useState('');
-  const [restocks, setRestocks] = useState<RestockNote[]>([]);
+
   const [restockViewMode, setRestockViewMode] = useState<RestockViewMode>('list');
   const [restockActiveIdx, setRestockActiveIdx] = useState(0);
   const [restockGridZoomed, setRestockGridZoomed] = useState(false);
@@ -274,17 +261,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const restockDragStartY = useRef(0);
   const restockDragAxis = useRef<'none' | 'x' | 'y'>('none');
   const restockStageRef = useRef<HTMLDivElement>(null);
-  const [suppliers, setSuppliers] = useState<SupplierRecord[]>(() => storage.get(SUPPLIERS_STORAGE_KEY, []));
   const [showSuppliersPanel, setShowSuppliersPanel] = useState(false);
   const restockAppliedRef = useRef(false);
-
-  // Sample requests data (in real app would come from hook/storage)
-  const [requests, setRequests] = useState<RequestItem[]>([
-    { id: 'req1', requester: 'Marcus Chen', notes: '450x3+120x2', status: 'pending', timestamp: Date.now() - 1000 * 60 * 45, itemCount: 5, total: 1590 },
-    { id: 'req2', requester: 'Sarah Okonkwo', notes: '120x12', status: 'delivered', timestamp: Date.now() - 1000 * 60 * 60 * 27, itemCount: 12, total: 1440 },
-    { id: 'req3', requester: 'James Rivera', notes: 'Sensor Array replacements', status: 'pending', timestamp: Date.now() - 1000 * 60 * 60 * 5, itemCount: 3, total: 0 },
-    { id: 'req4', requester: 'Amina Hassan', notes: 'Power cells — low stock', status: 'outofstock', timestamp: Date.now() - 1000 * 60 * 90, itemCount: 1, total: 0 },
-  ]);
 
   // Keyboard accessibility: close on Escape
   useEffect(() => {
@@ -360,10 +338,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       setRestockActiveIdx(restocks.length - 1);
     }
   }, [restocks.length, restockActiveIdx]);
-
-  useEffect(() => {
-    storage.set(SUPPLIERS_STORAGE_KEY, suppliers);
-  }, [suppliers]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -678,7 +652,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     if (!requester) return;
     const notes = requestNotes.trim();
     const { itemCount, total } = parseRequestTotals(notes, currency);
-    const newReq: RequestItem = {
+    const newReq: POSRequest = {
       id: 'req-' + Date.now(),
       requester,
       notes,
@@ -706,7 +680,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         ? 'bg-emerald-500/20 text-emerald-500'
         : 'bg-red-500/20 text-red-500';
 
-  const renderRequestRow = (req: RequestItem, idx: number, total: number) => (
+  const renderRequestRow = (req: POSRequest, idx: number, total: number) => (
     <div
       key={req.id}
       className={`px-8 py-7 flex items-center justify-between gap-4 ${idx !== total - 1 ? 'border-b border-white/10' : ''}`}
@@ -985,7 +959,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     applyRestockToInventory,
   ]);
 
-  const restockGridCols = settings.invoiceSwitcherGridCols ?? 3;
+  const restockGridCols = 3;
   const lowStockItems = useMemo(() => items.filter((i) => i.stock < i.threshold), [items]);
 
   const getRestockTotalQty = useCallback(

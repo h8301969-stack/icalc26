@@ -8,6 +8,7 @@ import {
   validateReceiptPrint,
   type PaperWidth,
   type ReceiptLineItem,
+  ReceiptLayoutMode,
 } from './receiptLayout';
 
 export interface BLEDevice {
@@ -617,7 +618,8 @@ export class BLEPrinter {
     items: CartItem[],
     runningTotal: number,
     currency: string = '¢',
-    attendantName?: string
+    attendantName?: string,
+    layoutMode: ReceiptLayoutMode = 'full'
   ): Promise<boolean> {
     const receiptItems: ReceiptLineItem[] = items.map((item) => ({
       name: item.name,
@@ -629,7 +631,8 @@ export class BLEPrinter {
       receiptItems,
       this.paperWidth,
       !!attendantName,
-      currency
+      currency,
+      layoutMode
     );
     logReceiptPrint('validate', {
       mode: 'escpos_text',
@@ -683,16 +686,18 @@ export class BLEPrinter {
 
     commands.push(0x1B, 0x61, 0x00);
 
-    items.forEach((item, idx) => {
-      const { line } = formatReceiptItemLine(
-        item.name || `Item ${idx + 1}`,
-        item.quantity,
-        item.price,
-        currency,
-        spec
-      );
-      commands.push(...Array.from(encoder.encode(`${line}\n`)));
-    });
+    if (layoutMode === 'full') {
+      items.forEach((item, idx) => {
+        const { line } = formatReceiptItemLine(
+          item.name || `Item ${idx + 1}`,
+          item.quantity,
+          item.price,
+          currency,
+          spec
+        );
+        commands.push(...Array.from(encoder.encode(`${line}\n`)));
+      });
+    }
 
     commands.push(...Array.from(encoder.encode(`${rule}\n`)));
 
@@ -733,14 +738,16 @@ export class BLEPrinter {
     items: { name?: string; price: number; quantity: number }[],
     runningTotal: number,
     currency: string = '¢',
-    attendantName?: string
+    attendantName?: string,
+    layoutMode: ReceiptLayoutMode = 'full'
   ): Promise<boolean> {
     const validation = validateReceiptPrint(
       invoiceName,
       items,
       this.paperWidth,
       !!attendantName,
-      currency
+      currency,
+      layoutMode
     );
     logReceiptPrint('validate', {
       mode: 'raster_image',
@@ -766,7 +773,8 @@ export class BLEPrinter {
     const itemHeight = spec.itemLineHeightPx;
     const headerHeight = attendantName ? spec.headerHeightPx : spec.headerHeightPx - 12;
     const footerHeight = spec.footerHeightPx;
-    const height = headerHeight + items.length * itemHeight + footerHeight;
+    const itemRows = layoutMode === 'full' ? items.length : 0;
+    const height = headerHeight + itemRows * itemHeight + footerHeight;
 
     logReceiptPrint('start', {
       mode: 'raster_image',
@@ -811,24 +819,26 @@ export class BLEPrinter {
 
     let currentY = 85;
 
-    items.forEach((item, idx) => {
-      const { displayName, priceText } = formatReceiptItemLine(
-        item.name || `Item ${idx + 1}`,
-        item.quantity,
-        item.price,
-        currency,
-        spec
-      );
+    if (layoutMode === 'full') {
+      items.forEach((item, idx) => {
+        const { displayName, priceText } = formatReceiptItemLine(
+          item.name || `Item ${idx + 1}`,
+          item.quantity,
+          item.price,
+          currency,
+          spec
+        );
 
-      ctx.textAlign = 'left';
-      ctx.font = 'bold 13px "Courier New", monospace';
-      ctx.fillText(displayName, 8, currentY);
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 13px "Courier New", monospace';
+        ctx.fillText(displayName, 8, currentY);
 
-      ctx.textAlign = 'right';
-      ctx.fillText(priceText, width - 8, currentY);
+        ctx.textAlign = 'right';
+        ctx.fillText(priceText, width - 8, currentY);
 
-      currentY += itemHeight;
-    });
+        currentY += itemHeight;
+      });
+    }
 
     ctx.textAlign = 'center';
     ctx.font = '14px "Courier New", monospace';

@@ -39,3 +39,43 @@ export interface UserProfile {
   avatarUrl: string;
   isSystem?: boolean;
 }
+
+export type RequestStatus = 'pending' | 'delivered' | 'outofstock';
+
+export interface POSRequest {
+  id: string;
+  requester: string;
+  notes: string;
+  status: RequestStatus;
+  timestamp: number;
+  itemCount: number;
+  total: number;
+}
+
+export interface RestockLineItem {
+  itemId: string;
+  name: string;
+  qty: number;
+}
+
+export interface RestockNote {
+  id: string;
+  title: string;
+  notes: string;
+  timestamp: number;
+  lineItems: RestockLineItem[];
+}
+
+export interface SupplierRecord {
+  id: string;
+  name: string;
+  lastReceivedAt: number;
+  totalItemsReceived: number;
+  productIds: string[];
+}
+
+export interface SavedInvoice {
+  name: string;
+  expression: string;
+  isCurrent: boolean;
+}

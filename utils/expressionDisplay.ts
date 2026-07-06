@@ -137,3 +137,78 @@ export const buildExpressionRenderSlices = (
 
   return slices;
 };
+
+export type ExpressionViewMode = 'auto' | 'list';
+
+export interface ExpressionViewPreset {
+  charsPerLine: number;
+  visibleLines: number;
+  breakAtPlus: boolean;
+}
+
+export const EXPRESSION_LIST_PRESET: ExpressionViewPreset = {
+  charsPerLine: 40,
+  visibleLines: 9,
+  breakAtPlus: true,
+};
+
+export const EXPRESSION_VIEW_OPTIONS: { id: ExpressionViewMode; label: string; hint: string }[] = [
+  { id: 'auto', label: 'Auto', hint: 'Responsive wrap' },
+  { id: 'list', label: 'List', hint: 'New line after +' },
+];
+
+export const normalizeExpressionViewMode = (mode: string | undefined): ExpressionViewMode => {
+  if (mode === 'list' || mode === '34x6' || mode === '40x9' || mode === '50x6') return 'list';
+  return 'auto';
+};
+
+/** Split expression into display lines: new line after every + */
+export const splitExpressionAtPlus = (expression: string): string[] => {
+  if (!expression || expression === '0') return [expression || '0'];
+
+  const lines: string[] = [];
+  let current = '';
+
+  for (let i = 0; i < expression.length; i++) {
+    current += expression[i];
+    if (expression[i] === '+') {
+      lines.push(current);
+      current = '';
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines : [expression];
+};
+
+export const countExpressionLines = (
+  expression: string,
+  charsPerLine: number,
+  breakAtPlus: boolean
+): number => {
+  if (!expression || expression === '0') return 1;
+
+  const chars = Math.max(6, charsPerLine);
+
+  if (!breakAtPlus) {
+    return (expression.match(new RegExp(`.{1,${chars}}`, 'g')) ?? [expression]).length;
+  }
+
+  return splitExpressionAtPlus(expression).reduce((total, segment) => {
+    const segmentLines = Math.max(1, Math.ceil(segment.length / chars));
+    return total + segmentLines;
+  }, 0);
+};
+
+export const shouldBreakDisplayAfterIndex = (
+  expression: string,
+  index: number,
+  breakAtPlus: boolean
+): boolean => breakAtPlus && index >= 0 && index < expression.length && expression[index] === '+';
+
+export const getExpressionViewPreset = (
+  mode: ExpressionViewMode | string | undefined
+): ExpressionViewPreset | null => {
+  if (normalizeExpressionViewMode(mode) === 'auto') return null;
+  return EXPRESSION_LIST_PRESET;
+};

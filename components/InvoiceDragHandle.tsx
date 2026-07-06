@@ -42,15 +42,15 @@ const InvoiceDragHandle: React.FC<InvoiceDragHandleProps> = ({
     <div
       className={`touch-none select-none ${
         edgePinned
-          ? 'absolute bottom-0 left-0 right-0 z-20 h-10'
-          : 'shrink-0 h-10'
+          ? 'absolute bottom-0 left-0 right-0 z-20 h-4'
+          : 'shrink-0 h-4'
       } ${
         disabled ? 'pointer-events-none' : 'cursor-grab active:cursor-grabbing pointer-events-auto'
       }`}
       style={{
         transform: `translateY(${offset * 0.4}px)`,
         transition: dragging ? 'none' : 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
-        paddingBottom: edgePinned ? 'max(0.15rem, env(safe-area-inset-bottom))' : undefined,
+        paddingBottom: edgePinned ? 'max(0.06rem, env(safe-area-inset-bottom))' : undefined,
       }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

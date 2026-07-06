@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { CartLineItem, InvoiceActionLog, InvoicePrintLog } from '../types';
+import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
+import { CartLineItem, InvoiceActionLog, InvoicePrintLog, SavedInvoice } from '../types';
 import { InventoryItem } from './usePOS';
 import { storage } from './storage';
 import {
+  buildPosExpressionFromItems,
   getLoggedSegments,
   parsePosLineItems,
   formatPriceLabel,
@@ -44,6 +45,11 @@ export const useInvoice = (
   );
 
   const segmentMetaRef = useRef<Map<string, SegmentMeta>>(new Map());
+  const expressionsByInvoiceRef = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    expressionsByInvoiceRef.current[invoiceName] = expression;
+  }, [invoiceName, expression]);
 
   useEffect(() => {
     storage.set(INVOICE_NAME_KEY, invoiceName);
@@ -167,11 +173,47 @@ export const useInvoice = (
     ]);
   };
 
+  const getInvoiceExpression = useCallback((name: string) => {
+    if (expressionsByInvoiceRef.current[name]) return expressionsByInvoiceRef.current[name];
+    if (name === invoiceName) return expression;
+    const items = pastLogs
+      .filter((log) => log.invoiceName === name)
+      .map((log) => ({ price: log.price, quantity: log.quantity }));
+    return buildPosExpressionFromItems(items) || '0';
+  }, [expression, invoiceName, pastLogs]);
+
+  const getSavedInvoices = useCallback((): SavedInvoice[] => {
+    const names = new Set<string>([invoiceName, ...pastLogs.map((log) => log.invoiceName)]);
+    return [...names].map((name) => ({
+      name,
+      expression: getInvoiceExpression(name),
+      isCurrent: name === invoiceName,
+    }));
+  }, [getInvoiceExpression, invoiceName, pastLogs]);
+
+  const hydrateInvoiceState = (data: {
+    invoiceName: string;
+    pastLogs: InvoiceActionLog[];
+    printLogs: InvoicePrintLog[];
+    savedInvoices?: SavedInvoice[];
+  }) => {
+    setInvoiceName(data.invoiceName);
+    setPastLogs(data.pastLogs);
+    setPrintLogs(data.printLogs);
+    segmentMetaRef.current.clear();
+    if (data.savedInvoices) {
+      expressionsByInvoiceRef.current = Object.fromEntries(
+        data.savedInvoices.map((invoice) => [invoice.name, invoice.expression])
+      );
+    }
+  };
+
   return {
     invoiceName,
     setInvoiceName,
     cartItems,
     actionLogs,
+    pastLogs,
     runningTotal,
     printLogs,
     saveCurrentInvoiceAndStartNew,
@@ -180,5 +222,8 @@ export const useInvoice = (
     clearAllInvoices,
     recordPrint,
     resolveUnidentifiedPrice,
+    hydrateInvoiceState,
+    getInvoiceExpression,
+    getSavedInvoices,
   };
 };

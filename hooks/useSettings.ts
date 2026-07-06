@@ -5,6 +5,8 @@ import { getAutoLayoutMode, getSystemTheme, ThemeMode } from '../utils/devicePre
 import { storage } from './storage';
 import { UserProfile } from '../types';
 import { ensureAdminProfile } from '../utils/auth';
+import { ExpressionViewMode, normalizeExpressionViewMode } from '../utils/expressionDisplay';
+import { ReceiptLayoutMode } from '../utils/receiptLayout';
 
 const SETTINGS_KEY = 'calc_settings';
 
@@ -20,8 +22,9 @@ const DEFAULTS = {
   disableCalculatorCard: false as boolean,
   layoutMode: 'portrait' as 'portrait' | 'landscape',
   layoutModeAuto: true,
-  invoiceSwitcherMode: 'horizontal' as 'horizontal' | 'grid' | 'vertical',
-  invoiceSwitcherGridCols: 3 as 3 | 4,
+  invoiceSwitcherMode: 'horizontal' as 'horizontal' | 'grid' | 'vertical' | 'list',
+  expressionViewMode: 'auto' as ExpressionViewMode,
+  receiptLayoutMode: 'summary' as ReceiptLayoutMode,
   standbyTimerSeconds: 0,
   profiles: [] as UserProfile[],
   activeProfileId: '',
@@ -29,6 +32,20 @@ const DEFAULTS = {
 
 const migrateStoredSettings = (stored: Partial<typeof DEFAULTS> & Record<string, unknown>): typeof DEFAULTS => {
   const merged = { ...DEFAULTS, ...stored } as typeof DEFAULTS & Record<string, unknown>;
+  merged.expressionViewMode = normalizeExpressionViewMode(
+    merged.expressionViewMode as string | undefined
+  );
+
+  const storedLayout = merged.receiptLayoutMode as string | undefined;
+  const hadLegacyShareToggles =
+    'shareShowInvoiceName' in stored ||
+    'shareShowTotal' in stored ||
+    'shareShowAttendant' in stored;
+  if (storedLayout === 'full' || storedLayout === 'summary') {
+    merged.receiptLayoutMode = storedLayout;
+  } else if (hadLegacyShareToggles) {
+    merged.receiptLayoutMode = 'summary';
+  }
 
   if (!merged.profiles?.length) {
     const legacyName =
@@ -59,6 +76,9 @@ const migrateStoredSettings = (stored: Partial<typeof DEFAULTS> & Record<string,
     merged.layoutModeAuto = true;
     merged.layoutMode = getAutoLayoutMode();
   }
+
+  delete merged.invoiceSwitcherGridCols;
+  delete merged.invoiceSwitcherGridDensity;
 
   return merged as typeof DEFAULTS;
 };

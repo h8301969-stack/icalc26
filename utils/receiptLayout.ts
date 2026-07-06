@@ -1,5 +1,12 @@
 export type PaperWidth = '58mm' | '25mm';
 
+export type ReceiptLayoutMode = 'summary' | 'full';
+
+export const RECEIPT_LAYOUT_OPTIONS: { id: ReceiptLayoutMode; label: string; hint: string }[] = [
+  { id: 'summary', label: 'Total only', hint: 'Name · total · attendant' },
+  { id: 'full', label: 'Full invoice', hint: 'All line items' },
+];
+
 export interface ReceiptSpec {
   paperWidth: PaperWidth;
   widthPx: number;
@@ -88,14 +95,15 @@ export function validateReceiptPrint(
   items: ReceiptLineItem[],
   paperWidth: PaperWidth = '58mm',
   hasAttendant = false,
-  currency = '¢'
+  currency = '¢',
+  layoutMode: ReceiptLayoutMode = 'full'
 ): ReceiptPrintValidation {
   const spec = getReceiptSpec(paperWidth);
   const errors: string[] = [];
   const warnings: string[] = [];
 
   if (!invoiceName.trim()) errors.push('Invoice name is empty.');
-  if (items.length === 0) errors.push('No line items to print.');
+  if (layoutMode === 'full' && items.length === 0) errors.push('No line items to print.');
 
   if (items.length > spec.maxRecommendedItems) {
     warnings.push(
@@ -116,7 +124,8 @@ export function validateReceiptPrint(
   });
 
   const headerHeight = hasAttendant ? spec.headerHeightPx : spec.headerHeightPx - 12;
-  const estimatedHeightPx = headerHeight + items.length * spec.itemLineHeightPx + spec.footerHeightPx;
+  const itemRows = layoutMode === 'full' ? items.length : 0;
+  const estimatedHeightPx = headerHeight + itemRows * spec.itemLineHeightPx + spec.footerHeightPx;
 
   if (estimatedHeightPx > spec.maxHeightPx) {
     warnings.push(

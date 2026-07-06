@@ -17,24 +17,52 @@ import { useHistory } from './hooks/useHistory';
 import { useCalculator } from './hooks/useCalculator';
 
 import { useStandby } from './hooks/useStandby';
+import { useEdgeSwipe } from './hooks/useGestures';
+import { useScreenOrientation } from './hooks/useScreenOrientation';
+import { getDeviceClass } from './utils/devicePreferences';
+import {
+  computeAutoLandscapeLayout,
+  computeAutoPortraitLayout,
+  computePresetLayout,
+  EXPRESSION_CHAR_WIDTH_RATIO,
+} from './utils/expressionLayout';
+import {
+  mapPointerToExpressionIndex,
+  scrollCursorIntoView,
+} from './utils/expressionCursor';
+
+const SETTINGS_SECTION_COUNT = 4;
 import { useAuth } from './hooks/useAuth';
+import { useSupabaseDataSync } from './hooks/useSupabaseDataSync';
 import { ensureAdminProfile, getAccounts, isAdminProfile } from './utils/auth';
 import { usePOS, InventoryItem } from './hooks/usePOS';
 import { useInvoice } from './hooks/useInvoice';
 import { buildPosExpressionFromItems } from './utils/posExpression';
 import {
   buildExpressionRenderSlices,
+  getExpressionViewPreset,
+  normalizeExpressionViewMode,
   getUnidentifiedPriceRanges,
+  splitExpressionAtPlus,
 } from './utils/expressionDisplay';
-import { CartLineItem } from './types';
+import { CartLineItem, InvoiceActionLog, InvoicePrintLog, SavedInvoice } from './types';
+import { usePOSDashboardData } from './hooks/usePOSDashboardData';
 
 const AppContent: React.FC = () => {
   const { settings, updateSettings, triggerHaptic, isLight, formatCurrency, activeProfile } = useSettings();
-  const { account, signup, login, logout, syncProfiles, changePassword, verifyPassword } = useAuth();
+  const { account, authReady, signup, login, logout, skipDevAuth, syncProfiles, changePassword, verifyPassword } = useAuth();
   const disableCard = !!settings.disableCalculatorCard;
   const isLandscape = settings.layoutMode === 'landscape';
-  const { history, saveResult } = useHistory();
+  const { history, setHistory, saveResult } = useHistory();
   const { items, setItems, purchases, setPurchases } = usePOS(history);
+  const {
+    suppliers,
+    setSuppliers,
+    requests,
+    setRequests,
+    restocks,
+    setRestocks,
+  } = usePOSDashboardData();
   const { 
     expression, calcError, inputChar, 
     toggleSign, finalize, handleUndo, handleRedo, clearExpression, deleteLast,
@@ -63,11 +91,60 @@ const AppContent: React.FC = () => {
     saveCurrentToPast,
     switchToInvoice,
     printLogs,
+    pastLogs,
     recordPrint,
     resolveUnidentifiedPrice,
+    hydrateInvoiceState,
+    getInvoiceExpression,
+    getSavedInvoices,
   } = useInvoice(expression, items, settings.currency, activeProfileName);
 
+  const handleInvoiceHydrated = useCallback(
+    (data: {
+      invoiceName: string;
+      expression: string;
+      pastLogs: InvoiceActionLog[];
+      printLogs: InvoicePrintLog[];
+      savedInvoices: SavedInvoice[];
+    }) => {
+      hydrateInvoiceState({
+        invoiceName: data.invoiceName,
+        pastLogs: data.pastLogs,
+        printLogs: data.printLogs,
+        savedInvoices: data.savedInvoices,
+      });
+      setExpression(data.expression);
+      setCursorPos(data.expression === '0' ? 0 : data.expression.length);
+    },
+    [hydrateInvoiceState, setExpression, setCursorPos]
+  );
+
+  useSupabaseDataSync({
+    userId: account?.id ?? null,
+    authReady,
+    history,
+    setHistory,
+    inventory: items,
+    setInventory: setItems,
+    purchases,
+    setPurchases,
+    suppliers,
+    setSuppliers,
+    requests,
+    setRequests,
+    restocks,
+    setRestocks,
+    invoiceName,
+    expression,
+    pastLogs,
+    printLogs,
+    getSavedInvoices,
+    onInvoiceHydrated: handleInvoiceHydrated,
+  });
+
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const [isCalculatorEntering, setIsCalculatorEntering] = useState(false);
+  const [authOverlayMounted, setAuthOverlayMounted] = useState(true);
 
   const lockScreen = useCallback(() => {
     setIsHistoryOpen(false);
@@ -76,7 +153,14 @@ const AppContent: React.FC = () => {
     setIsSearchOpen(false);
     setSearchQuery('');
     setIsUnlocked(false);
+    setAuthOverlayMounted(true);
   }, []);
+
+  const handleQuickUnlock = useCallback(() => {
+    setIsCalculatorEntering(true);
+    setIsUnlocked(true);
+    triggerHaptic(2);
+  }, [triggerHaptic]);
 
   useStandby(isUnlocked, settings.standbyTimerSeconds ?? 0, lockScreen);
 
@@ -99,12 +183,25 @@ const AppContent: React.FC = () => {
       activeProfileId: acc.activeProfileId,
     });
     triggerHaptic(2);
+    setIsCalculatorEntering(true);
     setIsUnlocked(true);
   }, [updateSettings, triggerHaptic]);
 
-  const handleSignup = useCallback(async (username: string, inviteCode: string) => {
-    const result = await signup(username, inviteCode);
+  const handleDevSkip = useCallback(() => {
+    const guest = skipDevAuth();
+    if (!guest) return;
+    handleAuthSuccess(guest);
+  }, [skipDevAuth, handleAuthSuccess]);
+
+  const handleSignup = useCallback(async (username: string, email: string, inviteCode: string) => {
+    const result = await signup(username, email, inviteCode);
     if (result.error) return { error: result.error };
+    if (result.pendingEmailConfirmation) {
+      return {
+        pendingEmailConfirmation: true,
+        confirmationEmail: result.confirmationEmail,
+      };
+    }
     if (!result.account) return { error: 'Could not create account.' };
     return { account: result.account };
   }, [signup]);
@@ -143,6 +240,7 @@ const AppContent: React.FC = () => {
   const [isPlusAnimating, setIsPlusAnimating] = useState(false);
   const [isHomeAnimating, setIsHomeAnimating] = useState(false);
   const [isSettingsAnimating, setIsSettingsAnimating] = useState(false);
+  const [settingsSectionIndex, setSettingsSectionIndex] = useState(0);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchAnchorRef = useRef<HTMLDivElement>(null);
@@ -152,53 +250,89 @@ const AppContent: React.FC = () => {
   const { showPrompt, handleInstall, handleDismiss } = usePWAPrompt();
   const displayContentRef = useRef<HTMLPreElement>(null);
   const expressionScrollRef = useRef<HTMLDivElement>(null);
+  const expressionAreaRef = useRef<HTMLDivElement>(null);
+  const expressionColumnRef = useRef<HTMLDivElement>(null);
+  const expressionToolbarRef = useRef<HTMLDivElement>(null);
   const baseDisplayFontSize = isLandscape ? 32 : 36;
-  const [maxCharsPerLine, setMaxCharsPerLine] = useState(12);
+  const expressionViewMode = normalizeExpressionViewMode(settings.expressionViewMode);
+  const expressionViewPreset = getExpressionViewPreset(expressionViewMode);
+  const [expressionAvailWidth, setExpressionAvailWidth] = useState(0);
+  const [expressionAvailHeight, setExpressionAvailHeight] = useState(0);
+  const [devicePortrait, setDevicePortrait] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(orientation: portrait)').matches
+  );
   const edgePadding = disableCard ? '6%' : '0.625rem';
   const keypadEdge = '2%';
   const keypadGap = disableCard ? 'max(3px, 1.2%)' : '6px';
   const keypadScale = 0.9;
+  const expressionLayout = useMemo(() => {
+    if (expressionViewPreset) {
+      return computePresetLayout(
+        expression,
+        expressionAvailWidth,
+        expressionAvailHeight,
+        baseDisplayFontSize,
+        expressionViewPreset.charsPerLine,
+        expressionViewPreset.visibleLines,
+        isLandscape,
+        expressionViewPreset.breakAtPlus
+      );
+    }
+    if (isLandscape) {
+      return computeAutoLandscapeLayout(
+        expression,
+        expressionAvailWidth,
+        expressionAvailHeight,
+        baseDisplayFontSize
+      );
+    }
+    return computeAutoPortraitLayout(expression, expressionAvailWidth, baseDisplayFontSize);
+  }, [
+    expression,
+    expressionAvailWidth,
+    expressionAvailHeight,
+    baseDisplayFontSize,
+    expressionViewPreset,
+    isLandscape,
+  ]);
 
-  const expressionLineCount = useMemo(() => {
-    if (expression === '0') return 1;
-    const chars = Math.max(6, maxCharsPerLine);
-    return (expression.match(new RegExp(`.{1,${chars}}`, 'g')) ?? [expression]).length;
-  }, [expression, maxCharsPerLine]);
+  const charsPerLine = expressionLayout.charsPerLine;
+  const displayFontSize = expressionLayout.displayFontSize;
+  const expressionViewportMaxHeight = expressionLayout.viewportMaxHeight;
+  const expressionBreakAtPlus = expressionLayout.breakAtPlus;
+  const expressionLineHeight = expressionLayout.lineHeight;
 
-  const expressionFontScale = useMemo(() => {
-    const reductions = Math.min(Math.max(expressionLineCount - 1, 0), 2);
-    return 1 - 0.12 * reductions;
-  }, [expressionLineCount]);
-
-  const displayFontSize = baseDisplayFontSize * expressionFontScale;
   const liveResultFontSize = displayFontSize * 1.2 * 0.92;
-  const expressionLineHeight = 1.25;
-  const visibleExpressionLines = 4;
+  const liveResultSlotMinHeight = baseDisplayFontSize * 1.2 * 0.92 * 1.2;
 
-  useLayoutEffect(() => {
-    if (!displayContentRef.current) return;
-    // font-size layout hook (reserved)
-  }, [expression]);
+  useScreenOrientation(
+    settings.layoutMode ?? 'portrait',
+    settings.layoutModeAuto !== false,
+    isUnlocked
+  );
 
-  // Dynamic line breaking: reach ~10% edge of the card instead of fixed 10 chars (responsive)
-  const formattedExpression = useMemo(() => {
-    if (expression === '0') return '0';
-    const chars = Math.max(6, maxCharsPerLine);
-    return expression.match(new RegExp(`.{1,${chars}}`, 'g'))?.join('\n') ?? expression;
-  }, [expression, maxCharsPerLine]);
+  const forceLandscapeRotate =
+    isLandscape &&
+    settings.layoutModeAuto === false &&
+    getDeviceClass() === 'mobile' &&
+    devicePortrait;
 
-  // Auto-scroll expression to bottom so latest chars are always visible
   useEffect(() => {
-    const el = expressionScrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [expression]);
+    const mq = window.matchMedia('(orientation: portrait)');
+    const onChange = () => setDevicePortrait(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
-  const mapPointerToCursorPos = useCallback((clientX: number, clientY: number) => {
+  const mapPointerFallback = useCallback((clientX: number, clientY: number) => {
     const pre = displayContentRef.current;
     if (!pre || expression === '0') return 0;
 
-    const chars = Math.max(6, maxCharsPerLine);
-    const lines = expression.match(new RegExp(`.{1,${chars}}`, 'g')) ?? [expression];
+    const lines = expressionBreakAtPlus
+      ? splitExpressionAtPlus(expression).flatMap(
+          (segment) => segment.match(new RegExp(`.{1,${charsPerLine}}`, 'g')) ?? [segment]
+        )
+      : expression.match(new RegExp(`.{1,${charsPerLine}}`, 'g')) ?? [expression];
     const preRect = pre.getBoundingClientRect();
     const lineHeight = displayFontSize * expressionLineHeight;
     const lineIndex = Math.max(
@@ -207,10 +341,40 @@ const AppContent: React.FC = () => {
     );
     const charsBeforeLine = lines.slice(0, lineIndex).join('').length;
     const line = lines[lineIndex] ?? '';
-    const charPosInLine = Math.round(((clientX - preRect.left) / preRect.width) * line.length);
+    const charPosInLine = expressionBreakAtPlus
+      ? Math.round(((clientX - preRect.left) / preRect.width) * line.length)
+      : Math.round(
+          (clientX - (preRect.right - line.length * displayFontSize * EXPRESSION_CHAR_WIDTH_RATIO)) /
+            (displayFontSize * EXPRESSION_CHAR_WIDTH_RATIO)
+        );
 
-    return Math.max(0, Math.min(expression.length, charsBeforeLine + charPosInLine));
-  }, [expression, maxCharsPerLine, displayFontSize, expressionLineHeight]);
+    return Math.max(
+      0,
+      Math.min(expression.length, charsBeforeLine + Math.max(0, Math.min(line.length, charPosInLine)))
+    );
+  }, [expression, charsPerLine, displayFontSize, expressionLineHeight, expressionBreakAtPlus]);
+
+  const mapPointerToCursorPos = useCallback((clientX: number, clientY: number) => {
+    const pre = displayContentRef.current;
+    if (!pre || expression === '0') return 0;
+    return mapPointerToExpressionIndex(
+      pre,
+      clientX,
+      clientY,
+      expression.length,
+      mapPointerFallback
+    );
+  }, [expression, mapPointerFallback]);
+
+  const updateCursorFromPointer = useCallback((clientX: number, clientY: number) => {
+    const nextPos = mapPointerToCursorPos(clientX, clientY);
+    setCursorPos(nextPos);
+    const scrollEl = expressionScrollRef.current;
+    const pre = displayContentRef.current;
+    if (scrollEl && pre) {
+      scrollCursorIntoView(scrollEl, pre, nextPos);
+    }
+  }, [mapPointerToCursorPos, setCursorPos]);
 
   const inventoryPrices = useMemo(
     () => items.map((item) => item.price),
@@ -223,6 +387,9 @@ const AppContent: React.FC = () => {
   );
 
   const expressionCursorPos = cursorPos ?? expression.length;
+  const scrollExpressionToBottom =
+    !expressionBreakAtPlus &&
+    (expression === '0' || expressionCursorPos >= expression.length);
 
   const expressionRenderSlices = useMemo(
     () => buildExpressionRenderSlices(expression, expressionCursorPos, unidentifiedPriceRanges),
@@ -231,14 +398,16 @@ const AppContent: React.FC = () => {
 
   const hasUnidentifiedPrices = unidentifiedPriceRanges.length > 0;
   const [unidentifiedPriceBlinkRed, setUnidentifiedPriceBlinkRed] = useState(false);
+  const flashUnidentifiedPriceRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!hasUnidentifiedPrices) {
       setUnidentifiedPriceBlinkRed(false);
+      flashUnidentifiedPriceRef.current = null;
       return;
     }
 
-    const BLINK_PERIOD_MS = 5000;
+    const BLINK_PERIOD_MS = 15000;
     const BLINK_DURATION_MS = 200;
     let offTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -251,14 +420,20 @@ const AppContent: React.FC = () => {
       }, BLINK_DURATION_MS);
     };
 
+    flashUnidentifiedPriceRef.current = flash;
     const intervalId = setInterval(flash, BLINK_PERIOD_MS);
 
     return () => {
       clearInterval(intervalId);
       if (offTimer !== undefined) clearTimeout(offTimer);
+      flashUnidentifiedPriceRef.current = null;
       setUnidentifiedPriceBlinkRed(false);
     };
   }, [hasUnidentifiedPrices]);
+
+  const triggerUnidentifiedPriceBlink = useCallback(() => {
+    flashUnidentifiedPriceRef.current?.();
+  }, []);
 
   // Keep movable blinker (cursor) within expression bounds
   useEffect(() => {
@@ -267,34 +442,95 @@ const AppContent: React.FC = () => {
     }
   }, [expression, cursorPos]);
 
-  // Measure available width for dynamic line length (target ~10% edge margin)
+  useLayoutEffect(() => {
+    const scrollEl = expressionScrollRef.current;
+    const pre = displayContentRef.current;
+    if (!scrollEl) return;
+
+    if (scrollExpressionToBottom && !isDraggingCursor.current) {
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+      return;
+    }
+
+    if (!pre || expression === '0') return;
+    scrollCursorIntoView(scrollEl, pre, expressionCursorPos);
+  }, [
+    expression,
+    expressionCursorPos,
+    displayFontSize,
+    charsPerLine,
+    scrollExpressionToBottom,
+  ]);
+
   useEffect(() => {
     const measure = () => {
       const container = expressionScrollRef.current;
-      if (!container) return;
-      // Use ~84% of width for text (8% margin each side)
-      const availWidth = container.clientWidth * 0.84;
-      // Rough char width for the font (non-mono but good avg for this style)
-      const approxCharWidth = baseDisplayFontSize * 0.58;
-      const calculated = Math.max(8, Math.floor(availWidth / approxCharWidth));
-      if (calculated !== maxCharsPerLine) setMaxCharsPerLine(calculated);
+      const area = expressionAreaRef.current;
+      const toolbar = expressionToolbarRef.current;
+      if (container) {
+        setExpressionAvailWidth(container.clientWidth * 0.84);
+      }
+      if (isLandscape && area && toolbar) {
+        const gap = 2;
+        const height =
+          toolbar.getBoundingClientRect().top - area.getBoundingClientRect().top - gap;
+        setExpressionAvailHeight(Math.max(120, height));
+      } else if (area) {
+        setExpressionAvailHeight(area.clientHeight);
+      }
     };
 
     measure();
 
     const ro = new ResizeObserver(measure);
     if (expressionScrollRef.current) ro.observe(expressionScrollRef.current);
+    if (expressionAreaRef.current) ro.observe(expressionAreaRef.current);
+    if (expressionColumnRef.current) ro.observe(expressionColumnRef.current);
+    if (expressionToolbarRef.current) ro.observe(expressionToolbarRef.current);
 
     window.addEventListener('resize', measure);
     return () => {
       ro.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [baseDisplayFontSize, isLandscape, disableCard]);
+  }, [isLandscape, disableCard, expressionViewPreset]);
   
   const isCalculatorActive = isUnlocked && !isPOSOpen && !isSettingsOpen;
   const isAnyModalOpen = isHistoryOpen || isPOSOpen || isSearchOpen || isSettingsOpen;
   const isCalculatorHidden = isHistoryPanelActive || isPOSOpen;
+
+  const calcEdgeSwipeEnabled =
+    isUnlocked && !isPOSOpen && !isHistoryPanelActive && !isSearchOpen && !isHistoryOpen;
+
+  const handleCalcRightEdgeSwipe = useCallback(() => {
+    if (!calcEdgeSwipeEnabled) return;
+    triggerHaptic();
+    if (!isSettingsOpen) {
+      setSettingsSectionIndex(0);
+      setIsSettingsOpen(true);
+      setIsSettingsAnimating(true);
+      return;
+    }
+    setSettingsSectionIndex((i) => (i + 1) % SETTINGS_SECTION_COUNT);
+  }, [calcEdgeSwipeEnabled, isSettingsOpen, triggerHaptic]);
+
+  const handleCalcLeftEdgeSwipe = useCallback(() => {
+    if (!isUnlocked || isPOSOpen || isHistoryPanelActive) return;
+    triggerHaptic();
+    if (isSettingsOpen) {
+      setIsSettingsOpen(false);
+      setSettingsSectionIndex(0);
+    }
+    setIsCalculatorEntering(true);
+  }, [isUnlocked, isPOSOpen, isHistoryPanelActive, isSettingsOpen, triggerHaptic]);
+
+  const calcEdgeSwipe = useEdgeSwipe(
+    {
+      onSwipeFromLeftEdge: handleCalcLeftEdgeSwipe,
+      onSwipeFromRightEdge: handleCalcRightEdgeSwipe,
+    },
+    calcEdgeSwipeEnabled || isSettingsOpen
+  );
 
   const closeSearch = () => {
     setIsSearchOpen(false);
@@ -328,14 +564,14 @@ const AppContent: React.FC = () => {
       saveCurrentToPast();
     }
     switchToInvoice(name);
-    const expr = buildPosExpressionFromItems(items);
+    const expr = getInvoiceExpression(name) || buildPosExpressionFromItems(items);
     setExpression(expr);
     setCursorPos(expr === '0' ? 0 : expr.length);
     if (!options?.keepOpen) {
       setIsHistoryOpen(false);
     }
     triggerHaptic();
-  }, [invoiceName, saveCurrentToPast, switchToInvoice, setExpression, setCursorPos, triggerHaptic]);
+  }, [invoiceName, saveCurrentToPast, switchToInvoice, getInvoiceExpression, setExpression, setCursorPos, triggerHaptic]);
 
   useEffect(() => {
     if (!isCalculatorActive || isSearchOpen) {
@@ -381,7 +617,10 @@ const AppContent: React.FC = () => {
   const handleKeypad = (action: string) => {
     if (action === 'AC') return clearExpression();
     if (action === '±') return toggleSign();
-    if (action === '=') return finalize();
+    if (action === '=') {
+      triggerUnidentifiedPriceBlink();
+      return finalize();
+    }
     inputChar(action);
   };
 
@@ -463,6 +702,7 @@ const AppContent: React.FC = () => {
     }
     // Enter or = for equals
     else if (key === 'Enter' || key === '=') {
+      triggerUnidentifiedPriceBlink();
       finalize();
       e.preventDefault();
     }
@@ -480,24 +720,33 @@ const AppContent: React.FC = () => {
   return (
     <div className={`relative flex items-center justify-center h-dvh w-full overflow-hidden font-sans transition-colors duration-200 ${isLight ? 'bg-[#f2f2f7]' : 'bg-black'}`}
          onKeyDown={handleKeyDown}
-         role="main"
-         aria-label="Calculator Application">
-      {!isUnlocked ? (
-        <>
-        <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={false} />
+         role="main">
+      <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} />
+      {authOverlayMounted && (
         <AuthOverlay
           isLight={isLight}
           mode={authMode}
           defaultUsername={account?.username ?? ''}
+          existingAccount={account}
+          settings={settings}
+          updateSettings={updateSettings}
           onSignup={handleSignup}
           onLogin={handleLogin}
           onAuthComplete={handleAuthSuccess}
+          onDevSkip={import.meta.env.DEV ? handleDevSkip : undefined}
+          onQuickUnlock={handleQuickUnlock}
+          onExitComplete={() => setAuthOverlayMounted(false)}
         />
-        </>
-      ) : (
+      )}
+      {isUnlocked && (
       <>
-      <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={true} />
-      <div className={`fixed inset-0 z-20 flex items-center justify-center transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) opacity-100 scale-100 ${isCalculatorHidden ? 'opacity-0 invisible pointer-events-none' : ''}`}>
+      <div
+        className={`fixed inset-0 z-20 flex items-center justify-center transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) opacity-100 scale-100 ${isCalculatorHidden ? 'opacity-0 invisible pointer-events-none' : ''} ${isCalculatorEntering ? 'animate-auth-calc-enter' : ''} ${forceLandscapeRotate ? 'calc-force-landscape' : ''}`}
+        onPointerDown={calcEdgeSwipe.onPointerDown}
+        onPointerUp={calcEdgeSwipe.onPointerUp}
+        onPointerCancel={calcEdgeSwipe.onPointerCancel}
+        onAnimationEnd={() => setIsCalculatorEntering(false)}
+      >
         <div 
           className={`relative flex flex-col overflow-hidden transition-all duration-500 ${
             isLandscape
@@ -517,7 +766,7 @@ const AppContent: React.FC = () => {
           style={{
             paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
             paddingRight: 'max(0.625rem, env(safe-area-inset-right))',
-            paddingBottom: 'max(2.5rem, calc(2.5rem + env(safe-area-inset-bottom)))',
+            paddingBottom: 'max(1rem, calc(1rem + env(safe-area-inset-bottom)))',
             paddingLeft: 'max(0.625rem, env(safe-area-inset-left))'
           }}
         >
@@ -631,16 +880,18 @@ const AppContent: React.FC = () => {
             </div>
           </div>
 
-          {showLiveResult && (
-            <div
-              className={`relative z-40 flex justify-center items-center shrink-0 pointer-events-none select-none overflow-hidden py-0.5 transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
-              style={{
-                paddingLeft: edgePadding,
-                paddingRight: edgePadding,
-              }}
-              aria-live="polite"
-              aria-label={`Live result: ${liveResultParts.amount}${liveResultParts.suffix}`}
-            >
+          <div
+            className={`relative z-40 flex justify-center items-center shrink-0 pointer-events-none select-none overflow-hidden pb-0.5 pt-0 transition-opacity duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${showLiveResult ? '' : 'opacity-0'}`}
+            style={{
+              paddingLeft: edgePadding,
+              paddingRight: edgePadding,
+              minHeight: `${liveResultSlotMinHeight}px`,
+            }}
+            aria-live="polite"
+            aria-hidden={!showLiveResult}
+            aria-label={showLiveResult ? `Live result: ${liveResultParts.amount}${liveResultParts.suffix}` : undefined}
+          >
+            {showLiveResult && (
               <div
                 className={`
                   font-num tracking-[-0.04em] leading-none truncate max-w-full
@@ -656,8 +907,8 @@ const AppContent: React.FC = () => {
                   <span className="font-num-light">{liveResultParts.suffix}</span>
                 )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* ── Calculator body (portrait stack / landscape split) ── */}
           <div className={`flex-1 flex min-h-0 overflow-hidden ${isLandscape ? 'flex-row' : 'flex-col'}`}>
@@ -691,150 +942,177 @@ const AppContent: React.FC = () => {
               </div>
             )}
 
-            <div className={`flex flex-col min-h-0 min-w-0 ${isLandscape ? 'flex-1' : 'flex-1'}`}>
+            <div ref={expressionColumnRef} className={`flex flex-col min-h-0 min-w-0 ${isLandscape ? 'flex-1 gap-0' : 'flex-1 gap-2'}`}>
               {/* Display area */}
               <div
                 className={`flex-1 flex flex-col items-center overflow-hidden min-h-0 transition-all duration-300 ${isLight ? 'text-black' : 'text-white'} ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
                 style={{
-                  paddingTop: isLandscape
-                    ? (disableCard ? '4%' : '14%')
-                    : (disableCard ? '4%' : '18%'),
+                  paddingTop: isLandscape ? '0' : '0.35rem',
+                  paddingBottom: isLandscape ? '0' : '0.15rem',
                   paddingLeft: edgePadding,
                   paddingRight: edgePadding,
                 }}
               >
-                <div style={{ flex: 1 }} />
-
                 {calcError && (
-                  <div className="text-sm text-red-500 mb-1 text-center truncate max-w-full px-[8%]" role="alert">
+                  <div className="text-sm text-red-500 mb-1 text-center truncate max-w-full px-[8%] shrink-0" role="alert">
                     {calcError}
                   </div>
                 )}
 
-                <div className="relative w-full max-w-full shrink-0">
+                <div
+                  ref={expressionAreaRef}
+                  className={`relative w-full max-w-full flex-1 min-h-0 flex flex-col ${isLandscape ? 'h-full' : ''}`}
+                  style={{
+                    ...(isLandscape
+                      ? { flex: '1 1 auto', minHeight: 0, height: '100%' }
+                      : expressionViewportMaxHeight
+                        ? { maxHeight: `${expressionViewportMaxHeight}px` }
+                        : {}),
+                  }}
+                >
                   <div
                   ref={expressionScrollRef}
-                  className="no-scrollbar w-full max-w-full text-center cursor-text select-text pointer-events-auto overflow-x-hidden"
+                  className={`no-scrollbar w-full max-w-full flex-1 min-h-0 cursor-text select-text pointer-events-auto overflow-x-hidden flex flex-col ${expressionBreakAtPlus ? 'text-left' : 'text-right'}`}
                   onCopy={handleExpressionCopy}
                   onPaste={handleExpressionPaste}
                   tabIndex={0}
                   style={{
-                    height: `${displayFontSize * expressionLineHeight * visibleExpressionLines}px`,
                     overflowY: 'auto',
-                    paddingBottom: '0.25rem',
+                    paddingTop: isLandscape ? '0.1rem' : '0.15rem',
+                    paddingBottom: isLandscape ? '0.1rem' : '0.5rem',
                     paddingLeft: '8%',
                     paddingRight: '8%',
                     boxSizing: 'border-box',
-                    scrollBehavior: 'smooth',
+                    scrollBehavior: 'auto',
                   }}
                   aria-label={`Expression: ${expression}`}
-                  onClick={(e) => {
-                    if (isDraggingCursor.current) return;
-                    setCursorPos(mapPointerToCursorPos(e.clientX, e.clientY));
+                  onPointerDown={(e) => {
+                    if (expression === '0') return;
+                    isDraggingCursor.current = true;
+                    expressionScrollRef.current?.setPointerCapture(e.pointerId);
+                    updateCursorFromPointer(e.clientX, e.clientY);
                   }}
                   onPointerMove={(e) => {
-                    if (!isDraggingCursor.current) return;
-                    setCursorPos(mapPointerToCursorPos(e.clientX, e.clientY));
+                    if (expression === '0') return;
+                    if (!isDraggingCursor.current && e.buttons === 0) return;
+                    isDraggingCursor.current = true;
+                    updateCursorFromPointer(e.clientX, e.clientY);
                   }}
-                  onPointerUp={() => {
+                  onPointerUp={(e) => {
                     isDraggingCursor.current = false;
+                    if (expressionScrollRef.current?.hasPointerCapture(e.pointerId)) {
+                      expressionScrollRef.current.releasePointerCapture(e.pointerId);
+                    }
                   }}
-                  onPointerCancel={() => {
+                  onPointerCancel={(e) => {
                     isDraggingCursor.current = false;
+                    if (expressionScrollRef.current?.hasPointerCapture(e.pointerId)) {
+                      expressionScrollRef.current.releasePointerCapture(e.pointerId);
+                    }
                   }}
                 >
-                  <pre
-                    ref={displayContentRef}
-                    className={`font-num-light max-w-full overflow-hidden break-all ${isLight ? 'text-black' : 'text-white'}`}
-                    style={{
-                      fontSize: `${displayFontSize}px`,
-                      color: isLight ? '#000000' : '#ffffff',
-                      transition: 'font-size 0.2s ease-out',
-                      letterSpacing: '-0.03em',
-                      lineHeight: 1.25,
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-all',
-                      margin: 0,
-                      textAlign: 'center',
-                    }}
+                  <div
+                    className={`min-h-full w-full flex flex-col ${expressionBreakAtPlus ? 'justify-start' : 'justify-end'}`}
                   >
-                    {expression === '0' ? <span style={{ opacity: 0.3 }}>0</span> : (
-                      expressionRenderSlices.map((slice, idx) => (
-                        <React.Fragment key={`${idx}-${slice.text}-${slice.showCursorAfter}`}>
-                          {slice.role === 'price' ? (
-                            <span
-                              className={
-                                slice.unidentified
-                                  ? 'calc-unidentified-price font-num-bold'
-                                  : 'font-num-bold'
-                              }
-                              style={
-                                slice.unidentified && unidentifiedPriceBlinkRed
-                                  ? { color: '#ef4444' }
-                                  : undefined
-                              }
-                            >
-                              {slice.text}
-                            </span>
-                          ) : slice.role === 'quantity' || slice.role === 'separator' ? (
-                            <span className="font-num-light">{slice.text}</span>
-                          ) : (
-                            slice.text
-                          )}
-                          {slice.showCursorAfter && (
-                            <span
-                              className="inline-block w-[2px] align-middle animate-blink bg-current cursor-grab active:cursor-grabbing touch-none"
-                              style={{
-                                height: `${displayFontSize * 1.05}px`,
-                                marginLeft: '-1px',
-                                marginRight: '-1px',
-                                opacity: 0.9,
-                              }}
-                              role="slider"
-                              aria-label="Move cursor"
-                              aria-valuemin={0}
-                              aria-valuemax={expression.length}
-                              aria-valuenow={expressionCursorPos}
-                              onPointerDown={(e) => {
-                                e.stopPropagation();
-                                isDraggingCursor.current = true;
-                                e.currentTarget.setPointerCapture(e.pointerId);
-                                setCursorPos(mapPointerToCursorPos(e.clientX, e.clientY));
-                              }}
-                              onPointerMove={(e) => {
-                                if (!isDraggingCursor.current) return;
-                                e.stopPropagation();
-                                setCursorPos(mapPointerToCursorPos(e.clientX, e.clientY));
-                              }}
-                              onPointerUp={(e) => {
-                                e.stopPropagation();
-                                isDraggingCursor.current = false;
-                                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                                  e.currentTarget.releasePointerCapture(e.pointerId);
+                    <pre
+                      ref={displayContentRef}
+                      className={`font-num-light w-full max-w-full overflow-hidden break-all ${isLight ? 'text-black' : 'text-white'}`}
+                      style={{
+                        fontSize: `${displayFontSize}px`,
+                        color: isLight ? '#000000' : '#ffffff',
+                        transition: 'font-size 0.2s ease-out',
+                        letterSpacing: '-0.03em',
+                        lineHeight: expressionLineHeight,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-all',
+                        margin: 0,
+                        textAlign: expressionBreakAtPlus ? 'left' : 'right',
+                      }}
+                    >
+                      {expression === '0' ? (
+                        <span
+                          data-expression-cursor
+                          className="inline-block align-middle animate-blink bg-current cursor-grab active:cursor-grabbing touch-none"
+                          style={{
+                            width: '3px',
+                            height: `${displayFontSize * 1.05}px`,
+                            opacity: 0.9,
+                          }}
+                          role="slider"
+                          aria-label="Move cursor"
+                          aria-valuemin={0}
+                          aria-valuemax={1}
+                          aria-valuenow={expressionCursorPos}
+                        />
+                      ) : (
+                        (() => {
+                          let charOffset = 0;
+                          return expressionRenderSlices.map((slice, idx) => {
+                            const sliceEnd = charOffset + slice.text.length;
+                            const lineBreakAfter =
+                              expressionBreakAtPlus && sliceEnd > 0 && expression[sliceEnd - 1] === '+';
+                            charOffset = sliceEnd;
+                            return (
+                          <React.Fragment key={`${idx}-${slice.text}-${slice.showCursorAfter}`}>
+                            {slice.role === 'price' ? (
+                              <span
+                                className={
+                                  slice.unidentified
+                                    ? 'calc-unidentified-price font-num-bold'
+                                    : 'font-num-bold'
                                 }
-                              }}
-                              onPointerCancel={() => {
-                                isDraggingCursor.current = false;
-                              }}
-                            />
-                          )}
-                        </React.Fragment>
-                      ))
-                    )}
-                  </pre>
+                                style={
+                                  slice.unidentified && unidentifiedPriceBlinkRed
+                                    ? { color: '#ef4444' }
+                                    : undefined
+                                }
+                              >
+                                {slice.text}
+                              </span>
+                            ) : slice.role === 'quantity' || slice.role === 'separator' ? (
+                              <span className="font-num-light">{slice.text}</span>
+                            ) : (
+                              slice.text
+                            )}
+                            {slice.showCursorAfter && (
+                              <span
+                                data-expression-cursor
+                                className="inline-block align-middle animate-blink bg-current cursor-grab active:cursor-grabbing touch-none"
+                                style={{
+                                  width: '3px',
+                                  height: `${displayFontSize * 1.05}px`,
+                                  marginLeft: '-1px',
+                                  marginRight: '-1px',
+                                  opacity: 0.9,
+                                }}
+                                role="slider"
+                                aria-label="Move cursor"
+                                aria-valuemin={0}
+                                aria-valuemax={expression.length}
+                                aria-valuenow={expressionCursorPos}
+                              />
+                            )}
+                            {lineBreakAfter && <br />}
+                          </React.Fragment>
+                            );
+                          });
+                        })()
+                      )}
+                    </pre>
+                  </div>
                 </div>
                 </div>
               </div>
 
               {/* Action toolbar */}
               <div
-                className={`flex-none flex justify-between gap-1.5 py-[0.34rem] rounded-full border transition-all duration-300 self-center ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white/60 border-black/5 text-black' : 'bg-black/20 border-white/10 text-white'}`}
+                ref={expressionToolbarRef}
+                className={`relative z-10 shrink-0 flex justify-between gap-1.5 py-[0.34rem] rounded-full border transition-all duration-300 self-center ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white/60 border-black/5 text-black' : 'bg-black/20 border-white/10 text-white'}`}
                 style={{
                   width: '80%',
-                  marginTop: '2%',
-                  marginBottom: '0%',
-                  transform: 'translateY(2%)',
-                  boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 8px 28px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)',
+                  marginBottom: isLandscape ? '0' : '0.15rem',
+                  marginTop: isLandscape ? '2px' : undefined,
+                  boxShadow: isLight ? '0 4px 16px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)' : '0 4px 16px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.25)',
                 }}
               >
                 <button onClick={handleUndo} className="flex-1 py-[0.34rem] flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Undo"><Icons.Undo size={14} /></button>
@@ -846,8 +1124,9 @@ const AppContent: React.FC = () => {
 
             {!isLandscape && (
               <div
-                className={`relative z-30 flex-[1.3] grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+                className={`relative z-30 shrink-0 grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-opacity duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
                 style={{
+                  flex: '1.3 0 0%',
                   gap: keypadGap,
                   paddingLeft: keypadEdge,
                   paddingRight: keypadEdge,
@@ -885,7 +1164,11 @@ const AppContent: React.FC = () => {
 
           <SettingsPanel
             isOpen={isSettingsOpen} 
-            onClose={() => setIsSettingsOpen(false)} 
+            onClose={() => {
+              setIsSettingsOpen(false);
+              setSettingsSectionIndex(0);
+            }}
+            focusSectionIndex={settingsSectionIndex}
             settings={settings}
             isLight={isLight}
             updateSettings={(keyOrPatch, value) => {
@@ -913,6 +1196,7 @@ const AppContent: React.FC = () => {
         isOpen={isHistoryOpen && isCalculatorActive}
         onClose={() => setIsHistoryOpen(false)}
         isLight={isLight}
+        wallpapers={settings.customWallpapers}
         currency={settings.currency}
         invoiceName={invoiceName}
         onInvoiceNameChange={setInvoiceName}
@@ -925,10 +1209,11 @@ const AppContent: React.FC = () => {
         onInvoicePrinted={recordPrint}
         onSelectInvoice={handleSelectInvoice}
         switcherMode={settings.invoiceSwitcherMode ?? 'horizontal'}
-        switcherGridCols={settings.invoiceSwitcherGridCols ?? 3}
         onSwitcherModeChange={(mode) => updateSettings({ invoiceSwitcherMode: mode })}
-        onSwitcherGridColsChange={(cols) => updateSettings({ invoiceSwitcherGridCols: cols })}
         onActiveChange={setIsHistoryPanelActive}
+        shareReceiptSettings={{
+          layoutMode: settings.receiptLayoutMode ?? 'summary',
+        }}
       />
       <POSDashboard
         history={history}
@@ -936,6 +1221,12 @@ const AppContent: React.FC = () => {
         setItems={setItems}
         purchases={purchases}
         setPurchases={setPurchases}
+        suppliers={suppliers}
+        setSuppliers={setSuppliers}
+        requests={requests}
+        setRequests={setRequests}
+        restocks={restocks}
+        setRestocks={setRestocks}
         invoiceActionLogs={actionLogs}
         invoiceName={invoiceName}
         cartItems={cartItems}
