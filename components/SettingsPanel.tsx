@@ -12,7 +12,7 @@ import ProfilePickerModal from './ProfilePickerModal';
 import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
 import { ADMIN_PROFILE_NAME, ensureAdminProfile } from '../utils/auth';
 import { EXPRESSION_VIEW_OPTIONS } from '../utils/expressionDisplay';
-import { RECEIPT_LAYOUT_OPTIONS } from '../utils/receiptLayout';
+import { PAPER_WIDTH_OPTIONS, RECEIPT_LAYOUT_OPTIONS, type PaperWidth } from '../utils/receiptLayout';
 
 interface SettingsSlice {
   themeMode: 'light' | 'dark' | 'system';
@@ -76,6 +76,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [printSuccess, setPrintSuccess] = useState(false);
   const [bluetoothSupport, setBluetoothSupport] = useState(getBluetoothSupport);
+  const [paperWidth, setPaperWidth] = useState<PaperWidth>(() => printerInstance.paperWidth);
   const [isProfilePickerOpen, setIsProfilePickerOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -143,6 +144,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const refreshPrinterState = useCallback(async () => {
     const known = await printerInstance.getKnownPrinters();
     setKnownPrinters(known);
+    setPaperWidth(printerInstance.paperWidth);
     if (printerInstance.isConnected) {
       setPrinterName(printerInstance.getConnectedDeviceName());
       setConnectedId(printerInstance.getConnectedDeviceId());
@@ -152,11 +154,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
   }, []);
 
+  const handlePaperWidthChange = useCallback((width: PaperWidth) => {
+    printerInstance.setPaperWidth(width);
+    setPaperWidth(width);
+  }, []);
+
   useEffect(() => {
-    printerInstance.setConnectionChangeListener(() => {
+    const onChange = () => {
       void refreshPrinterState();
-    });
-    return () => printerInstance.setConnectionChangeListener(null);
+    };
+    printerInstance.setConnectionChangeListener(onChange);
+    return () => printerInstance.removeConnectionChangeListener(onChange);
   }, [refreshPrinterState]);
 
   useEffect(() => {
@@ -633,6 +641,36 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 )}
               </div>
             )}
+
+            <div className="space-y-2">
+              <div className="flex flex-col gap-1">
+                <span className="text-sm font-black">Paper width</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  Set 25mm for mini printers; 58mm covers standard 57mm rolls
+                </span>
+              </div>
+              <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
+                {PAPER_WIDTH_OPTIONS.map(({ id, label }) => {
+                  const active = paperWidth === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => handlePaperWidthChange(id)}
+                      className={`flex-1 py-2.5 transition-all ${
+                        active
+                          ? isLight
+                            ? 'bg-black text-white'
+                            : 'bg-white text-black'
+                          : 'opacity-50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             <div className="flex items-center justify-between gap-2">
               <span className={`app-subtext text-[10px] font-black ${isLight ? 'text-black' : 'text-white'}`}>

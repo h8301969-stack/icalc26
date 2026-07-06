@@ -116,6 +116,15 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   }, [isOpen, printerModalOpen, isPrinting]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    const onChange = () => {
+      setReceiptPaperWidth(printerInstance.paperWidth);
+    };
+    printerInstance.setConnectionChangeListener(onChange);
+    return () => printerInstance.removeConnectionChangeListener(onChange);
+  }, [isOpen]);
+
+  useEffect(() => {
     if (wallpaperSlides.length <= 1) return;
     const timer = setInterval(() => {
       setWallpaperSlide((prev) => (prev + 1) % wallpaperSlides.length);

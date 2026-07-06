@@ -48,6 +48,7 @@ export interface BluetoothSupportInfo {
 }
 
 const PAIRED_PRINTERS_KEY = 'ble_paired_printers';
+const DEFAULT_PAPER_WIDTH_KEY = 'ble_default_paper_width';
 
 /** Common BLE thermal-printer GATT services (must be listed in optionalServices). */
 const PRINTER_SERVICE_UUIDS = [
@@ -146,18 +147,30 @@ export class BLEPrinter {
   private device: BluetoothDevice | null = null;
   private server: BluetoothRemoteGATTServer | null = null;
   private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
-  private onConnectionChange: (() => void) | null = null;
+  private connectionListeners = new Set<() => void>();
   private disconnectHandler: ((event: Event) => void) | null = null;
   private isBluetoothBusy = false;
 
-  public paperWidth: PaperWidth = '58mm';
+  public paperWidth: PaperWidth = storage.get<PaperWidth>(DEFAULT_PAPER_WIDTH_KEY, '58mm');
   public isConnected: boolean = false;
 
   private serviceUUID = PRINTER_SERVICE_UUIDS[0];
   private charUUID = KNOWN_WRITE_CHAR_UUIDS[0];
 
   setConnectionChangeListener(listener: (() => void) | null) {
-    this.onConnectionChange = listener;
+    if (listener) {
+      this.connectionListeners.add(listener);
+    }
+  }
+
+  removeConnectionChangeListener(listener: (() => void) | null) {
+    if (listener) {
+      this.connectionListeners.delete(listener);
+    }
+  }
+
+  private notifyConnectionChange() {
+    this.connectionListeners.forEach((listener) => listener());
   }
 
   getConnectedDeviceId(): string | null {
@@ -190,21 +203,55 @@ export class BLEPrinter {
     storage.set(PAIRED_PRINTERS_KEY, saved.slice(0, 12));
   }
 
-  private detectPaperWidth(deviceName: string) {
+  private detectPaperWidthFromName(deviceName: string): PaperWidth | null {
     const lower = deviceName.toLowerCase();
     if (/\b25\b|25mm|2\.5\s*inch|micro|mini|label|narrow/.test(lower)) {
-      this.paperWidth = '25mm';
-    } else {
-      // 58mm, 80mm, and unknown thermal printers default to standard width
-      this.paperWidth = '58mm';
+      return '25mm';
     }
+    if (/\b57\b|57mm|\b58\b|58mm|80mm|standard/.test(lower)) {
+      return '58mm';
+    }
+    return null;
   }
 
-  private applySavedPaperWidth(deviceId: string) {
-    const saved = this.getSavedPrinters().find((p) => p.id === deviceId);
+  private resolvePaperWidth(device: BluetoothDevice) {
+    const saved = this.getSavedPrinters().find((p) => p.id === device.id);
     if (saved?.paperWidth) {
       this.paperWidth = saved.paperWidth;
+      return;
     }
+
+    const detected = this.detectPaperWidthFromName(device.name || '');
+    if (detected) {
+      this.paperWidth = detected;
+      return;
+    }
+
+    this.paperWidth = storage.get<PaperWidth>(DEFAULT_PAPER_WIDTH_KEY, '58mm');
+  }
+
+  setPaperWidth(width: PaperWidth) {
+    this.paperWidth = width;
+    storage.set(DEFAULT_PAPER_WIDTH_KEY, width);
+
+    const saved = this.getSavedPrinters();
+    if (saved.length > 0) {
+      storage.set(
+        PAIRED_PRINTERS_KEY,
+        saved.map((p) => ({ ...p, paperWidth: width }))
+      );
+    } else if (this.device?.id) {
+      storage.set(PAIRED_PRINTERS_KEY, [
+        {
+          id: this.device.id,
+          name: this.device.name || 'Thermal Printer',
+          paperWidth: width,
+          lastConnected: Date.now(),
+        },
+      ]);
+    }
+
+    this.notifyConnectionChange();
   }
 
   private detachDisconnectHandler(device: BluetoothDevice) {
@@ -225,7 +272,7 @@ export class BLEPrinter {
       this.isConnected = false;
       this.server = null;
       this.characteristic = null;
-      this.onConnectionChange?.();
+      this.notifyConnectionChange();
     };
     device.addEventListener('gattserverdisconnected', this.disconnectHandler);
   }
@@ -408,14 +455,13 @@ export class BLEPrinter {
     this.assertBluetoothAvailable();
 
     this.device = device;
-    this.applySavedPaperWidth(device.id);
-    this.detectPaperWidth(device.name || '');
+    this.resolvePaperWidth(device);
     this.attachDisconnectHandler(device);
 
     this.characteristic = await this.rediscoverServices(device);
     this.isConnected = true;
     this.savePairedDevice(device);
-    this.onConnectionChange?.();
+    this.notifyConnectionChange();
 
     return device.name || 'Thermal Printer';
   }
@@ -559,7 +605,7 @@ export class BLEPrinter {
     this.server = null;
     this.characteristic = null;
     this.isConnected = false;
-    this.onConnectionChange?.();
+    this.notifyConnectionChange();
   }
 
   private async getWriteCharacteristic(): Promise<BluetoothRemoteGATTCharacteristic> {

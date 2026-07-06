@@ -6,6 +6,7 @@ import {
   getBluetoothSupport,
   normalizeBluetoothError,
 } from '../utils/bluetoothPrinter';
+import { PAPER_WIDTH_OPTIONS, type PaperWidth } from '../utils/receiptLayout';
 
 interface PrinterConnectModalProps {
   isOpen: boolean;
@@ -30,15 +31,22 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [bluetoothSupport, setBluetoothSupport] = useState(getBluetoothSupport);
+  const [paperWidth, setPaperWidth] = useState<PaperWidth>(() => printerInstance.paperWidth);
 
   const refreshPrinterState = useCallback(async () => {
     const known = await printerInstance.getKnownPrinters();
     setKnownPrinters(known);
+    setPaperWidth(printerInstance.paperWidth);
     if (printerInstance.isConnected) {
       setPrinterName(printerInstance.getConnectedDeviceName());
     } else {
       setPrinterName(null);
     }
+  }, []);
+
+  const handlePaperWidthChange = useCallback((width: PaperWidth) => {
+    printerInstance.setPaperWidth(width);
+    setPaperWidth(width);
   }, []);
 
   useEffect(() => {
@@ -54,10 +62,11 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    printerInstance.setConnectionChangeListener(() => {
+    const onChange = () => {
       void refreshPrinterState();
-    });
-    return () => printerInstance.setConnectionChangeListener(null);
+    };
+    printerInstance.setConnectionChangeListener(onChange);
+    return () => printerInstance.removeConnectionChangeListener(onChange);
   }, [isOpen, refreshPrinterState]);
 
   const handleScanAndConnect = async () => {
@@ -156,6 +165,36 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
               {bluetoothSupport.message}
             </div>
           )}
+
+          <div className="space-y-2">
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-black">Paper width</span>
+              <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                58mm for standard (57mm) rolls · 25mm for mini printers
+              </span>
+            </div>
+            <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
+              {PAPER_WIDTH_OPTIONS.map(({ id, label }) => {
+                const active = paperWidth === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => handlePaperWidthChange(id)}
+                    className={`flex-1 py-2.5 transition-all ${
+                      active
+                        ? isLight
+                          ? 'bg-black text-white'
+                          : 'bg-white text-black'
+                        : 'opacity-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {printerName && (
             <div className="flex items-center justify-between p-3 rounded-xl bg-green-500/10 border border-green-500/20">

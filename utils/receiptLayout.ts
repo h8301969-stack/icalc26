@@ -2,6 +2,11 @@ export type PaperWidth = '58mm' | '25mm';
 
 export type ReceiptLayoutMode = 'summary' | 'full';
 
+export const PAPER_WIDTH_OPTIONS: { id: PaperWidth; label: string; hint: string }[] = [
+  { id: '58mm', label: '58mm', hint: 'Standard receipt (57mm)' },
+  { id: '25mm', label: '25mm', hint: 'Mini / label printer' },
+];
+
 export const RECEIPT_LAYOUT_OPTIONS: { id: ReceiptLayoutMode; label: string; hint: string }[] = [
   { id: 'summary', label: 'Total only', hint: 'Name · total · attendant' },
   { id: 'full', label: 'Full invoice', hint: 'All line items' },
