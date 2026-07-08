@@ -519,7 +519,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     if (dragAxis.current !== primaryAxis) return;
 
     setDragDelta((primaryAxis === 'x' ? dx : dy) * DRAG_FACTOR);
-  }, [isDragging, switcherMode]);
+  }, [isDragging, switcherMode, isBrowseMode]);
 
   const onPointerUp = useCallback(() => {
     if (!isDragging || isBrowseMode) return;
@@ -542,7 +542,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     }
     dragAxis.current = 'none';
     setDragDelta(0);
-  }, [isDragging, dragDelta, cards.length, switcherMode, activeIdx, previewInvoice]);
+  }, [isDragging, isBrowseMode, dragDelta, cards.length, switcherMode, activeIdx, previewInvoice]);
 
   const handleCardSelectClick = useCallback((idx: number) => {
     if (suppressClickSelectRef.current) {

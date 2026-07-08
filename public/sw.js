@@ -1,5 +1,14 @@
-const CACHE_NAME = 'icalc-26-v6';
-const SHELL_ASSETS = ['./', './index.html', './manifest.json', './offline.html'];
+const CACHE_NAME = 'icalc-26-v7';
+const SHELL_ASSETS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './offline.html',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './apple-touch-icon.png',
+  './favicon.ico',
+];
 
 const isDev = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
 
@@ -42,7 +51,9 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           return response;
         })
-        .catch(() => caches.match('./index.html'))
+        .catch(() =>
+          caches.match('./offline.html').then((cached) => cached ?? caches.match('./index.html'))
+        )
     );
     return;
   }

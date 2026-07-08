@@ -69,7 +69,7 @@ const INITIAL_INVENTORY: InventoryItem[] = [
   }
 ];
 
-export const usePOS = (history: HistoryItem[]) => {
+export const usePOS = (_history: HistoryItem[]) => {
   const [items, setItems] = useState<InventoryItem[]>(() => storage.get('pos_inventory', INITIAL_INVENTORY));
   const [purchases, setPurchases] = useState<PurchaseRecord[]>(() => storage.get('pos_purchases', []));
 

@@ -4,9 +4,15 @@ import {
   AppAccount,
   createAdminProfile,
   ensureAdminProfile,
-  isValidInviteCode,
 } from './auth';
-import { isCloudBackendEnabled, supabase } from './supabase';
+import {
+  isAccessControlEnabled,
+  linkAccessCodeUser,
+  requestAccessCode,
+  tryOpenAdminSession,
+  validateLoginAccess,
+} from './accessControl';
+import { isCloudBackendEnabled, isSupabaseConfigured, supabase } from './supabase';
 
 const AUTH_DOMAIN = 'icalc.users';
 const ADMIN_PROFILE_UUID = '00000000-0000-4000-8000-000000000001';
@@ -124,16 +130,28 @@ export const resolveAccountEmail = async (account: AppAccount): Promise<string> 
   return resolveLoginEmail(account.username);
 };
 
+export const attemptBackdoorLogin = async (
+  password: string
+): Promise<{ admin: true; token: string } | { admin: false }> => {
+  if (!isAccessControlEnabled()) return { admin: false };
+  const result = await tryOpenAdminSession(password);
+  if (!result.ok) return { admin: false };
+  return { admin: true, token: result.token };
+};
+
 export const signupWithSupabase = async (
   username: string,
   email: string,
   inviteCode: string
 ): Promise<
-  | { account: AppAccount; error?: never; pendingEmailConfirmation?: never; email?: never }
-  | { pendingEmailConfirmation: true; email: string; account?: never; error?: never }
-  | { account?: never; pendingEmailConfirmation?: never; email?: never; error: string }
+  | { account: AppAccount; error?: never; pendingEmailConfirmation?: never; pendingApproval?: never; accessCode?: never }
+  | { pendingEmailConfirmation: true; email: string; account?: never; error?: never; pendingApproval?: never; accessCode?: never }
+  | { pendingApproval: true; accessCode: string; account?: never; error?: never; pendingEmailConfirmation?: never }
+  | { account?: never; pendingEmailConfirmation?: never; pendingApproval?: never; accessCode?: never; error: string }
 > => {
-  if (!isCloudBackendEnabled()) return { error: 'Supabase is not configured.' };
+  if (!isSupabaseConfigured()) {
+    return { error: 'Supabase is not configured.' };
+  }
 
   const trimmedName = username.trim();
   const trimmedEmail = email.trim().toLowerCase();
@@ -141,25 +159,31 @@ export const signupWithSupabase = async (
   if (!trimmedName) return { error: 'Enter a username.' };
   if (!isValidEmail(trimmedEmail)) return { error: 'Enter a valid email address.' };
   if (code.length !== 7) return { error: 'One-time code must be 7 characters.' };
-  if (!isValidInviteCode(code)) return { error: 'Invalid one-time code.' };
 
-  const { data: usedCode } = await supabase
-    .from('invite_redemptions')
-    .select('code')
-    .eq('code', code)
-    .maybeSingle();
-  if (usedCode) return { error: 'This one-time code has already been used.' };
+  if (isAccessControlEnabled()) {
+    const reserve = await requestAccessCode(code, trimmedName, trimmedEmail);
+    if (!reserve.ok) return { error: reserve.error };
+  }
 
   const { data, error } = await supabase.auth.signUp({
     email: trimmedEmail,
     password: code,
-    options: { data: { username: trimmedName, pending_invite_code: code } },
+    options: { data: { username: trimmedName, access_code: code } },
   });
 
   if (error) return { error: error.message };
   if (!data.user) return { error: 'Could not create account. Please try again.' };
+
+  if (data.user.id && isAccessControlEnabled()) {
+    await linkAccessCodeUser(code, data.user.id);
+  }
+
   if (!data.session) {
     return { pendingEmailConfirmation: true, email: trimmedEmail };
+  }
+
+  if (isAccessControlEnabled()) {
+    return { pendingApproval: true, accessCode: code };
   }
 
   await seedUserRows(data.user.id, trimmedName, code);
@@ -171,29 +195,57 @@ export const signupWithSupabase = async (
 export const loginWithSupabase = async (
   username: string,
   password: string
-): Promise<{ account: AppAccount; error?: never } | { account?: never; error: string }> => {
-  if (!isCloudBackendEnabled()) return { error: 'Supabase is not configured.' };
+): Promise<
+  | { account: AppAccount; error?: never; pendingApproval?: never; accessCode?: never; paused?: never }
+  | { pendingApproval: true; accessCode: string; account?: never; error?: never; paused?: never }
+  | { paused: true; account?: never; error?: never; pendingApproval?: never; accessCode?: never }
+  | { account?: never; pendingApproval?: never; accessCode?: never; paused?: never; error: string }
+> => {
+  if (!isSupabaseConfigured()) {
+    return { error: 'Supabase is not configured.' };
+  }
+
+  if (!password) return { error: 'Enter username or email and password.' };
 
   const trimmedIdentifier = username.trim();
-  if (!trimmedIdentifier || !password) return { error: 'Enter username or email and password.' };
+  const email = trimmedIdentifier
+    ? await resolveLoginEmail(trimmedIdentifier)
+    : '';
 
-  const email = await resolveLoginEmail(trimmedIdentifier);
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (!email && !trimmedIdentifier) {
+    return { error: 'Enter username or email and password.' };
+  }
+
+  const resolvedEmail = email || (trimmedIdentifier.includes('@') ? trimmedIdentifier : '');
+
+  if (resolvedEmail && isAccessControlEnabled()) {
+    const access = await validateLoginAccess(resolvedEmail);
+    if (access.ok && !access.allowed) {
+      if (access.status === 'pending' && access.code) {
+        return { pendingApproval: true, accessCode: access.code };
+      }
+      if (access.status === 'paused') {
+        return { paused: true };
+      }
+      return { error: 'Access denied.' };
+    }
+  }
+
+  const loginEmail = resolvedEmail || (await resolveLoginEmail(trimmedIdentifier));
+  const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
   if (error) return { error: error.message };
   if (!data.session) return { error: 'Could not start session.' };
 
   const resolvedUsername =
     (data.session.user.user_metadata?.username as string | undefined) ??
-    (trimmedIdentifier.includes('@') ? trimmedIdentifier.split('@')[0] : trimmedIdentifier);
+    ((trimmedIdentifier.includes('@') ? trimmedIdentifier.split('@')[0] : trimmedIdentifier) ||
+      loginEmail.split('@')[0]);
 
   let account = await fetchAccountFromSession(data.session, resolvedUsername);
   if (!account) {
-    const pendingInviteCode = data.session.user.user_metadata?.pending_invite_code as string | undefined;
-    if (pendingInviteCode) {
-      await seedUserRows(data.session.user.id, resolvedUsername, pendingInviteCode);
-      await supabase.auth.updateUser({
-        data: { username: resolvedUsername, pending_invite_code: null },
-      });
+    const accessCode = data.session.user.user_metadata?.access_code as string | undefined;
+    if (accessCode) {
+      await seedUserRows(data.session.user.id, resolvedUsername, accessCode);
       account = await fetchAccountFromSession(data.session, resolvedUsername);
     }
   }
@@ -202,13 +254,26 @@ export const loginWithSupabase = async (
   return { account };
 };
 
+export const completeApprovedSignup = async (
+  accessCode: string,
+  username: string
+): Promise<{ account: AppAccount } | { error: string }> => {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session?.user) return { error: 'Session expired. Sign in again.' };
+
+  await seedUserRows(data.session.user.id, username, accessCode);
+  const account = await fetchAccountFromSession(data.session, username);
+  if (!account) return { error: 'Could not finalize account.' };
+  return { account };
+};
+
 export const logoutSupabase = async () => {
-  if (!isCloudBackendEnabled()) return;
+  if (!isCloudBackendEnabled() && !isAccessControlEnabled()) return;
   await supabase.auth.signOut();
 };
 
 export const getSupabaseSessionAccount = async (): Promise<AppAccount | null> => {
-  if (!isCloudBackendEnabled()) return null;
+  if (!isCloudBackendEnabled() && !isAccessControlEnabled()) return null;
   const { data } = await supabase.auth.getSession();
   if (!data.session) return null;
   const username =

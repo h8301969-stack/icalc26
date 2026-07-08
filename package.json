@@ -12,6 +12,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@fontsource/montserrat": "^5.2.8",
     "@supabase/supabase-js": "^2.108.2",
     "fraction.js": "^5.3.4",
     "react": "^19.2.3",

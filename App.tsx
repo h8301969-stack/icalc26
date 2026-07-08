@@ -8,6 +8,7 @@ import SearchPanel from './components/SearchPanel';
 import BlurredBackground from './components/BlurredBackground';
 import POSDashboard from './components/POSDashboard';
 import AuthOverlay from './components/AuthOverlay';
+import AdminCodeDashboard from './components/AdminCodeDashboard';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Icons } from './constants';
@@ -50,7 +51,21 @@ import { usePOSDashboardData } from './hooks/usePOSDashboardData';
 
 const AppContent: React.FC = () => {
   const { settings, updateSettings, triggerHaptic, isLight, formatCurrency, activeProfile } = useSettings();
-  const { account, authReady, signup, login, logout, skipDevAuth, syncProfiles, changePassword, verifyPassword } = useAuth();
+  const {
+    account,
+    authReady,
+    adminSessionToken,
+    isAdminPortal,
+    signup,
+    login,
+    logout,
+    skipDevAuth,
+    syncProfiles,
+    changePassword,
+    verifyPassword,
+    finalizeApprovedAccess,
+    closeAdminPortal,
+  } = useAuth();
   const disableCard = !!settings.disableCalculatorCard;
   const isLandscape = settings.layoutMode === 'landscape';
   const { history, setHistory, saveResult } = useHistory();
@@ -202,6 +217,13 @@ const AppContent: React.FC = () => {
         confirmationEmail: result.confirmationEmail,
       };
     }
+    if (result.pendingApproval) {
+      return {
+        pendingApproval: true,
+        accessCode: result.accessCode,
+        username: result.username,
+      };
+    }
     if (!result.account) return { error: 'Could not create account.' };
     return { account: result.account };
   }, [signup]);
@@ -209,9 +231,30 @@ const AppContent: React.FC = () => {
   const handleLogin = useCallback(async (username: string, password: string) => {
     const result = await login(username, password);
     if (result.error) return { error: result.error };
+    if (result.adminPortal) return { adminPortal: true };
+    if (result.pendingApproval) {
+      return {
+        pendingApproval: true,
+        accessCode: result.accessCode,
+        username: result.username,
+      };
+    }
+    if (result.paused) return { paused: true };
     if (!result.account) return { error: 'Could not sign in.' };
     return { account: result.account };
   }, [login]);
+
+  const handleFinalizeAccess = useCallback(async (accessCode: string, username: string) => {
+    const result = await finalizeApprovedAccess(accessCode, username);
+    if (result.error) return { error: result.error };
+    if (!result.account) return { error: 'Could not grant access.' };
+    return { account: result.account };
+  }, [finalizeApprovedAccess]);
+
+  const handleAdminPortal = useCallback(() => {
+    triggerHaptic(2);
+    setAuthOverlayMounted(false);
+  }, [triggerHaptic]);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -440,7 +483,7 @@ const AppContent: React.FC = () => {
     if (cursorPos !== null && cursorPos > expression.length) {
       setCursorPos(expression.length);
     }
-  }, [expression, cursorPos]);
+  }, [expression, cursorPos, setCursorPos]);
 
   useLayoutEffect(() => {
     const scrollEl = expressionScrollRef.current;
@@ -733,6 +776,8 @@ const AppContent: React.FC = () => {
           onSignup={handleSignup}
           onLogin={handleLogin}
           onAuthComplete={handleAuthSuccess}
+          onAdminPortal={handleAdminPortal}
+          onFinalizeAccess={handleFinalizeAccess}
           onDevSkip={import.meta.env.DEV ? handleDevSkip : undefined}
           onQuickUnlock={handleQuickUnlock}
           onExitComplete={() => setAuthOverlayMounted(false)}
@@ -1253,6 +1298,16 @@ const AppContent: React.FC = () => {
       />
       <PWAInstallPrompt showPrompt={showPrompt} onInstall={handleInstall} onDismiss={handleDismiss} />
       </>
+      )}
+      {isAdminPortal && adminSessionToken && (
+        <AdminCodeDashboard
+          isLight={isLight}
+          adminToken={adminSessionToken}
+          onClose={() => {
+            closeAdminPortal();
+            setAuthOverlayMounted(true);
+          }}
+        />
       )}
     </div>
   );

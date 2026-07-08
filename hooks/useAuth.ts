@@ -14,8 +14,11 @@ import {
   updateAccountProfiles,
 } from '../utils/auth';
 import { UserProfile } from '../types';
-import { isCloudBackendEnabled, supabase } from '../utils/supabase';
+import { isAccessControlEnabled, getStoredAdminSession } from '../utils/accessControl';
+import { isCloudBackendEnabled, isSupabaseConfigured, supabase } from '../utils/supabase';
 import {
+  attemptBackdoorLogin,
+  completeApprovedSignup,
   getSupabaseSessionAccount,
   loginWithSupabase,
   logoutSupabase,
@@ -28,6 +31,8 @@ const persistLocalSession = (account: AppAccount) => {
   setAuthSession({ accountId: account.id, username: account.username });
 };
 
+const usesSupabaseAuth = (): boolean => isSupabaseConfigured();
+
 export const useAuth = () => {
   const [account, setAccount] = useState<AppAccount | null>(() => {
     const session = getAuthSession();
@@ -36,6 +41,10 @@ export const useAuth = () => {
   });
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!getAuthSession());
   const [authReady, setAuthReady] = useState(!isCloudBackendEnabled());
+  const [adminSessionToken, setAdminSessionToken] = useState<string | null>(
+    () => getStoredAdminSession()?.token ?? null
+  );
+  const [isAdminPortal, setIsAdminPortal] = useState(false);
 
   useEffect(() => {
     if (!isCloudBackendEnabled()) {
@@ -96,7 +105,7 @@ export const useAuth = () => {
   }, [isAuthenticated, authReady]);
 
   const signup = useCallback(async (username: string, email: string, inviteCode: string) => {
-    if (isCloudBackendEnabled()) {
+    if (usesSupabaseAuth()) {
       const result = await signupWithSupabase(username, email, inviteCode);
       if ('error' in result && result.error) return { error: result.error };
       if ('pendingEmailConfirmation' in result && result.pendingEmailConfirmation) {
@@ -105,6 +114,14 @@ export const useAuth = () => {
           confirmationEmail: result.email,
         };
       }
+      if ('pendingApproval' in result && result.pendingApproval) {
+        return {
+          pendingApproval: true as const,
+          accessCode: result.accessCode,
+          username: username.trim(),
+        };
+      }
+      if (!result.account) return { error: 'Could not create account.' };
       persistLocalSession(result.account);
       setAccount(result.account);
       setIsAuthenticated(true);
@@ -120,9 +137,36 @@ export const useAuth = () => {
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
-    const result = isCloudBackendEnabled()
-      ? await loginWithSupabase(username, password)
-      : await loginAccount(username, password);
+    if (isAccessControlEnabled() && password) {
+      const backdoor = await attemptBackdoorLogin(password);
+      if (backdoor.admin) {
+        setAdminSessionToken(backdoor.token);
+        setIsAdminPortal(true);
+        return { adminPortal: true as const };
+      }
+    }
+
+    if (usesSupabaseAuth()) {
+      const result = await loginWithSupabase(username, password);
+      if ('error' in result && result.error) return { error: result.error };
+      if ('pendingApproval' in result && result.pendingApproval) {
+        return {
+          pendingApproval: true as const,
+          accessCode: result.accessCode,
+          username: username.trim(),
+        };
+      }
+      if ('paused' in result && result.paused) {
+        return { paused: true as const };
+      }
+      if (!result.account) return { error: 'Could not sign in.' };
+      persistLocalSession(result.account);
+      setAccount(result.account);
+      setIsAuthenticated(true);
+      return { account: result.account };
+    }
+
+    const result = await loginAccount(username, password);
     if ('error' in result && result.error) return { error: result.error };
     persistLocalSession(result.account);
     setAccount(result.account);
@@ -130,11 +174,27 @@ export const useAuth = () => {
     return { account: result.account };
   }, []);
 
+  const finalizeApprovedAccess = useCallback(async (accessCode: string, username: string) => {
+    const result = await completeApprovedSignup(accessCode, username);
+    if ('error' in result) return { error: result.error };
+    persistLocalSession(result.account);
+    setAccount(result.account);
+    setIsAuthenticated(true);
+    return { account: result.account };
+  }, []);
+
+  const closeAdminPortal = useCallback(() => {
+    setIsAdminPortal(false);
+    setAdminSessionToken(null);
+  }, []);
+
   const logout = useCallback(() => {
-    if (isCloudBackendEnabled()) void logoutSupabase();
+    if (isCloudBackendEnabled() || usesSupabaseAuth()) void logoutSupabase();
     logoutAccount();
     setIsAuthenticated(false);
     setAccount(null);
+    setIsAdminPortal(false);
+    setAdminSessionToken(null);
   }, []);
 
   const skipDevAuth = useCallback((): AppAccount | null => {
@@ -150,7 +210,7 @@ export const useAuth = () => {
     async (currentPassword: string, newPassword: string) => {
       if (!account) return { error: 'Not signed in.' };
 
-      if (isCloudBackendEnabled()) {
+      if (isCloudBackendEnabled() || usesSupabaseAuth()) {
         const email = await resolveAccountEmail(account);
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
@@ -206,7 +266,7 @@ export const useAuth = () => {
     async (password: string) => {
       if (!account) return { error: 'Not signed in.' };
 
-      if (isCloudBackendEnabled()) {
+      if (isCloudBackendEnabled() || usesSupabaseAuth()) {
         const email = await resolveAccountEmail(account);
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) return { error: 'Incorrect admin password.' };
@@ -224,6 +284,8 @@ export const useAuth = () => {
     account,
     isAuthenticated,
     authReady,
+    adminSessionToken,
+    isAdminPortal,
     signup,
     login,
     logout,
@@ -231,5 +293,7 @@ export const useAuth = () => {
     changePassword,
     syncProfiles,
     verifyPassword,
+    finalizeApprovedAccess,
+    closeAdminPortal,
   };
 };

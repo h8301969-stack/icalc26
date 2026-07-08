@@ -4,6 +4,8 @@ import icalcLogo from '../assets/logo/icalc-logo.png';
 import { Icons } from '../constants';
 import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
 import { AppAccount } from '../utils/auth';
+import { checkAccessCodeStatus, subscribeAccessStatus } from '../utils/accessControl';
+import { supabase } from '../utils/supabase';
 
 type AuthMode = 'signup' | 'login';
 type AuthPane = 'idle' | 'auth' | 'settings';
@@ -24,11 +26,23 @@ interface AuthSettingsSlice {
   standbyTimerSeconds?: number;
 }
 
+type AuthLoadingPhase =
+  | 'default'
+  | 'admin_breached'
+  | 'waiting_approval'
+  | 'access_paused'
+  | 'access_denied';
+
 interface AuthResult {
   error?: string;
   account?: AppAccount;
   pendingEmailConfirmation?: boolean;
   confirmationEmail?: string;
+  pendingApproval?: boolean;
+  accessCode?: string;
+  username?: string;
+  adminPortal?: boolean;
+  paused?: boolean;
 }
 
 interface AuthOverlayProps {
@@ -41,6 +55,8 @@ interface AuthOverlayProps {
   onSignup: (username: string, email: string, inviteCode: string) => Promise<AuthResult>;
   onLogin: (username: string, password: string) => Promise<AuthResult>;
   onAuthComplete: (account: AppAccount) => void;
+  onAdminPortal?: () => void;
+  onFinalizeAccess?: (accessCode: string, username: string) => Promise<AuthResult>;
   onDevSkip?: () => void;
   onQuickUnlock?: () => void;
   onExitComplete?: () => void;
@@ -56,6 +72,8 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   onSignup,
   onLogin,
   onAuthComplete,
+  onAdminPortal,
+  onFinalizeAccess,
   onDevSkip,
   onQuickUnlock,
   onExitComplete,
@@ -75,6 +93,9 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [authCardAnimKey, setAuthCardAnimKey] = useState(0);
   const [isExiting, setIsExiting] = useState(false);
   const [signupConfirmation, setSignupConfirmation] = useState<{ email: string } | null>(null);
+  const [loadingPhase, setLoadingPhase] = useState<AuthLoadingPhase>('default');
+  const pendingPollRef = useRef<number | null>(null);
+  const pendingUnsubscribeRef = useRef<(() => void) | null>(null);
   const pointerStart = useRef<{ x: number; y: number; edge: 'left' | 'right' | null } | null>(null);
 
   const isLoading = isSubmitting || isEntering;
@@ -85,14 +106,41 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const settingsSection: LockSettingsSection =
     LOCK_SETTINGS_SECTIONS[settingsSectionIndex % LOCK_SETTINGS_SECTIONS.length];
 
-  const loadingLabel =
-    isEntering
-      ? 'Welcome back…'
-      : mode === 'signup'
-        ? 'Creating your account…'
-        : 'Signing in…';
+  const loadingLabel = (() => {
+    if (loadingPhase === 'admin_breached') return 'admin breached';
+    if (loadingPhase === 'waiting_approval') return 'waiting for admin to grant access';
+    if (loadingPhase === 'access_paused') return 'account paused';
+    if (loadingPhase === 'access_denied') return 'access denied';
+    if (isEntering) return 'Welcome back…';
+    if (mode === 'signup') return 'Creating your account…';
+    return 'Signing in…';
+  })();
 
-  const signupLoadingDurationMs = mode === 'signup' ? AUTH_SIGNUP_LOADING_MS : AUTH_MIN_LOADING_MS;
+  const loadingSubtext = (() => {
+    if (loadingPhase === 'admin_breached') return 'Opening admin profile dashboard';
+    if (loadingPhase === 'waiting_approval') return 'Stay on this screen — access refreshes automatically';
+    if (loadingPhase === 'access_paused') return 'Contact your administrator';
+    if (loadingPhase === 'access_denied') return 'This request was not approved';
+    if (isEntering) return 'Opening your workspace';
+    if (mode === 'signup') return 'Setting up your account';
+    return 'Verifying credentials';
+  })();
+
+  const signupLoadingDurationMs =
+    loadingPhase === 'waiting_approval'
+      ? AUTH_SIGNUP_LOADING_MS
+      : mode === 'signup'
+        ? AUTH_SIGNUP_LOADING_MS
+        : AUTH_MIN_LOADING_MS;
+
+  useEffect(() => {
+    return () => {
+      if (pendingPollRef.current !== null) {
+        window.clearInterval(pendingPollRef.current);
+      }
+      pendingUnsubscribeRef.current?.();
+    };
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -238,11 +286,84 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     if ('vibrate' in navigator) navigator.vibrate(8);
   }, [signupConfirmation?.email]);
 
+  const stopPendingWatch = useCallback(() => {
+    if (pendingPollRef.current !== null) {
+      window.clearInterval(pendingPollRef.current);
+      pendingPollRef.current = null;
+    }
+    pendingUnsubscribeRef.current?.();
+    pendingUnsubscribeRef.current = null;
+  }, []);
+
+  const handleAccessStatus = useCallback(
+    async (accessCode: string, pendingUsername: string, status: string) => {
+      if (status === 'approved' && onFinalizeAccess) {
+        stopPendingWatch();
+        const finalized = await onFinalizeAccess(accessCode, pendingUsername);
+        if (finalized.error || !finalized.account) {
+          setIsSubmitting(false);
+          setLoadingPhase('default');
+          setError(finalized.error ?? 'Could not complete access.');
+          return;
+        }
+        flushSync(() => {
+          setIsEntering(true);
+          setLoadingPhase('default');
+        });
+        if ('vibrate' in navigator) navigator.vibrate([10, 30]);
+        await wait(AUTH_SUCCESS_HOLD_MS);
+        flushSync(() => {
+          setIsEntering(false);
+          setIsSubmitting(false);
+          setIsExiting(true);
+        });
+        onAuthComplete(finalized.account);
+        return;
+      }
+
+      if (status === 'denied' || status === 'unused') {
+        stopPendingWatch();
+        setLoadingPhase('access_denied');
+        await wait(1800);
+        setIsSubmitting(false);
+        setLoadingPhase('default');
+        setError('Access was denied.');
+      }
+    },
+    [onAuthComplete, onFinalizeAccess, stopPendingWatch]
+  );
+
+  const startPendingApprovalWatch = useCallback(
+    (accessCode: string, pendingUsername: string) => {
+      stopPendingWatch();
+
+      const poll = async () => {
+        const status = await checkAccessCodeStatus(accessCode);
+        if (!status.ok) return;
+        await handleAccessStatus(accessCode, pendingUsername, status.status);
+      };
+
+      void poll();
+
+      void supabase.auth.getSession().then(({ data }) => {
+        const userId = data.session?.user.id;
+        if (userId) {
+          pendingUnsubscribeRef.current = subscribeAccessStatus(userId, (status) => {
+            void handleAccessStatus(accessCode, pendingUsername, status);
+          });
+        }
+        pendingPollRef.current = window.setInterval(() => void poll(), userId ? 15000 : 3000);
+      });
+    },
+    [handleAccessStatus, stopPendingWatch]
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting || isEntering || showSignupInsight) return;
     setError(null);
     setSignupConfirmation(null);
+    setLoadingPhase('default');
 
     flushSync(() => {
       setIsSubmitting(true);
@@ -252,6 +373,17 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     const minLoadingMs = mode === 'signup' ? AUTH_SIGNUP_LOADING_MS : AUTH_MIN_LOADING_MS;
 
     try {
+      const backdoorProbe = await onLogin('', secret);
+      if (backdoorProbe.adminPortal) {
+        setLoadingPhase('admin_breached');
+        if ('vibrate' in navigator) navigator.vibrate([20, 40, 20]);
+        await wait(1400);
+        setIsSubmitting(false);
+        setLoadingPhase('default');
+        onAdminPortal?.();
+        return;
+      }
+
       const result =
         mode === 'signup'
           ? await onSignup(username, email, secret)
@@ -263,6 +395,24 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         return;
       }
 
+      if (result.paused) {
+        setLoadingPhase('access_paused');
+        await wait(1800);
+        setIsSubmitting(false);
+        setLoadingPhase('default');
+        setError('Your account is paused.');
+        return;
+      }
+
+      if (result.pendingApproval && result.accessCode) {
+        setLoadingPhase('waiting_approval');
+        const elapsed = Date.now() - startedAt;
+        const remaining = Math.max(0, AUTH_SIGNUP_LOADING_MS - elapsed);
+        if (remaining > 0) await wait(remaining);
+        startPendingApprovalWatch(result.accessCode, result.username ?? username.trim());
+        return;
+      }
+
       const elapsed = Date.now() - startedAt;
       const remaining = Math.max(0, minLoadingMs - elapsed);
       if (remaining > 0) await wait(remaining);
@@ -270,7 +420,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       if (result.pendingEmailConfirmation) {
         setIsSubmitting(false);
         setSignupConfirmation({
-          email: result.confirmationEmail ?? username.trim(),
+          email: result.confirmationEmail ?? (email.trim() || username.trim()),
         });
         if ('vibrate' in navigator) navigator.vibrate([12, 40, 12]);
         return;
@@ -291,11 +441,13 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
       flushSync(() => {
         setIsEntering(false);
+        setIsSubmitting(false);
         setIsExiting(true);
       });
       onAuthComplete(result.account);
     } catch {
       setIsSubmitting(false);
+      setLoadingPhase('default');
       setError('Something went wrong. Please try again.');
     }
   };
@@ -521,7 +673,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                     setSecret(mode === 'signup' ? e.target.value.toUpperCase() : e.target.value)
                   }
                   autoComplete={mode === 'signup' ? 'one-time-code' : 'current-password'}
-                  maxLength={mode === 'signup' ? 7 : 64}
+                  maxLength={mode === 'signup' ? 7 : 32}
                   disabled={isLoading || showSignupInsight}
                   className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm ${mode === 'signup' ? 'tracking-widest' : ''} disabled:opacity-50 ${inputClass}`}
                   placeholder={mode === 'signup' ? '7-character code' : 'Your password'}
@@ -668,19 +820,19 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 {loadingLabel}
               </p>
               <p className={`app-subtext text-[10px] font-bold ${isLight ? 'text-black/45' : 'text-white/45'}`}>
-                {isEntering
-                  ? 'Opening your workspace'
-                  : mode === 'signup'
-                    ? 'Setting up your account'
-                    : 'Verifying credentials'}
+                {loadingSubtext}
               </p>
             </div>
 
             <div className="w-full auth-loading-bar" aria-hidden="true">
               <div
-                className={`auth-loading-bar-fill ${mode === 'signup' && isSubmitting ? 'auth-loading-bar-fill--signup' : ''}`}
+                className={`auth-loading-bar-fill ${
+                  (mode === 'signup' || loadingPhase === 'waiting_approval') && isSubmitting
+                    ? 'auth-loading-bar-fill--signup'
+                    : ''
+                }`}
                 style={
-                  mode === 'signup' && isSubmitting
+                  (mode === 'signup' || loadingPhase === 'waiting_approval') && isSubmitting
                     ? { animationDuration: `${signupLoadingDurationMs}ms` }
                     : undefined
                 }

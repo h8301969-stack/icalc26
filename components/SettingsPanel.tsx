@@ -69,7 +69,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   // Bluetooth states
   const [printerName, setPrinterName] = useState<string | null>(null);
-  const [connectedId, setConnectedId] = useState<string | null>(null);
+  const [, setConnectedId] = useState<string | null>(null);
   const [knownPrinters, setKnownPrinters] = useState<KnownPrinter[]>([]);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);

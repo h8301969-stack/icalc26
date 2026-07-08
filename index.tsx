@@ -1,5 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import '@fontsource/montserrat/latin-300.css';
+import '@fontsource/montserrat/latin-500.css';
+import '@fontsource/montserrat/latin-700.css';
 import App from './App';
 import './index.css';
 
@@ -18,7 +21,7 @@ root.render(
 // Register service worker only in production to avoid caching during development
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(new URL('./sw.js', import.meta.url))
+    navigator.serviceWorker.register('/sw.js')
       .then(reg => console.log('iCalc SW registered. Scope:', reg.scope))
       .catch(err => console.warn('iCalc SW registration failed:', err));
   });

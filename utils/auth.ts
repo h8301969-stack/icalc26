@@ -1,4 +1,3 @@
-import { INVITE_PASSWORDS } from '../data/invitePasswords';
 import { UserProfile } from '../types';
 import { storage } from '../hooks/storage';
 
@@ -7,9 +6,7 @@ export const ADMIN_PROFILE_NAME = '@admin';
 
 const ACCOUNTS_KEY = 'icalc_accounts';
 const AUTH_SESSION_KEY = 'icalc_auth_session';
-const USED_INVITE_CODES_KEY = 'icalc_used_invite_codes';
 
-const INVITE_SET = new Set(INVITE_PASSWORDS.map((c) => c.toUpperCase()));
 
 export interface AppAccount {
   id: string;
@@ -56,18 +53,9 @@ export const hashPassword = async (password: string): Promise<string> => {
 
 const normalizeUsername = (username: string) => username.trim().toLowerCase();
 
-export const isValidInviteCode = (code: string): boolean =>
-  INVITE_SET.has(code.trim().toUpperCase());
-
 export const getAccounts = (): AppAccount[] => storage.get<AppAccount[]>(ACCOUNTS_KEY, []);
 
 const saveAccounts = (accounts: AppAccount[]) => storage.set(ACCOUNTS_KEY, accounts);
-
-export const getUsedInviteCodes = (): Record<string, string> =>
-  storage.get<Record<string, string>>(USED_INVITE_CODES_KEY, {});
-
-const saveUsedInviteCodes = (used: Record<string, string>) =>
-  storage.set(USED_INVITE_CODES_KEY, used);
 
 export const getAuthSession = (): AuthSession | null =>
   storage.get<AuthSession | null>(AUTH_SESSION_KEY, null);
@@ -124,35 +112,7 @@ export const signupWithInvite = async (
 
   if (!trimmedName) return { error: 'Enter a username.' };
   if (code.length !== 7) return { error: 'One-time code must be 7 characters.' };
-  if (!isValidInviteCode(code)) return { error: 'Invalid one-time code.' };
-  if (findAccountByUsername(trimmedName)) return { error: 'Username already taken.' };
-
-  const used = getUsedInviteCodes();
-  if (used[code]) return { error: 'This one-time code has already been used.' };
-
-  const userProfile: UserProfile = {
-    id: `profile-${Date.now()}`,
-    name: trimmedName,
-    avatarUrl: '',
-    isSystem: false,
-  };
-  const profiles = ensureAdminProfile([userProfile]);
-  const passwordHash = await hashPassword(code);
-
-  const account: AppAccount = {
-    id: `account-${Date.now()}`,
-    username: trimmedName,
-    passwordHash,
-    createdAt: Date.now(),
-    profiles,
-    activeProfileId: userProfile.id,
-  };
-
-  saveAccounts([...getAccounts(), account]);
-  saveUsedInviteCodes({ ...used, [code]: account.id });
-  setAuthSession({ accountId: account.id, username: account.username });
-
-  return { account };
+  return { error: 'Signup requires Supabase. Configure VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.' };
 };
 
 const resolveLoginUsername = (identifier: string): string => {

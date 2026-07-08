@@ -77,15 +77,7 @@ interface DashboardLogEntry {
 type SortOption = 'a-z' | 'high-stock' | 'low-stock';
 type FilterOption = 'all' | '24h' | '48h' | '3d' | '7d' | '14d' | 'custom';
 
-interface InvoiceCard {
-  id: string;
-  name: string;
-  items: CartLineItem[];
-  logs: InvoiceActionLog[];
-  total: string;
-  isCurrent: boolean;
-  latestTimestamp: number;
-}
+
 
 type RequestStatus = POSRequest['status'];
 const RESTOCK_DRAG_FACTOR = 1.25;
@@ -226,10 +218,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   
   const [sortOption, setSortOption] = useState<SortOption>('a-z');
   const [filterOption, setFilterOption] = useState<FilterOption>('all');
-  const [customDateStart, setCustomDateStart] = useState('');
-  const [customDateEnd, setCustomDateEnd] = useState('');
+  const [customDateStart] = useState('');
+  const [customDateEnd] = useState('');
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   
   const [newItemName, setNewItemName] = useState('');
@@ -313,6 +305,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+    // closeRestockPopup is stable (useCallback below); omit to avoid TDZ — handler calls it by reference at runtime
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, onClose, showAddRequestPopup, showAddRestockPopup, showSuppliersPanel, selectedRequest, namingUnidentified, actionLogsExpanded, selectedItem, requestsExpanded, restockExpanded, restockGridZoomed, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded]);
 
   useEffect(() => {
@@ -380,7 +374,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   }, [printLogs, invoiceActionLogs, invoiceName]);
 
   const todayStart = useMemo(
-    () => new Date(new Date().setHours(0, 0, 0, 0)).getTime(),
+    () =>
+      new Date(
+        currentTime.getFullYear(),
+        currentTime.getMonth(),
+        currentTime.getDate()
+      ).getTime(),
     [currentTime]
   );
 
@@ -878,7 +877,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         ...prev,
       ].sort((a, b) => b.lastReceivedAt - a.lastReceivedAt);
     });
-  }, []);
+  }, [setSuppliers]);
 
   const applyRestockToInventory = useCallback((supplierName: string) => {
     if (restockLineItems.length === 0 || restockAppliedRef.current) return;
@@ -957,6 +956,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     restockFreeNotes,
     closeRestockPopup,
     applyRestockToInventory,
+    setRestocks,
   ]);
 
   const restockGridCols = 3;
@@ -1533,21 +1533,19 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     setNewItemName('');
     setNewItemPrice('0');
     setNewItemImageUrl('');
-  }, [namingUnidentified, newItemName, newItemPrice, newItemCategory, newItemImageUrl, setItems, onResolveUnidentifiedPrice, activeProfileName]);
+  }, [namingUnidentified, newItemName, newItemCategory, newItemImageUrl, setItems, onResolveUnidentifiedPrice, activeProfileName]);
 
   const levitateClass = isLight
     ? 'bg-white/90 shadow-[0_16px_36px_rgba(0,0,0,0.12)] hover:shadow-[0_24px_48px_rgba(0,0,0,0.16)] pos-dashboard-card-motion'
     : 'pos-dashboard-card-glass border border-white/10 hover:-translate-y-0.5 active:scale-[0.99] pos-dashboard-card-motion';
 
   const textColorClass = isLight ? 'text-black' : 'text-white';
-  const mutedTextClass = isLight ? 'text-black' : 'text-white';
   const cardSubtextClass = isLight ? 'text-black' : 'text-white';
   const cardSubtextMutedClass = isLight ? 'text-black/60' : 'text-white/60';
   const invertedBarSubtextClass = isLight ? 'text-white/70' : 'text-black/70';
   const heroSubtextClass = 'text-white';
   const panelSubtextClass = isLight ? 'text-black/60' : 'text-white/60';
   const noteCardSubtextClass = 'text-black/60';
-  const ledgerMutedClass = cardSubtextMutedClass;
   const statDetailCardClass = isLight
     ? 'bg-zinc-900 text-white shadow-[0_16px_36px_rgba(0,0,0,0.28)]'
     : 'pos-dashboard-card-glass border border-white/10 text-white';
