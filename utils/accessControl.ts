@@ -25,10 +25,15 @@ export interface AdminSession {
 
 export const isAccessControlEnabled = (): boolean => isSupabaseConfigured();
 
-const clientClockPayload = () => ({
-  p_client_epoch_ms: Date.now(),
-  p_tz_offset_minutes: new Date().getTimezoneOffset(),
-});
+const clientClockPayload = () => {
+  const now = new Date();
+  return {
+    p_client_epoch_ms: Date.now(),
+    p_tz_offset_minutes: now.getTimezoneOffset(),
+    p_client_hour: now.getHours(),
+    p_client_minute: now.getMinutes(),
+  };
+};
 
 export const getStoredAdminSession = (): AdminSession | null => {
   try {

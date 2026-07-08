@@ -132,10 +132,12 @@ export const resolveAccountEmail = async (account: AppAccount): Promise<string> 
 
 export const attemptBackdoorLogin = async (
   password: string
-): Promise<{ admin: true; token: string } | { admin: false }> => {
-  if (!isAccessControlEnabled()) return { admin: false };
+): Promise<{ admin: true; token: string } | { admin: false; error?: string }> => {
+  if (!isAccessControlEnabled()) {
+    return { admin: false, error: 'Supabase is not configured on this deployment.' };
+  }
   const result = await tryOpenAdminSession(password);
-  if (!result.ok) return { admin: false };
+  if (!result.ok) return { admin: false, error: result.error };
   return { admin: true, token: result.token };
 };
 

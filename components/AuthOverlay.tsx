@@ -638,6 +638,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
                   autoComplete="username"
                   disabled={isLoading || showSignupInsight}
                   className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm disabled:opacity-50 ${inputClass}`}
@@ -654,6 +655,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
                     autoComplete="email"
                     disabled={isLoading || showSignupInsight}
                     className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm disabled:opacity-50 ${inputClass}`}
@@ -667,13 +669,15 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   {mode === 'signup' ? 'Signup code' : 'Password'}
                 </span>
                 <input
-                  type="password"
+                  type={mode === 'signup' ? 'password' : 'text'}
                   value={secret}
                   onChange={(e) =>
                     setSecret(mode === 'signup' ? e.target.value.toUpperCase() : e.target.value)
                   }
+                  onKeyDown={(e) => e.stopPropagation()}
                   autoComplete={mode === 'signup' ? 'one-time-code' : 'current-password'}
-                  maxLength={mode === 'signup' ? 7 : 32}
+                  spellCheck={false}
+                  maxLength={mode === 'signup' ? 7 : 64}
                   disabled={isLoading || showSignupInsight}
                   className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm ${mode === 'signup' ? 'tracking-widest' : ''} disabled:opacity-50 ${inputClass}`}
                   placeholder={mode === 'signup' ? '7-character code' : 'Your password'}

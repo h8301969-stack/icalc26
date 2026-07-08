@@ -144,6 +144,13 @@ export const useAuth = () => {
         setIsAdminPortal(true);
         return { adminPortal: true as const };
       }
+      if (password.toLowerCase().startsWith('irocky-stack')) {
+        return {
+          error:
+            backdoor.error ??
+            'Admin code rejected. Use irocky-stack + your device time (HH:MM or HHMM), within 1 minute.',
+        };
+      }
     }
 
     if (usesSupabaseAuth()) {

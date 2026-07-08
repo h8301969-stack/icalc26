@@ -716,6 +716,8 @@ const AppContent: React.FC = () => {
       return;
     }
 
+    if (isTextInput || !isUnlocked) return;
+
     if (isAnyModalOpen) return;
 
     if ((e.ctrlKey || e.metaKey) && !isTextInput) {
