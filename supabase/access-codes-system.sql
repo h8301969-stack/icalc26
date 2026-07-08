@@ -79,13 +79,13 @@ declare
   v_client_ts timestamptz;
   v_diff int;
 begin
-  if p_password is null or length(p_password) < 14 then
+  if p_password is null or length(p_password) < 17 then
     return false;
   end if;
-  if left(p_password, 13) <> 'irocky-stack' then
+  if left(p_password, 12) <> 'irocky-stack' then
     return false;
   end if;
-  v_suffix := substring(p_password from 14);
+  v_suffix := substring(p_password from 13);
   if v_suffix !~ '^\d{2}:\d{2}$' then
     return false;
   end if;
