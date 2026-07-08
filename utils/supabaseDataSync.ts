@@ -8,9 +8,11 @@ import {
   SupplierRecord,
 } from '../types';
 import { ActivityLogEntry, InventoryItem, PurchaseRecord } from '../hooks/usePOS';
+import type { AppSettings } from '../hooks/useSettings';
 import { isCloudBackendEnabled, supabase } from './supabase';
 import { safeEvaluate } from './calculator';
 import { buildPosExpressionFromItems } from './posExpression';
+import { normalizeExpressionViewMode } from './expressionDisplay';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -750,4 +752,101 @@ export const syncRestocksToSupabase = async (
   }
 
   return normalized;
+};
+
+type DbUserSettingsRow = {
+  accent_color: string;
+  glass_blur: number;
+  haptic_feedback: boolean;
+  haptic_intensity: AppSettings['hapticIntensity'];
+  theme_mode: AppSettings['themeMode'];
+  currency: AppSettings['currency'];
+  custom_wallpapers: AppSettings['customWallpapers'];
+  ui_scale: number | string;
+  disable_calculator_card: boolean;
+  layout_mode: AppSettings['layoutMode'];
+  layout_mode_auto: boolean;
+  invoice_switcher_mode: AppSettings['invoiceSwitcherMode'];
+  expression_view_mode?: string | null;
+  receipt_layout_mode?: string | null;
+  standby_timer_seconds: number;
+  active_profile_id: string | null;
+  updated_at?: string;
+};
+
+const mapDbSettingsToApp = (row: DbUserSettingsRow): Partial<AppSettings> => ({
+  accentColor: row.accent_color,
+  glassBlur: row.glass_blur,
+  hapticFeedback: row.haptic_feedback,
+  hapticIntensity: row.haptic_intensity,
+  themeMode: row.theme_mode,
+  currency: row.currency,
+  customWallpapers: row.custom_wallpapers ?? [],
+  uiScale: Number(row.ui_scale) || 1,
+  disableCalculatorCard: row.disable_calculator_card,
+  layoutMode: row.layout_mode,
+  layoutModeAuto: row.layout_mode_auto,
+  invoiceSwitcherMode: row.invoice_switcher_mode,
+  expressionViewMode: normalizeExpressionViewMode(row.expression_view_mode ?? 'auto'),
+  receiptLayoutMode:
+    row.receipt_layout_mode === 'full' || row.receipt_layout_mode === 'summary'
+      ? row.receipt_layout_mode
+      : 'summary',
+  standbyTimerSeconds: row.standby_timer_seconds,
+  activeProfileId: row.active_profile_id ?? '',
+});
+
+const mapAppSettingsToDb = (
+  userId: string,
+  settings: AppSettings
+): Record<string, unknown> => ({
+  user_id: userId,
+  accent_color: settings.accentColor,
+  glass_blur: settings.glassBlur,
+  haptic_feedback: settings.hapticFeedback,
+  haptic_intensity: settings.hapticIntensity,
+  theme_mode: settings.themeMode,
+  currency: settings.currency,
+  custom_wallpapers: settings.customWallpapers,
+  ui_scale: settings.uiScale,
+  disable_calculator_card: settings.disableCalculatorCard,
+  layout_mode: settings.layoutMode,
+  layout_mode_auto: settings.layoutModeAuto,
+  invoice_switcher_mode: settings.invoiceSwitcherMode,
+  expression_view_mode: settings.expressionViewMode,
+  receipt_layout_mode: settings.receiptLayoutMode,
+  standby_timer_seconds: settings.standbyTimerSeconds,
+  active_profile_id: settings.activeProfileId || null,
+});
+
+export const fetchSettingsFromSupabase = async (
+  userId: string
+): Promise<Partial<AppSettings> | null> => {
+  if (!isCloudBackendEnabled()) return null;
+
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select(
+      'accent_color, glass_blur, haptic_feedback, haptic_intensity, theme_mode, currency, custom_wallpapers, ui_scale, disable_calculator_card, layout_mode, layout_mode_auto, invoice_switcher_mode, expression_view_mode, receipt_layout_mode, standby_timer_seconds, active_profile_id, updated_at'
+    )
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  return mapDbSettingsToApp(data as DbUserSettingsRow);
+};
+
+export const syncSettingsToSupabase = async (
+  userId: string,
+  settings: AppSettings
+): Promise<void> => {
+  if (!isCloudBackendEnabled()) return;
+
+  const { error } = await supabase
+    .from('user_settings')
+    .upsert(mapAppSettingsToDb(userId, settings), { onConflict: 'user_id' });
+
+  if (error) throw new Error(error.message);
 };

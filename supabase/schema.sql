@@ -41,9 +41,13 @@ create table if not exists public.user_settings (
                             check (layout_mode in ('portrait', 'landscape')),
   layout_mode_auto        boolean not null default true,
   invoice_switcher_mode   text not null default 'horizontal'
-                            check (invoice_switcher_mode in ('horizontal', 'grid', 'vertical')),
+                            check (invoice_switcher_mode in ('horizontal', 'grid', 'vertical', 'list')),
   invoice_switcher_grid_cols integer not null default 3
                             check (invoice_switcher_grid_cols in (3, 4)),
+  expression_view_mode    text not null default 'auto'
+                            check (expression_view_mode in ('auto', 'list')),
+  receipt_layout_mode     text not null default 'summary'
+                            check (receipt_layout_mode in ('summary', 'full')),
   standby_timer_seconds   integer not null default 0,
   active_profile_id       uuid references public.user_profiles(id) on delete set null,
   created_at              timestamptz not null default now(),

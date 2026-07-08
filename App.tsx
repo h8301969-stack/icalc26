@@ -50,7 +50,6 @@ import { CartLineItem, InvoiceActionLog, InvoicePrintLog, SavedInvoice } from '.
 import { usePOSDashboardData } from './hooks/usePOSDashboardData';
 
 const AppContent: React.FC = () => {
-  const { settings, updateSettings, triggerHaptic, isLight, formatCurrency, activeProfile } = useSettings();
   const {
     account,
     authReady,
@@ -66,6 +65,10 @@ const AppContent: React.FC = () => {
     finalizeApprovedAccess,
     closeAdminPortal,
   } = useAuth();
+  const { settings, updateSettings, triggerHaptic, isLight, formatCurrency, activeProfile } = useSettings({
+    userId: account?.id ?? null,
+    authReady,
+  });
   const disableCard = !!settings.disableCalculatorCard;
   const isLandscape = settings.layoutMode === 'landscape';
   const { history, setHistory, saveResult } = useHistory();

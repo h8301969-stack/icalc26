@@ -13,6 +13,8 @@ import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
 import { ADMIN_PROFILE_NAME, ensureAdminProfile } from '../utils/auth';
 import { EXPRESSION_VIEW_OPTIONS } from '../utils/expressionDisplay';
 import { PAPER_WIDTH_OPTIONS, RECEIPT_LAYOUT_OPTIONS, type PaperWidth } from '../utils/receiptLayout';
+import FluidSegmentControl from './FluidSegmentControl';
+import FluidToggle from './FluidToggle';
 
 interface SettingsSlice {
   themeMode: 'light' | 'dark' | 'system';
@@ -116,15 +118,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
     onApplyAppearance?.();
   }, [_updateSettings, onApplyAppearance]);
-
-  const cycleLayoutMode = useCallback(() => {
-    const current = settings.layoutMode ?? 'portrait';
-    applyAppearance({ layoutMode: current === 'portrait' ? 'landscape' : 'portrait', layoutModeAuto: false });
-  }, [settings.layoutMode, applyAppearance]);
-
-  const cycleCalculatorBackground = useCallback(() => {
-    applyAppearance('disableCalculatorCard', !settings.disableCalculatorCard);
-  }, [settings.disableCalculatorCard, applyAppearance]);
 
   useEffect(() => {
     if (isOpen) {
@@ -418,27 +411,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Idle Screen</h3>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            {STANDBY_TIMER_OPTIONS.map((option) => {
-              const isActive = (settings.standbyTimerSeconds ?? 0) === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => _updateSettings({ standbyTimerSeconds: option.value })}
-                  className={`app-subtext px-3 py-2 rounded-xl text-[10px] font-black border transition-all active:scale-95 ${
-                    isActive
-                      ? 'bg-blue-500 text-white border-blue-500'
-                      : isLight
-                        ? 'bg-zinc-100 border-zinc-200 text-black'
-                        : 'bg-white/5 border-white/5 text-white'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
+          <FluidSegmentControl
+            variant="chip"
+            size="sm"
+            isLight={isLight}
+            ariaLabel="Idle screen timer"
+            value={String(settings.standbyTimerSeconds ?? 0)}
+            onChange={(id) => _updateSettings({ standbyTimerSeconds: Number(id) })}
+            options={STANDBY_TIMER_OPTIONS.map((option) => ({
+              id: String(option.value),
+              label: option.label,
+            }))}
+          />
         </div>
 
         {/* Appearance Settings */}
@@ -452,51 +436,38 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
 
           <div className="space-y-4">
-            {/* Theme Toggle */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-black">Theme</span>
-              <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
-                <button
-                  onClick={() => _updateSettings({ themeMode: 'light' })}
-                  className={`px-3 py-1.5 flex items-center gap-1 transition-all ${settings.themeMode === 'light' ? 'bg-black text-white' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
-                >
-                  <Icons.Sun size={14} /> Light
-                </button>
-                <button
-                  onClick={() => _updateSettings({ themeMode: 'dark' })}
-                  className={`px-3 py-1.5 flex items-center gap-1 transition-all ${settings.themeMode === 'dark' ? 'bg-white text-black' : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
-                >
-                  <Icons.Moon size={14} /> Dark
-                </button>
-                <button
-                  onClick={() => _updateSettings({ themeMode: 'system' })}
-                  className={`px-3 py-1.5 transition-all ${settings.themeMode === 'system' ? (isLight ? 'bg-black text-white' : 'bg-white text-black') : (isLight ? 'bg-zinc-100' : 'bg-white/10')}`}
-                >
-                  Auto
-                </button>
-              </div>
+              <FluidSegmentControl
+                isLight={isLight}
+                ariaLabel="Theme mode"
+                value={settings.themeMode}
+                onChange={(themeMode) => _updateSettings({ themeMode })}
+                options={[
+                  { id: 'light', label: 'Light', icon: <Icons.Sun size={14} /> },
+                  { id: 'dark', label: 'Dark', icon: <Icons.Moon size={14} /> },
+                  { id: 'system', label: 'Auto' },
+                ]}
+              />
             </div>
 
-            {/* Layout Mode */}
-            <div className="flex items-center justify-between pt-2 border-t border-white/10">
-              <div className="flex flex-col">
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+              <div className="flex flex-col min-w-0">
                 <span className="text-sm font-black">Layout</span>
                 <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
                   {settings.layoutModeAuto !== false ? 'Auto from device orientation' : 'Manual layout override'}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={cycleLayoutMode}
-                className={`flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest px-4 py-1.5 items-center gap-1.5 transition-all ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
-                aria-label={`Layout: ${(settings.layoutMode ?? 'portrait') === 'portrait' ? 'Portrait' : 'Landscape'}. Tap to switch.`}
-              >
-                {(settings.layoutMode ?? 'portrait') === 'portrait' ? (
-                  <><Icons.Portrait size={14} /> Portrait</>
-                ) : (
-                  <><Icons.Landscape size={14} /> Landscape</>
-                )}
-              </button>
+              <FluidSegmentControl
+                isLight={isLight}
+                ariaLabel="Layout orientation"
+                value={settings.layoutMode ?? 'portrait'}
+                onChange={(layoutMode) => applyAppearance({ layoutMode, layoutModeAuto: false })}
+                options={[
+                  { id: 'portrait', label: 'Portrait', icon: <Icons.Portrait size={14} /> },
+                  { id: 'landscape', label: 'Landscape', icon: <Icons.Landscape size={14} /> },
+                ]}
+              />
             </div>
 
             {/* Invoice switcher layout */}
@@ -507,33 +478,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   How invoices appear when you open the switcher
                 </span>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {([
-                  { id: 'horizontal' as const, label: 'Horizontal', icon: Icons.Carousel },
-                  { id: 'vertical' as const, label: 'Vertical', icon: Icons.Stack },
-                  { id: 'grid' as const, label: 'Scattered', icon: Icons.Grid },
-                  { id: 'list' as const, label: 'List', icon: Icons.List },
-                ]).map(({ id, label, icon: Icon }) => {
-                  const active = (settings.invoiceSwitcherMode ?? 'horizontal') === id;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => applyAppearance({ invoiceSwitcherMode: id })}
-                      className={`app-subtext px-3 py-2 rounded-xl text-[10px] font-black border transition-all active:scale-95 flex items-center gap-1.5 ${
-                        active
-                          ? 'bg-blue-500 text-white border-blue-500'
-                          : isLight
-                            ? 'bg-zinc-100 border-zinc-200 text-black'
-                            : 'bg-white/5 border-white/5 text-white'
-                      }`}
-                    >
-                      <Icon size={14} />
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
+              <FluidSegmentControl
+                variant="chip"
+                size="sm"
+                isLight={isLight}
+                ariaLabel="Invoice switcher layout"
+                value={settings.invoiceSwitcherMode ?? 'horizontal'}
+                onChange={(invoiceSwitcherMode) => applyAppearance({ invoiceSwitcherMode })}
+                options={[
+                  { id: 'horizontal', label: 'Horizontal', icon: <Icons.Carousel size={14} /> },
+                  { id: 'vertical', label: 'Vertical', icon: <Icons.Stack size={14} /> },
+                  { id: 'grid', label: 'Scattered', icon: <Icons.Grid size={14} /> },
+                  { id: 'list', label: 'List', icon: <Icons.List size={14} /> },
+                ]}
+              />
             </div>
 
             {/* Expression view */}
@@ -544,27 +502,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   Auto wraps to fit · List breaks after each +
                 </span>
               </div>
-              <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
-                {EXPRESSION_VIEW_OPTIONS.map(({ id, label }) => {
-                  const active = (settings.expressionViewMode ?? 'auto') === id;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => applyAppearance({ expressionViewMode: id })}
-                      className={`flex-1 py-2.5 transition-all ${
-                        active
-                          ? isLight
-                            ? 'bg-black text-white'
-                            : 'bg-white text-black'
-                          : 'opacity-50'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
+              <FluidSegmentControl
+                isLight={isLight}
+                className="w-full"
+                ariaLabel="Expression view mode"
+                value={settings.expressionViewMode ?? 'auto'}
+                onChange={(expressionViewMode) => applyAppearance({ expressionViewMode })}
+                options={EXPRESSION_VIEW_OPTIONS.map(({ id, label }) => ({ id, label }))}
+              />
             </div>
 
             {/* Share & print receipt */}
@@ -575,43 +520,31 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   Share image and Bluetooth receipt layout
                 </span>
               </div>
-              <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
-                {RECEIPT_LAYOUT_OPTIONS.map(({ id, label }) => {
-                  const active = (settings.receiptLayoutMode ?? 'summary') === id;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => applyAppearance({ receiptLayoutMode: id })}
-                      className={`flex-1 py-2.5 transition-all ${
-                        active
-                          ? isLight
-                            ? 'bg-black text-white'
-                            : 'bg-white text-black'
-                          : 'opacity-50'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
+              <FluidSegmentControl
+                isLight={isLight}
+                className="w-full"
+                ariaLabel="Invoice print style"
+                value={settings.receiptLayoutMode ?? 'summary'}
+                onChange={(receiptLayoutMode) => applyAppearance({ receiptLayoutMode })}
+                options={RECEIPT_LAYOUT_OPTIONS.map(({ id, label }) => ({ id, label }))}
+              />
             </div>
 
-            {/* Calculator on background */}
-            <div className="flex items-center justify-between pt-2 border-t border-white/10">
-              <div className="flex flex-col">
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+              <div className="flex flex-col min-w-0">
                 <span className="text-sm font-black">Calculator on background</span>
-                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>Remove card • fill more space, larger buttons</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  Remove card for more space and larger buttons
+                </span>
               </div>
-              <button
-                type="button"
-                onClick={cycleCalculatorBackground}
-                className={`flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest px-4 py-1.5 transition-all ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
-                aria-label={`Calculator display: ${settings.disableCalculatorCard ? 'On background' : 'On card'}. Tap to switch.`}
-              >
-                {settings.disableCalculatorCard ? 'Background' : 'Card'}
-              </button>
+              <FluidToggle
+                isLight={isLight}
+                checked={!!settings.disableCalculatorCard}
+                onChange={(disableCalculatorCard) => applyAppearance('disableCalculatorCard', disableCalculatorCard)}
+                ariaLabel="Calculator on background"
+                offLabel="Card"
+                onLabel="Background"
+              />
             </div>
           </div>
         </div>
@@ -649,27 +582,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   Set 25mm for mini printers; 58mm covers standard 57mm rolls
                 </span>
               </div>
-              <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
-                {PAPER_WIDTH_OPTIONS.map(({ id, label }) => {
-                  const active = paperWidth === id;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => handlePaperWidthChange(id)}
-                      className={`flex-1 py-2.5 transition-all ${
-                        active
-                          ? isLight
-                            ? 'bg-black text-white'
-                            : 'bg-white text-black'
-                          : 'opacity-50'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
+              <FluidSegmentControl
+                isLight={isLight}
+                className="w-full"
+                ariaLabel="Receipt paper width"
+                value={paperWidth}
+                onChange={handlePaperWidthChange}
+                options={PAPER_WIDTH_OPTIONS.map(({ id, label }) => ({ id, label }))}
+              />
             </div>
 
             <div className="flex items-center justify-between gap-2">

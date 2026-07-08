@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { THEMES, WALLPAPER_SLIDES } from '../constants';
 import { migrateWallpaperSlides } from '../utils/wallpapers';
 import { getAutoLayoutMode, getSystemTheme, ThemeMode } from '../utils/devicePreferences';
@@ -7,10 +7,13 @@ import { UserProfile } from '../types';
 import { ensureAdminProfile } from '../utils/auth';
 import { ExpressionViewMode, normalizeExpressionViewMode } from '../utils/expressionDisplay';
 import { ReceiptLayoutMode } from '../utils/receiptLayout';
+import { isCloudBackendEnabled } from '../utils/supabase';
+import { fetchSettingsFromSupabase, syncSettingsToSupabase } from '../utils/supabaseDataSync';
 
 const SETTINGS_KEY = 'calc_settings';
+const SETTINGS_SYNC_DEBOUNCE_MS = 1200;
 
-const DEFAULTS = {
+export const DEFAULT_SETTINGS = {
   accentColor: THEMES[0].color,
   glassBlur: 24,
   hapticFeedback: true,
@@ -30,8 +33,10 @@ const DEFAULTS = {
   activeProfileId: '',
 };
 
-const migrateStoredSettings = (stored: Partial<typeof DEFAULTS> & Record<string, unknown>): typeof DEFAULTS => {
-  const merged = { ...DEFAULTS, ...stored } as typeof DEFAULTS & Record<string, unknown>;
+export type AppSettings = typeof DEFAULT_SETTINGS;
+
+const migrateStoredSettings = (stored: Partial<AppSettings> & Record<string, unknown>): AppSettings => {
+  const merged = { ...DEFAULT_SETTINGS, ...stored } as AppSettings & Record<string, unknown>;
   merged.expressionViewMode = normalizeExpressionViewMode(
     merged.expressionViewMode as string | undefined
   );
@@ -80,19 +85,79 @@ const migrateStoredSettings = (stored: Partial<typeof DEFAULTS> & Record<string,
   delete merged.invoiceSwitcherGridCols;
   delete merged.invoiceSwitcherGridDensity;
 
-  return merged as typeof DEFAULTS;
+  return merged as AppSettings;
 };
 
-export const useSettings = () => {
-  const [settings, setSettings] = useState<typeof DEFAULTS>(() =>
-    migrateStoredSettings(storage.get(SETTINGS_KEY, DEFAULTS))
+interface UseSettingsOptions {
+  userId?: string | null;
+  authReady?: boolean;
+}
+
+export const useSettings = (options: UseSettingsOptions = {}) => {
+  const { userId = null, authReady = false } = options;
+  const [settings, setSettings] = useState<AppSettings>(() =>
+    migrateStoredSettings(storage.get(SETTINGS_KEY, DEFAULT_SETTINGS))
   );
   const [systemTheme, setSystemTheme] = useState(getSystemTheme);
+  const settingsHydratedRef = useRef(false);
+  const settingsHydratingRef = useRef(false);
+  const settingsSyncTimerRef = useRef<number | null>(null);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+
+  useEffect(() => {
+    settingsHydratedRef.current = false;
+    settingsHydratingRef.current = false;
+  }, [userId]);
+
+  useEffect(() => {
+    if (!authReady || !userId || !isCloudBackendEnabled()) return;
+
+    let cancelled = false;
+    settingsHydratingRef.current = true;
+
+    void fetchSettingsFromSupabase(userId)
+      .then((remote) => {
+        if (cancelled) return;
+        if (remote) {
+          setSettings((prev) => migrateStoredSettings({ ...prev, ...remote }));
+        } else {
+          return syncSettingsToSupabase(userId, settingsRef.current);
+        }
+      })
+      .catch((error) => console.error('[iCalc sync] settings hydrate failed', error))
+      .finally(() => {
+        if (!cancelled) {
+          settingsHydratingRef.current = false;
+          settingsHydratedRef.current = true;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, userId]);
 
   useEffect(() => {
     storage.set(SETTINGS_KEY, settings);
     document.documentElement.style.fontSize = `${(settings.uiScale || 1) * 100}%`;
   }, [settings]);
+
+  useEffect(() => {
+    if (!authReady || !userId || !isCloudBackendEnabled()) return;
+    if (!settingsHydratedRef.current || settingsHydratingRef.current) return;
+
+    if (settingsSyncTimerRef.current) window.clearTimeout(settingsSyncTimerRef.current);
+    settingsSyncTimerRef.current = window.setTimeout(() => {
+      void syncSettingsToSupabase(userId, settingsRef.current).catch((error) =>
+        console.error('[iCalc sync] settings save failed', error)
+      );
+    }, SETTINGS_SYNC_DEBOUNCE_MS);
+
+    return () => {
+      if (settingsSyncTimerRef.current) window.clearTimeout(settingsSyncTimerRef.current);
+    };
+  }, [authReady, userId, settings]);
 
   useEffect(() => {
     const resolved = settings.themeMode === 'system' ? systemTheme : settings.themeMode;
