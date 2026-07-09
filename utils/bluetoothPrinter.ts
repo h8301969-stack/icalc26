@@ -850,17 +850,17 @@ export class BLEPrinter {
 
     const rule = '-'.repeat(Math.floor(spec.maxCols * 0.95));
 
-    ctx.font = 'bold 20px "Courier New", monospace';
+    ctx.font = '700 20px Montserrat, Candara';
     ctx.textAlign = 'center';
     ctx.fillText(truncateReceiptText(invoiceName.toUpperCase(), spec.maxInvoiceTitleChars), width / 2, 10);
 
-    ctx.font = '12px "Courier New", monospace';
+    ctx.font = '300 12px Montserrat, Candara';
     ctx.fillText('iCalc Spatial POS Receipt', width / 2, 35);
     if (attendantName) {
       ctx.fillText(`Served by: ${truncateReceiptText(attendantName, spec.maxCols - 11)}`, width / 2, 50);
     }
 
-    ctx.font = '14px "Courier New", monospace';
+    ctx.font = '300 14px Montserrat, Candara';
     ctx.fillText(rule, width / 2, attendantName ? 68 : 68);
 
     let currentY = 85;
@@ -876,7 +876,7 @@ export class BLEPrinter {
         );
 
         ctx.textAlign = 'left';
-        ctx.font = 'bold 13px "Courier New", monospace';
+        ctx.font = '500 13px Montserrat, Candara';
         ctx.fillText(displayName, 8, currentY);
 
         ctx.textAlign = 'right';
@@ -887,17 +887,17 @@ export class BLEPrinter {
     }
 
     ctx.textAlign = 'center';
-    ctx.font = '14px "Courier New", monospace';
+    ctx.font = '300 14px Montserrat, Candara';
     ctx.fillText(rule, width / 2, currentY);
     currentY += 15;
 
     ctx.textAlign = 'right';
-    ctx.font = 'bold 16px "Courier New", monospace';
+    ctx.font = '700 16px Montserrat, Candara';
     ctx.fillText(`TOTAL: ${currency}${runningTotal.toFixed(2)}`, width - 8, currentY);
     currentY += 25;
 
     ctx.textAlign = 'center';
-    ctx.font = 'italic 12px "Courier New", monospace';
+    ctx.font = 'italic 300 12px Montserrat, Candara';
     ctx.fillText('Thank you for', width / 2, currentY);
     ctx.fillText('your purchase!', width / 2, currentY + 15);
 

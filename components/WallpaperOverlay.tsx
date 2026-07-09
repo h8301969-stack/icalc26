@@ -21,19 +21,10 @@ const BrandHeader: React.FC = () => (
       />
     </div>
     <div
-      className="text-5xl leading-none tracking-tighter"
-      style={{
-        fontWeight: 810,
-        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif',
-      }}
+      className="font-brand text-5xl leading-none tracking-tighter font-black"
       aria-label="iCalc 26"
     >
-      <span
-        className="italic text-white"
-        style={{ fontFamily: 'Georgia, "Times New Roman", cursive' }}
-      >
-        i
-      </span>
+      <span className="italic text-white font-bold">i</span>
       <span className="text-black">Calc</span>
       <span className="unlock-brand-26">26</span>
     </div>

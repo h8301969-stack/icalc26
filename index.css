@@ -1,9 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: Candara, "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-text: Candara, "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-num: Montserrat, Candara, "Segoe UI", system-ui, sans-serif;
+  /* UI/body: Candara. Numbers/brand/mono: Montserrat (weights 300–900). */
+  --font-sans: Candara, "Montserrat";
+  --font-text: Candara, "Montserrat";
+  --font-num: "Montserrat", Candara;
+  --font-brand: "Montserrat", Candara;
+  --font-mono: "Montserrat", Candara;
   
   --animate-ripple: ripple 0.6s linear;
   --animate-fade-in: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -253,6 +256,10 @@ body {
   font-family: var(--font-text);
 }
 
+.font-brand {
+  font-family: var(--font-brand);
+}
+
 .font-num,
 .tabular-nums {
   font-family: var(--font-num);
@@ -271,9 +278,27 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.font-num-semibold {
+  font-family: var(--font-num);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .font-num-bold {
   font-family: var(--font-num);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-num-heavy {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-num-black {
+  font-family: var(--font-num);
+  font-weight: 900;
   font-variant-numeric: tabular-nums;
 }
 
@@ -509,12 +534,18 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   font-weight: 900;
 }
 
-/* App-wide hint / helper subtext */
+/* App-wide hint / helper subtext — Candara */
 .app-subtext {
   font-family: var(--font-text);
   font-size: 0.75rem;
   font-weight: 800;
   line-height: 1.35;
+}
+
+/* Codes / mono-style UI — Montserrat tabular */
+.font-mono {
+  font-family: var(--font-mono) !important;
+  font-variant-numeric: tabular-nums;
 }
 
 
@@ -619,8 +650,10 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   height: min(calc(min(168px, 48vw, 192px) * 13 / 6), calc(100dvh - 7.5rem));
 }
 .invoice-receipt-line {
-  font-family: "Courier New", Courier, monospace;
+  font-family: var(--font-num);
+  font-weight: 300;
   letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Fallback when Screen Orientation API cannot lock on mobile */

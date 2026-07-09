@@ -68,13 +68,13 @@ export const renderInvoiceShareImage = (
   ctx.textAlign = 'center';
   ctx.fillStyle = '#000000';
 
-  ctx.font = '600 22px Montserrat, Candara, sans-serif';
+  ctx.font = '600 22px Montserrat, Candara';
   ctx.fillText(invoiceName, CANVAS_WIDTH / 2, y);
   y += 52;
 
   if (isFull && items.length > 0) {
     ctx.textAlign = 'left';
-    ctx.font = '500 14px Montserrat, Candara, sans-serif';
+    ctx.font = '300 14px Montserrat, Candara';
     items.forEach((item, index) => {
       ctx.fillText(formatItemLine(item, index, currency), 48, y);
       y += 28;
@@ -83,26 +83,26 @@ export const renderInvoiceShareImage = (
     ctx.textAlign = 'center';
   }
 
-  ctx.font = '700 44px Montserrat, Candara, sans-serif';
+  ctx.font = '700 44px Montserrat, Candara';
   ctx.fillText(formatShareTotal(total, currency), CANVAS_WIDTH / 2, y);
   y += 72;
 
   if (attendant) {
     const prefix = 'served by ';
     const name = attendant;
-    ctx.font = 'italic 300 14px Montserrat, Candara, sans-serif';
+    ctx.font = 'italic 300 14px Montserrat, Candara';
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     const prefixWidth = ctx.measureText(prefix).width;
-    ctx.font = '700 13px Montserrat, Candara, sans-serif';
+    ctx.font = '700 13px Montserrat, Candara';
     const nameWidth = ctx.measureText(name).width;
     const totalWidth = prefixWidth + nameWidth;
     const startX = (CANVAS_WIDTH - totalWidth) / 2;
 
     ctx.textAlign = 'left';
-    ctx.font = 'italic 300 14px Montserrat, Candara, sans-serif';
+    ctx.font = 'italic 300 14px Montserrat, Candara';
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillText(prefix, startX, y);
-    ctx.font = '700 13px Montserrat, Candara, sans-serif';
+    ctx.font = '700 13px Montserrat, Candara';
     ctx.fillStyle = '#000000';
     ctx.fillText(name, startX + prefixWidth, y);
     ctx.textAlign = 'center';

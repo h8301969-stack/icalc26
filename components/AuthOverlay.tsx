@@ -558,8 +558,8 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         <div className={`unlock-logo-wrap shrink-0 w-12 h-12 sm:w-14 sm:h-14 ${isLoading ? 'auth-loading-logo' : ''}`}>
           <img src={icalcLogo} alt="iCalc logo" className="w-full h-full object-cover" draggable={false} />
         </div>
-        <div className="text-4xl sm:text-5xl leading-none tracking-tighter font-black" aria-label="iCalc 26">
-          <span className="italic text-white" style={{ fontFamily: 'Georgia, "Times New Roman", cursive' }}>i</span>
+        <div className="font-brand text-4xl sm:text-5xl leading-none tracking-tighter font-black" aria-label="iCalc 26">
+          <span className="italic text-white font-bold">i</span>
           <span className={isLight ? 'text-black' : 'text-white'}>Calc</span>
           <span className="unlock-brand-26">26</span>
         </div>

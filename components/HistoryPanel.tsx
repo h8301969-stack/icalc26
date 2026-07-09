@@ -928,7 +928,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           style={{ touchAction: 'pan-y' }}
         >
           {isSummaryReceipt ? (
-            <div className={`text-center font-bold tabular-nums ${compact ? 'text-lg' : 'text-2xl'}`} style={{ fontFamily: 'Montserrat, Candara, sans-serif' }}>
+            <div className={`text-center font-num-bold tabular-nums ${compact ? 'text-lg' : 'text-2xl'}`}>
               {currency}{card.total}
             </div>
           ) : card.items.length === 0 ? (

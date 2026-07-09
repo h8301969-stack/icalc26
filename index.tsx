@@ -1,8 +1,15 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+/* Montserrat for numbers/brand; Candara for body/UI text */
 import '@fontsource/montserrat/latin-300.css';
+import '@fontsource/montserrat/latin-300-italic.css';
+import '@fontsource/montserrat/latin-400.css';
 import '@fontsource/montserrat/latin-500.css';
+import '@fontsource/montserrat/latin-600.css';
 import '@fontsource/montserrat/latin-700.css';
+import '@fontsource/montserrat/latin-700-italic.css';
+import '@fontsource/montserrat/latin-800.css';
+import '@fontsource/montserrat/latin-900.css';
 import App from './App';
 import './index.css';
 
