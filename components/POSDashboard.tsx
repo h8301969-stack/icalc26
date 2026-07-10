@@ -307,7 +307,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const restockDragAxis = useRef<'none' | 'x' | 'y'>('none');
   const restockStageRef = useRef<HTMLDivElement>(null);
   const [showSuppliersPanel, setShowSuppliersPanel] = useState(false);
-  const restockAppliedRef = useRef(false);
 
   // Keyboard accessibility: close on Escape
   useEffect(() => {
@@ -873,7 +872,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     setRestockLineItems([]);
     setRestockComposeQuery('');
     setRestockFreeNotes('');
-    restockAppliedRef.current = false;
   }, []);
 
   const openRestockPopup = useCallback(() => {
@@ -884,7 +882,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     setRestockFreeNotes('');
     setNewRestockTitle('');
     setRestockComposeQuery('');
-    restockAppliedRef.current = false;
     setShowAddRestockPopup(true);
   }, []);
 
@@ -897,7 +894,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       setRestockFreeNotes(freeNotes);
       setNewRestockTitle(note.title);
       setRestockComposeQuery('');
-      restockAppliedRef.current = false;
       setShowAddRestockPopup(true);
     },
     [items]
@@ -923,81 +919,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     ]
   );
 
-  const registerSupplier = useCallback((name: string, total: number, productIds: string[]) => {
-    const trimmed = name.trim() || 'Unknown supplier';
-    const now = Date.now();
-    setSuppliers((prev) => {
-      const key = trimmed.toLowerCase();
-      const existingIdx = prev.findIndex((s) => s.name.toLowerCase() === key);
-      if (existingIdx >= 0) {
-        const existing = prev[existingIdx];
-        const mergedIds = [...new Set([...existing.productIds, ...productIds])];
-        const updated: SupplierRecord = {
-          ...existing,
-          lastReceivedAt: now,
-          totalItemsReceived: existing.totalItemsReceived + total,
-          productIds: mergedIds,
-        };
-        const next = [...prev];
-        next[existingIdx] = updated;
-        return next.sort((a, b) => b.lastReceivedAt - a.lastReceivedAt);
-      }
-      return [
-        { id: `supplier-${now}`, name: trimmed, lastReceivedAt: now, totalItemsReceived: total, productIds },
-        ...prev,
-      ].sort((a, b) => b.lastReceivedAt - a.lastReceivedAt);
-    });
-  }, [setSuppliers]);
-
-  const applyRestockToInventory = useCallback((supplierName: string) => {
-    if (restockLineItems.length === 0 || restockAppliedRef.current) return;
-    const title = supplierName.trim() || 'Restock batch';
-    const now = Date.now();
-    const total = restockLineItems.reduce((s, l) => s + l.qty, 0);
-
-    setItems((prev) =>
-      prev.map((item) => {
-        const line = restockLineItems.find((l) => l.itemId === item.id);
-        if (!line) return item;
-        return {
-          ...item,
-          stock: item.stock + line.qty,
-          lastStocked: new Date(now).toISOString(),
-          supplier: title,
-          activities: [
-            {
-              id: `${now}-${item.id}`,
-              type: 'restock' as const,
-              action: `Received ${line.qty} items from "${title}"`,
-              time: 'Just now',
-              timestamp: now,
-              profileName: activeProfileName,
-            },
-            ...item.activities,
-          ],
-        };
-      })
-    );
-
-    registerSupplier(title, total, restockLineItems.map((l) => l.itemId));
-    restockAppliedRef.current = true;
-  }, [restockLineItems, setItems, registerSupplier, activeProfileName]);
-
-  const updateRestock = useCallback(() => {
-    if (restockLineItems.length === 0) return;
-    const supplierName = newRestockTitle.trim() || 'Restock batch';
-    applyRestockToInventory(supplierName);
-    setRestockCreatedStamp(formatCreatedStamp());
-  }, [restockLineItems, newRestockTitle, applyRestockToInventory]);
-
   const saveRestockNote = useCallback(() => {
     if (restockLineItems.length === 0) return;
     const title = newRestockTitle.trim() || 'Restock batch';
     const now = Date.now();
-
-    if (!editingRestockId) {
-      applyRestockToInventory(title);
-    }
 
     const snapshot = buildRestockNotesSnapshot(restockLineItems, restockFreeNotes);
     if (editingRestockId) {
@@ -1028,7 +953,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     restockFreeNotes,
     editingRestockId,
     closeRestockPopup,
-    applyRestockToInventory,
     setRestocks,
   ]);
 
@@ -2850,6 +2774,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   onFreeNotesChange={setRequestFreeNotes}
                   accentClass={isLight ? 'text-emerald-600' : 'text-emerald-400'}
                   emptyHint="Type to add products…"
+                  showUpdateButton
                 />
               </div>
             </div>
@@ -3008,21 +2933,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   onFreeNotesChange={setRestockFreeNotes}
                   accentClass={isLight ? 'text-amber-600' : 'text-amber-400'}
                   emptyHint="Type to add products…"
-                  footer={
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={updateRestock}
-                        disabled={restockLineItems.length === 0}
-                        className={`px-5 py-2.5 rounded-full font-black text-xs tracking-[0.2em] uppercase active:scale-95 transition-all disabled:opacity-40 ${
-                          isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
-                        }`}
-                        aria-label="Update restock time and apply inventory"
-                      >
-                        Update
-                      </button>
-                    </div>
-                  }
+                  showUpdateButton
                 />
               </div>
             </div>

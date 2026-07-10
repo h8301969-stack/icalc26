@@ -28,7 +28,7 @@ export interface InventoryNotepadProps {
   freeNotesPlaceholder?: string;
   accentClass: string;
   timestampLabel?: string;
-  footer?: React.ReactNode;
+  showUpdateButton?: boolean;
   emptyHint?: string;
 }
 
@@ -44,7 +44,7 @@ const InventoryNotepad: React.FC<InventoryNotepadProps> = ({
   freeNotesPlaceholder = 'Optional notes...',
   accentClass,
   timestampLabel,
-  footer,
+  showUpdateButton = true,
   emptyHint = 'Type to search products…',
 }) => {
   const composeRef = useRef<HTMLInputElement>(null);
@@ -83,6 +83,26 @@ const InventoryNotepad: React.FC<InventoryNotepadProps> = ({
     [lineItems, onLineItemsChange, onComposeQueryChange]
   );
 
+  const commitCompose = useCallback(() => {
+    const q = composeQuery.trim();
+    if (!q) return false;
+    if (suggestions.length > 0) {
+      addProduct(suggestions[highlightIdx] ?? suggestions[0]);
+      return true;
+    }
+    const exact = items.find((item) => item.name.toLowerCase() === q.toLowerCase());
+    if (exact) {
+      addProduct(exact);
+      return true;
+    }
+    const partial = getInventorySuggestions(items, q, 1)[0];
+    if (partial) {
+      addProduct(partial);
+      return true;
+    }
+    return false;
+  }, [addProduct, composeQuery, highlightIdx, items, suggestions]);
+
   const updateLineQty = useCallback(
     (itemId: string, raw: string) => {
       const parsed = Math.max(1, Math.round(parseFloat(raw) || 1));
@@ -106,9 +126,7 @@ const InventoryNotepad: React.FC<InventoryNotepadProps> = ({
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (suggestions.length > 0) {
-        addProduct(suggestions[highlightIdx] ?? suggestions[0]);
-      }
+      commitCompose();
       return;
     }
     if (e.key === 'Escape') {
@@ -122,6 +140,9 @@ const InventoryNotepad: React.FC<InventoryNotepadProps> = ({
 
   const textMain = isLight ? 'text-zinc-800' : 'text-zinc-200';
   const textMuted = isLight ? 'text-zinc-600' : 'text-zinc-400';
+  const composeFieldClass = isLight
+    ? 'bg-white/75 text-white placeholder:text-white/55'
+    : 'bg-white/12 text-white placeholder:text-white/45';
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -161,55 +182,6 @@ const InventoryNotepad: React.FC<InventoryNotepadProps> = ({
         )}
       </div>
 
-      <div className="px-5 py-2 shrink-0 relative">
-        <input
-          ref={composeRef}
-          type="text"
-          value={composeQuery}
-          onChange={(e) => onComposeQueryChange(e.target.value)}
-          onKeyDown={handleComposeKeyDown}
-          placeholder="Type product name…"
-          className={`w-full bg-transparent outline-none text-base leading-7 font-medium placeholder:opacity-30 ${textMain}`}
-          style={{ lineHeight: '28px' }}
-          aria-label="Add product"
-          aria-autocomplete="list"
-          aria-expanded={suggestions.length > 0}
-        />
-        {suggestions.length > 0 && (
-          <div
-            className={`absolute left-5 right-5 bottom-full mb-1 max-h-44 overflow-y-auto rounded-xl border shadow-lg z-10 custom-scrollbar ${
-              isLight ? 'bg-white border-black/10 text-black' : 'bg-[#1c1c1e] border-white/15 text-white'
-            }`}
-            role="listbox"
-          >
-            {suggestions.map((item, idx) => (
-              <button
-                key={item.id}
-                type="button"
-                role="option"
-                aria-selected={idx === highlightIdx}
-                onMouseEnter={() => setHighlightIdx(idx)}
-                onClick={() => addProduct(item)}
-                className={`w-full text-left px-4 py-2.5 text-sm font-bold transition-colors ${
-                  idx === highlightIdx
-                    ? isLight
-                      ? 'bg-black/8'
-                      : 'bg-white/12'
-                    : isLight
-                      ? 'hover:bg-black/5'
-                      : 'hover:bg-white/8'
-                }`}
-              >
-                {item.name}
-                {item.category && (
-                  <span className={`ml-2 text-[10px] font-black opacity-50`}>{item.category}</span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
       {onFreeNotesChange && (
         <div className="px-5 py-2 shrink-0">
           <textarea
@@ -230,7 +202,73 @@ const InventoryNotepad: React.FC<InventoryNotepadProps> = ({
           <span />
           <span className={`text-xl font-black tabular-nums text-right ${accentClass}`}>= {overallQty}</span>
         </div>
-        {footer}
+
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0 relative">
+            <input
+              ref={composeRef}
+              type="text"
+              value={composeQuery}
+              onChange={(e) => onComposeQueryChange(e.target.value)}
+              onKeyDown={handleComposeKeyDown}
+              placeholder="Type product name…"
+              className={`w-full rounded-xl px-3 py-2.5 outline-none text-sm font-bold leading-7 ${composeFieldClass}`}
+              style={{
+                lineHeight: '28px',
+                textShadow: isLight ? '0 1px 2px rgba(0,0,0,0.35)' : undefined,
+              }}
+              aria-label="Add product"
+              aria-autocomplete="list"
+              aria-expanded={suggestions.length > 0}
+            />
+            {suggestions.length > 0 && (
+              <div
+                className={`absolute left-0 right-0 bottom-full mb-1 max-h-40 overflow-y-auto rounded-xl border shadow-lg z-10 custom-scrollbar ${
+                  isLight ? 'bg-white border-black/10 text-black' : 'bg-[#1c1c1e] border-white/15 text-white'
+                }`}
+                role="listbox"
+              >
+                {suggestions.map((item, idx) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="option"
+                    aria-selected={idx === highlightIdx}
+                    onMouseEnter={() => setHighlightIdx(idx)}
+                    onClick={() => addProduct(item)}
+                    className={`w-full text-left px-4 py-2.5 text-sm font-bold transition-colors ${
+                      idx === highlightIdx
+                        ? isLight
+                          ? 'bg-black/8'
+                          : 'bg-white/12'
+                        : isLight
+                          ? 'hover:bg-black/5'
+                          : 'hover:bg-white/8'
+                    }`}
+                  >
+                    {item.name}
+                    {item.category && (
+                      <span className="ml-2 text-[10px] font-black opacity-50">{item.category}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {showUpdateButton && (
+            <button
+              type="button"
+              onClick={commitCompose}
+              disabled={!composeQuery.trim()}
+              className={`shrink-0 px-5 py-2.5 rounded-full font-black text-xs tracking-[0.2em] uppercase active:scale-95 transition-all disabled:opacity-40 ${
+                isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+              }`}
+              aria-label="Add product to list"
+            >
+              Update
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -103,7 +103,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const [isSharing, setIsSharing] = useState(false);
   const [attendantPickerInvoice, setAttendantPickerInvoice] = useState<string | null>(null);
   const [receiptPaperWidth, setReceiptPaperWidth] = useState<PaperWidth>(() => printerInstance.paperWidth);
-  const [printMode, setPrintMode] = useState<'image' | 'text'>('image');
   const [wallpaperSlide, setWallpaperSlide] = useState(0);
   const wallpaperSlides = wallpapers.length > 0 ? wallpapers : [{ image: '' }];
 
@@ -223,24 +222,14 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         });
       }
 
-      const ok =
-        printMode === 'text'
-          ? await printerInstance.printInvoice(
-              printCard.name,
-              items,
-              numericTotal,
-              currency,
-              attendant,
-              shareReceiptSettings.layoutMode
-            )
-          : await printerInstance.printInvoiceImage(
-              printCard.name,
-              items,
-              numericTotal,
-              currency,
-              attendant,
-              shareReceiptSettings.layoutMode
-            );
+      const ok = await printerInstance.printInvoiceImage(
+        printCard.name,
+        items,
+        numericTotal,
+        currency,
+        attendant,
+        shareReceiptSettings.layoutMode
+      );
 
       if (ok) {
         logReceiptPrint('success', {
@@ -261,7 +250,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       });
       return { ok: false, errors: ['Printer busy or print aborted.'] };
     },
-    [currency, getAttendantForInvoice, printMode, resolvePrintCard, shareReceiptSettings.layoutMode]
+    [currency, getAttendantForInvoice, resolvePrintCard, shareReceiptSettings.layoutMode]
   );
 
   const handleShareClick = useCallback(
@@ -1085,29 +1074,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           >
             {attendant}
           </button>
-
-          <div className="invoice-switcher-card__print-mode shrink-0" role="group" aria-label="Print mode">
-            <button
-              type="button"
-              data-active={printMode === 'text'}
-              onClick={(e) => { e.stopPropagation(); setPrintMode('text'); }}
-              onPointerDown={(e) => e.stopPropagation()}
-              aria-pressed={printMode === 'text'}
-              title="Print raw ESC/POS text"
-            >
-              Text
-            </button>
-            <button
-              type="button"
-              data-active={printMode === 'image'}
-              onClick={(e) => { e.stopPropagation(); setPrintMode('image'); }}
-              onPointerDown={(e) => e.stopPropagation()}
-              aria-pressed={printMode === 'image'}
-              title="Print raster image receipt"
-            >
-              Image
-            </button>
-          </div>
 
           <button
             type="button"

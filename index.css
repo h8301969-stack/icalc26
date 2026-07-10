@@ -557,6 +557,12 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .vision-hub-shell--active {
   box-shadow: 0 40px 100px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
+.vision-hub-shell--drawer-open {
+  overflow: hidden;
+}
+.vision-hub-panel {
+  isolation: isolate;
+}
 .vision-hub-toast {
   position: absolute;
   left: 50%;
@@ -584,27 +590,32 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .vision-hub-drawer-stage {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
   gap: 0.85rem;
-  min-height: 13.5rem;
-  overflow: visible;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 .vision-hub-drawer__inner--focused .vision-hub-drawer-stage {
-  min-height: 14.5rem;
+  min-height: 0;
 }
 .vision-hub-invoice-strip {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  max-height: 13.5rem;
+  flex: 1;
+  min-height: 0;
+  max-height: 100%;
   overflow-y: auto;
-  overflow-x: visible;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   min-width: 8.25rem;
   max-width: 13.5rem;
-  flex-shrink: 0;
+  flex-shrink: 1;
   position: relative;
   z-index: 10;
+  -webkit-overflow-scrolling: touch;
 }
 .vision-hub-focused-slot {
   position: absolute;
@@ -623,11 +634,18 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   inset: 0;
   z-index: 4;
 }
+.vision-hub-drawer {
+  min-height: 0;
+}
 .vision-hub-drawer--open {
-  overflow: visible;
+  overflow: hidden;
 }
 .vision-hub-drawer__inner {
-  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 .pos-dashboard-shell--light .vision-hub-drawer__inner {
   color: #fff;
@@ -664,7 +682,6 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .vision-hub-drawer-stage--dragging .vision-hub-invoice-strip,
 .vision-hub-drawer-stage--dragging .vision-hub-focused-slot {
   z-index: 30;
-  overflow: visible;
 }
 .vision-hub-drawer-stage--dragging .vision-hub-drag-hint {
   z-index: 1;
@@ -707,6 +724,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   position: relative;
   z-index: 60;
   cursor: grabbing;
+  max-width: 100%;
 }
 .vision-hub-invoice-row--carried {
   box-shadow:
@@ -994,17 +1012,17 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 }
 
 /* Vision Hub — click mode drawer */
-.vision-hub-drawer--click {
-  overflow: hidden;
-}
+.vision-hub-drawer--click,
 .vision-hub-drawer--click.vision-hub-drawer--open {
-  overflow: visible;
+  overflow: hidden;
 }
 .vision-hub-drawer__inner--click {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 .vision-hub-click-toolbar {
   display: flex;
@@ -1018,10 +1036,13 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   flex-direction: column;
   gap: 0.45rem;
   width: 100%;
-  max-height: 15.5rem;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   padding-right: 0.15rem;
+  -webkit-overflow-scrolling: touch;
 }
 .vision-hub-click-row {
   display: flex;
@@ -1089,6 +1110,10 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   gap: 0.85rem;
   width: 100%;
   padding: 0.35rem 0 0.5rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .vision-hub-invoice-row--click {
   width: 100%;
@@ -1405,27 +1430,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   align-items: center;
   gap: 0.45rem;
 }
-.invoice-switcher-card__print-mode {
-  display: flex;
-  border-radius: 999px;
-  padding: 2px;
-  background: rgba(0, 0, 0, 0.06);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-}
-.invoice-switcher-card__print-mode button {
-  font-size: 0.55rem;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 0.35rem 0.55rem;
-  border-radius: 999px;
-  transition: all 0.15s ease;
-}
-.invoice-switcher-card__print-mode button[data-active='true'] {
-  background: #0a0a0a;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
-}
+
 
 /* Fallback when Screen Orientation API cannot lock on mobile */
 .calc-force-landscape {
