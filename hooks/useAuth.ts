@@ -132,10 +132,6 @@ export const useAuth = () => {
       error:
         'Supabase is not connected. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to .env.local (project folder), then stop and restart npm run dev. On a live site, set the same vars in your host (e.g. Vercel) and redeploy.',
     };
-    persistLocalSession(result.account);
-    setAccount(result.account);
-    setIsAuthenticated(true);
-    return { account: result.account };
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {

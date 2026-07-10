@@ -3,6 +3,7 @@ import { HistoryItem, InvoiceActionLog, InvoicePrintLog, POSRequest, RestockNote
 import { InventoryItem, PurchaseRecord } from './usePOS';
 import { isCloudBackendEnabled } from '../utils/supabase';
 
+import { FRESH_INVOICE_NAME } from '../utils/freshAppSession';
 import {
   fetchCalcHistoryFromSupabase,
   fetchInventoryFromSupabase,
@@ -140,55 +141,49 @@ export const useSupabaseDataSync = ({
               return { ...remote, image };
             })
           );
-        } else if (inventoryRef.current.length > 0) {
-          const synced = await syncInventoryToSupabase(userId, inventoryRef.current);
-          if (!cancelled) setInventory(synced);
+        } else if (!cancelled) {
+          setInventory([]);
         }
 
         if (remoteHistory?.length) {
           setHistory(remoteHistory);
-        } else if (historyRef.current.length > 0) {
-          const synced = await syncCalcHistoryToSupabase(userId, historyRef.current);
-          if (!cancelled) setHistory(synced);
+        } else if (!cancelled) {
+          setHistory([]);
         }
 
         if (remotePurchases?.length) {
           setPurchases(remotePurchases);
-        } else if (purchasesRef.current.length > 0) {
-          const synced = await syncPurchasesToSupabase(userId, purchasesRef.current);
-          if (!cancelled) setPurchases(synced);
+        } else if (!cancelled) {
+          setPurchases([]);
         }
 
         if (remoteSuppliers?.length) {
           setSuppliers(remoteSuppliers);
-        } else if (suppliersRef.current.length > 0) {
-          const synced = await syncSuppliersToSupabase(userId, suppliersRef.current);
-          if (!cancelled) setSuppliers(synced);
+        } else if (!cancelled) {
+          setSuppliers([]);
         }
 
         if (remoteRequests?.length) {
           setRequests(remoteRequests);
-        } else if (requestsRef.current.length > 0) {
-          const synced = await syncRequestsToSupabase(userId, requestsRef.current);
-          if (!cancelled) setRequests(synced);
+        } else if (!cancelled) {
+          setRequests([]);
         }
 
         if (remoteRestocks?.length) {
           setRestocks(remoteRestocks);
-        } else if (restocksRef.current.length > 0) {
-          const synced = await syncRestocksToSupabase(userId, restocksRef.current);
-          if (!cancelled) setRestocks(synced);
+        } else if (!cancelled) {
+          setRestocks([]);
         }
 
         if (remoteInvoice) {
           onInvoiceHydrated(remoteInvoice);
-        } else {
-          await syncInvoiceDataToSupabase(userId, {
-            invoiceName: invoiceRef.current.invoiceName,
-            expression: invoiceRef.current.expression,
-            pastLogs: invoiceRef.current.pastLogs,
-            printLogs: invoiceRef.current.printLogs,
-            savedInvoices: invoiceRef.current.getSavedInvoices(),
+        } else if (!cancelled) {
+          onInvoiceHydrated({
+            invoiceName: FRESH_INVOICE_NAME,
+            expression: '0',
+            pastLogs: [],
+            printLogs: [],
+            savedInvoices: [{ name: FRESH_INVOICE_NAME, expression: '0', isCurrent: true }],
           });
         }
       } catch (error) {

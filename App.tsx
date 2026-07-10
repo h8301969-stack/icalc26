@@ -49,6 +49,7 @@ import {
 } from './utils/expressionDisplay';
 import { CartLineItem, InvoiceActionLog, InvoicePrintLog, SavedInvoice } from './types';
 import { usePOSDashboardData } from './hooks/usePOSDashboardData';
+import { clearAppSessionData, FRESH_INVOICE_NAME, isCloudUserAccount } from './utils/freshAppSession';
 
 const AppContent: React.FC = () => {
   const {
@@ -206,7 +207,38 @@ const AppContent: React.FC = () => {
     syncProfiles(settingsProfiles, settingsActiveId);
   }, [account, settings.profiles, settings.activeProfileId, syncProfiles]);
 
+  const resetToFreshSession = useCallback(() => {
+    clearAppSessionData();
+    setItems([]);
+    setPurchases([]);
+    setSuppliers([]);
+    setRequests([]);
+    setRestocks([]);
+    setHistory([]);
+    hydrateInvoiceState({
+      invoiceName: FRESH_INVOICE_NAME,
+      pastLogs: [],
+      printLogs: [],
+      savedInvoices: [{ name: FRESH_INVOICE_NAME, expression: '0', isCurrent: true }],
+    });
+    setExpression('0');
+    setCursorPos(0);
+  }, [
+    hydrateInvoiceState,
+    setCursorPos,
+    setExpression,
+    setHistory,
+    setItems,
+    setPurchases,
+    setRequests,
+    setRestocks,
+    setSuppliers,
+  ]);
+
   const handleAuthSuccess = useCallback((acc: NonNullable<typeof account>) => {
+    if (isCloudUserAccount(acc.id)) {
+      resetToFreshSession();
+    }
     updateSettings({
       profiles: acc.profiles,
       activeProfileId: acc.activeProfileId,
@@ -214,7 +246,7 @@ const AppContent: React.FC = () => {
     triggerHaptic(2);
     setIsCalculatorEntering(true);
     setIsUnlocked(true);
-  }, [updateSettings, triggerHaptic]);
+  }, [resetToFreshSession, updateSettings, triggerHaptic]);
 
   const handleDevSkip = useCallback(async () => {
     return openDevAdminPortal();
