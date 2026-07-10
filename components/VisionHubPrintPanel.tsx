@@ -13,6 +13,12 @@ export interface HubInvoice {
   isPaid?: boolean;
 }
 
+export interface HubNotepadJob {
+  id: string;
+  title: string;
+  body: string;
+}
+
 export type VisionHubDrawerMode = 'drag' | 'click';
 
 interface VisionHubPrintPanelProps {
@@ -26,6 +32,8 @@ interface VisionHubPrintPanelProps {
   attendantName: string;
   drawerMode?: VisionHubDrawerMode;
   printDrawerEnabled?: boolean;
+  queuedNotepad?: HubNotepadJob | null;
+  onQueuedNotepadConsumed?: () => void;
   onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
   onInteractionChange?: (active: boolean) => void;
   onThemeToggle: () => void;
@@ -58,6 +66,8 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
   attendantName,
   drawerMode = 'drag',
   printDrawerEnabled = true,
+  queuedNotepad = null,
+  onQueuedNotepadConsumed,
   onInvoicePrinted,
   onInteractionChange,
   onThemeToggle,
@@ -168,6 +178,13 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
     }
   }, [printDrawerEnabled, expanded, collapseDrawer]);
 
+  useEffect(() => {
+    if (queuedNotepad && printDrawerEnabled) {
+      setExpanded(true);
+      setDragY(0);
+    }
+  }, [queuedNotepad, printDrawerEnabled]);
+
   const focusInvoice = useCallback((invoiceId: string) => {
     setFocusedInvoiceId(invoiceId);
   }, []);
@@ -195,6 +212,39 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
     },
     [attendantName, currency]
   );
+
+  const runNotepadPrint = useCallback(async () => {
+    if (!printDrawerEnabled || !queuedNotepad || isPrinting) return;
+    setIsPrinting(true);
+    try {
+      const connected =
+        printerInstance.isConnected || (await printerInstance.ensureConnected());
+      if (!connected) {
+        showReconnectPrompt();
+        setPrinterModalOpen(true);
+        return;
+      }
+      const ok = await printerInstance.printNotepadImage(
+        queuedNotepad.title,
+        queuedNotepad.body,
+        attendantName
+      );
+      if (ok) {
+        showPrintSuccess();
+        onQueuedNotepadConsumed?.();
+      }
+    } finally {
+      setIsPrinting(false);
+    }
+  }, [
+    attendantName,
+    isPrinting,
+    onQueuedNotepadConsumed,
+    printDrawerEnabled,
+    queuedNotepad,
+    showPrintSuccess,
+    showReconnectPrompt,
+  ]);
 
   const runPrint = useCallback(
     async (invoice: HubInvoice) => {
@@ -330,6 +380,31 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
     </button>
   );
 
+  const renderQueuedNotepadBlock = () => {
+    if (!queuedNotepad) return null;
+    return (
+      <div
+        className="vision-hub-notepad-queue mb-4 p-4 rounded-2xl border border-current/12 bg-black/5"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <p className="text-sm font-black tracking-tight truncate">{queuedNotepad.title}</p>
+        <pre className="text-[11px] font-medium leading-relaxed whitespace-pre-wrap opacity-75 max-h-36 overflow-y-auto mt-2 custom-scrollbar">
+          {queuedNotepad.body}
+        </pre>
+        <button
+          type="button"
+          onClick={() => void runNotepadPrint()}
+          disabled={isPrinting}
+          className="mt-3 w-full py-3 rounded-full font-black text-xs uppercase tracking-[0.2em] active:scale-95 disabled:opacity-50 text-black"
+          style={{ backgroundColor: accentColor }}
+        >
+          Print notepad
+        </button>
+      </div>
+    );
+  };
+
   const renderClickDrawer = () => {
     const focusedInvoice = invoices.find((inv) => inv.id === focusedInvoiceId) ?? null;
 
@@ -341,6 +416,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
         onClick={handleDrawerBackgroundClick}
         onPointerDown={(e) => e.stopPropagation()}
       >
+        {renderQueuedNotepadBlock()}
         <div className="vision-hub-click-toolbar">
           {renderPrinterStatusButton()}
           {printSuccess ? (
@@ -426,6 +502,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
       onClick={handleDrawerBackgroundClick}
       onPointerDown={(e) => e.stopPropagation()}
     >
+      {renderQueuedNotepadBlock()}
       {invoices.length === 0 ? (
         <p className="pos-subtext text-[10px] opacity-45 py-8 text-center">No invoices yet</p>
       ) : (

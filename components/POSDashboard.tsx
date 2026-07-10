@@ -15,8 +15,13 @@ import { InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS
 import { isAdminProfile } from '../utils/auth';
 
 import SettingsPanel from './SettingsPanel';
-import VisionHubPrintPanel, { HubInvoice } from './VisionHubPrintPanel';
+import VisionHubPrintPanel, { HubInvoice, HubNotepadJob } from './VisionHubPrintPanel';
 import InventoryNotepad from './InventoryNotepad';
+import {
+  buildNotepadPrintBody,
+  buildNotepadPrintBodyFromNotes,
+  parseNotepadSnapshot,
+} from '../utils/notepadSnapshot';
 import { WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
 
 interface POSDashboardProps {
@@ -275,14 +280,17 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   // Requests feature states
   const [requestTab, setRequestTab] = useState<'pending' | 'delivered' | 'outofstock'>('pending');
   const [showAddRequestPopup, setShowAddRequestPopup] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<POSRequest | null>(null);
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  const [requestCreatedStamp, setRequestCreatedStamp] = useState('');
   const [newRequesterName, setNewRequesterName] = useState('');
   const [requestLineItems, setRequestLineItems] = useState<RestockLineItem[]>([]);
   const [requestComposeQuery, setRequestComposeQuery] = useState('');
   const [requestFreeNotes, setRequestFreeNotes] = useState('');
+  const [queuedNotepadPrint, setQueuedNotepadPrint] = useState<HubNotepadJob | null>(null);
 
   // Restock notepad states
   const [showAddRestockPopup, setShowAddRestockPopup] = useState(false);
+  const [editingRestockId, setEditingRestockId] = useState<string | null>(null);
   const [newRestockTitle, setNewRestockTitle] = useState('');
   const [restockCreatedStamp, setRestockCreatedStamp] = useState('');
   const [restockLineItems, setRestockLineItems] = useState<RestockLineItem[]>([]);
@@ -308,8 +316,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       if (e.key === 'Escape') {
         if (showAddRequestPopup) {
           closeRequestPopup();
-        } else if (selectedRequest) {
-          setSelectedRequest(null);
         } else if (showSuppliersPanel) {
           setShowSuppliersPanel(false);
         } else if (showAddRestockPopup) {
@@ -352,7 +358,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     return () => window.removeEventListener('keydown', onKey);
     // closeRestockPopup is stable (useCallback below); omit to avoid TDZ — handler calls it by reference at runtime
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, onClose, showAddRequestPopup, showAddRestockPopup, showSuppliersPanel, selectedRequest, namingUnidentified, actionLogsExpanded, selectedItem, requestsExpanded, restockExpanded, restockGridZoomed, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded]);
+  }, [isOpen, onClose, showAddRequestPopup, showAddRestockPopup, showSuppliersPanel, namingUnidentified, actionLogsExpanded, selectedItem, requestsExpanded, restockExpanded, restockGridZoomed, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded]);
 
   useEffect(() => {
     if (!canViewTransactions) {
@@ -700,30 +706,50 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       .sort((a, b) => b.timestamp - a.timestamp);
   }, [requests, requestTab]);
 
-  const addNewRequest = () => {
+  const queueNotepadPrint = useCallback(
+    (title: string, body: string) => {
+      if (!canViewTransactions) return;
+      setQueuedNotepadPrint({ id: `notepad-${Date.now()}`, title, body });
+      setRequestsExpanded(false);
+      setRestockExpanded(false);
+      setInventoryExpanded(false);
+      setPurchasesExpanded(false);
+    },
+    [canViewTransactions]
+  );
+
+  const saveRequest = () => {
     const requester = newRequesterName.trim();
     if (!requester || requestLineItems.length === 0) return;
     const notes = buildRestockNotesSnapshot(requestLineItems, requestFreeNotes);
     const { itemCount } = parseRequestTotals(notes);
-    const newReq: POSRequest = {
-      id: 'req-' + Date.now(),
-      requester,
-      notes,
-      status: 'pending',
-      timestamp: Date.now(),
-      itemCount,
-      total: 0,
-    };
-    setRequests(prev => [newReq, ...prev]);
-    setNewRequesterName('');
-    setRequestLineItems([]);
-    setRequestComposeQuery('');
-    setRequestFreeNotes('');
-    setShowAddRequestPopup(false);
+    if (editingRequestId) {
+      setRequests((prev) =>
+        prev.map((r) =>
+          r.id === editingRequestId
+            ? { ...r, requester, notes, itemCount, timestamp: Date.now() }
+            : r
+        )
+      );
+    } else {
+      const newReq: POSRequest = {
+        id: 'req-' + Date.now(),
+        requester,
+        notes,
+        status: 'pending',
+        timestamp: Date.now(),
+        itemCount,
+        total: 0,
+      };
+      setRequests((prev) => [newReq, ...prev]);
+    }
+    closeRequestPopup();
   };
 
   const closeRequestPopup = () => {
     setShowAddRequestPopup(false);
+    setEditingRequestId(null);
+    setRequestCreatedStamp('');
     setNewRequesterName('');
     setRequestLineItems([]);
     setRequestComposeQuery('');
@@ -731,12 +757,45 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   };
 
   const openRequestPopup = () => {
+    setEditingRequestId(null);
+    setRequestCreatedStamp(formatCreatedStamp());
     setNewRequesterName('');
     setRequestLineItems([]);
     setRequestComposeQuery('');
     setRequestFreeNotes('');
     setShowAddRequestPopup(true);
   };
+
+  const openRequestPopupForEdit = (req: POSRequest) => {
+    const { lineItems, freeNotes } = parseNotepadSnapshot(req.notes, items);
+    setEditingRequestId(req.id);
+    setRequestCreatedStamp(formatCreatedStamp(new Date(req.timestamp)));
+    setNewRequesterName(req.requester);
+    setRequestLineItems(lineItems);
+    setRequestFreeNotes(freeNotes);
+    setRequestComposeQuery('');
+    setShowAddRequestPopup(true);
+  };
+
+  const printRequestNotepad = useCallback(
+    (req?: POSRequest) => {
+      const title = (req?.requester ?? newRequesterName.trim()) || 'Request';
+      const stamp = req
+        ? formatCreatedStamp(new Date(req.timestamp))
+        : requestCreatedStamp || formatCreatedStamp();
+      const body = req
+        ? buildNotepadPrintBodyFromNotes(title, req.notes, stamp)
+        : buildNotepadPrintBody(title, requestLineItems, requestFreeNotes, stamp);
+      queueNotepadPrint(title, body);
+    },
+    [
+      newRequesterName,
+      queueNotepadPrint,
+      requestCreatedStamp,
+      requestFreeNotes,
+      requestLineItems,
+    ]
+  );
 
   const requestStatusClass = (status: RequestStatus) =>
     status === 'pending'
@@ -745,143 +804,70 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         ? 'bg-emerald-500/20 text-emerald-500'
         : 'bg-red-500/20 text-red-500';
 
-  const renderRequestRow = (req: POSRequest, idx: number, total: number) => (
+  const renderNotepadListRow = (
+    key: string,
+    title: string,
+    subtitle: string,
+    totalQty: number,
+    onOpen: () => void,
+    onPrint: () => void,
+    showPrint: boolean,
+    idx: number,
+    listLen: number,
+    accentQtyClass: string
+  ) => (
     <div
-      key={req.id}
-      className={`px-8 py-7 flex items-center justify-between gap-4 ${idx !== total - 1 ? 'border-b border-white/10' : ''}`}
+      key={key}
+      className={`flex items-center gap-3 px-8 py-6 ${idx !== listLen - 1 ? 'border-b border-white/10' : ''}`}
     >
-      <div className="min-w-0 flex-1">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex-1 min-w-0 text-left active:opacity-80 transition-opacity"
+        aria-label={`Open ${title}`}
+      >
+        <div className={`font-black tracking-tight text-lg truncate ${textColorClass}`}>{title}</div>
+        <p className={`pos-subtext text-[10px] font-black mt-1.5 ${cardSubtextMutedClass}`}>{subtitle}</p>
+        <div className={`mt-2 text-base font-black tabular-nums ${accentQtyClass}`}>= {totalQty}</div>
+      </button>
+      {showPrint && (
         <button
           type="button"
-          onClick={() => setSelectedRequest(req)}
-          className={`font-black tracking-tight text-lg text-left hover:opacity-75 active:scale-[0.99] transition-all ${textColorClass}`}
-          aria-label={`View request from ${req.requester}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPrint();
+          }}
+          className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+            isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+          }`}
+          aria-label={`Print ${title}`}
         >
-          {req.requester}
+          <Icons.Printer size={18} />
         </button>
-        <div className="flex items-center gap-1.5 mt-2">
-          <span className={`pos-subtext text-[10px] font-black ${cardSubtextClass}`}>No. of items</span>
-          <span className={`font-black text-base tabular-nums tracking-tight ${textColorClass}`}>
-            {req.itemCount}
-          </span>
-        </div>
-      </div>
-      <div className={`shrink-0 text-xs px-4 py-1 rounded-full font-black tracking-widest uppercase ${requestStatusClass(req.status)}`}>
-        {req.status}
-      </div>
+      )}
     </div>
   );
 
-  const renderRequestDetailModal = () => {
-    if (!selectedRequest) return null;
-    const req = selectedRequest;
-    const lines = parseRequestLines(req.notes);
-    const qtyTotal = lines.reduce((sum, line) => sum + line.qty, 0) || req.itemCount;
-
-    return (
-      <div className="fixed inset-0 z-[405] flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 pointer-events-auto" role="presentation">
-        <div
-          className={`absolute inset-0 transition-opacity duration-280 ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
-          onClick={() => setSelectedRequest(null)}
-          aria-hidden="true"
-        />
-        <div className="relative modal-portrait-6-13 opacity-100 scale-100 translate-y-0 transition-all duration-500">
-          <div
-            className={`absolute inset-0 flex flex-col rounded-[32px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.55)] ${
-              isLight ? 'bg-[#faf8f2] text-zinc-900' : 'bg-[#171614] text-zinc-100'
-            }`}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="request-detail-title"
-          >
-            <div
-              className="px-4 pt-4 pb-3 flex items-center gap-3 border-b shrink-0"
-              style={{ borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
-            >
-              <div className="flex-1 min-w-0">
-                <div className={`pos-subtext text-[10px] font-black mb-1 ${panelSubtextClass}`}>
-                  Request
-                </div>
-                <h3 id="request-detail-title" className={`text-lg font-black tracking-tight truncate ${isLight ? 'text-black' : 'text-white'}`}>
-                  {req.requester}
-                </h3>
-              </div>
-              <span className={`text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-widest shrink-0 ${requestStatusClass(req.status)}`}>
-                {req.status}
-              </span>
-              <button
-                type="button"
-                onClick={() => setSelectedRequest(null)}
-                className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all shrink-0 ${
-                  isLight ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white'
-                }`}
-                aria-label="Close request detail"
-              >
-                <Icons.X size={18} />
-              </button>
-            </div>
-
-            <div
-              className="flex-1 min-h-0 flex flex-col"
-              style={{
-                backgroundImage: isLight
-                  ? 'repeating-linear-gradient(transparent, transparent 27px, rgba(0,0,0,0.035) 27px, rgba(0,0,0,0.035) 28px)'
-                  : 'repeating-linear-gradient(transparent, transparent 27px, rgba(255,255,255,0.04) 27px, rgba(255,255,255,0.04) 28px)',
-              }}
-            >
-              <div className="px-5 pt-4 pb-2 shrink-0">
-                <p className={`pos-subtext text-sm font-bold select-none ${panelSubtextClass}`}>
-                  {formatCreatedStamp(new Date(req.timestamp))}
-                </p>
-                <p className={`pos-subtext text-[10px] font-black mt-1 tabular-nums italic ${panelSubtextClass}`}>
-                  {formatRequestElapsed(req.timestamp, currentTime)} ago
-                </p>
-              </div>
-
-              <div className="flex-1 min-h-0 overflow-y-auto px-5 custom-scrollbar">
-                {lines.length > 0 ? (
-                  <div className="space-y-1 pb-2">
-                    {lines.map((line, i) => (
-                      <div
-                        key={i}
-                        className={`grid items-center gap-3 text-base leading-7 font-medium ${isLight ? 'text-zinc-800' : 'text-zinc-200'}`}
-                        style={{ gridTemplateColumns: '1fr 4.5rem' }}
-                      >
-                        <span className="min-w-0 truncate">{line.label}</span>
-                        <span className={`text-right tabular-nums font-black ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>
-                          × {line.qty}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className={`text-sm leading-7 opacity-40 ${isLight ? 'text-zinc-800' : 'text-zinc-200'}`}>No items noted</p>
-                )}
-              </div>
-
-              <div
-                className="shrink-0 px-5 py-4 border-t"
-                style={{ borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
-              >
-                <div
-                  className="grid items-center gap-3"
-                  style={{ gridTemplateColumns: '1fr 4.5rem' }}
-                >
-                  <span />
-                  <span className={`text-xl font-black tabular-nums text-right ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>
-                    = {qtyTotal}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+  const renderRequestRow = (req: POSRequest, idx: number, total: number) => {
+    const qtyTotal = req.itemCount;
+    const subtitle = formatCreatedStamp(new Date(req.timestamp));
+    return renderNotepadListRow(
+      req.id,
+      req.requester,
+      subtitle,
+      qtyTotal,
+      () => openRequestPopupForEdit(req),
+      () => printRequestNotepad(req),
+      canViewTransactions,
+      idx,
+      total,
+      isLight ? 'text-emerald-600' : 'text-emerald-400'
     );
   };
 
   const closeRestockPopup = useCallback(() => {
     setShowAddRestockPopup(false);
+    setEditingRestockId(null);
     setNewRestockTitle('');
     setRestockCreatedStamp('');
     setRestockLineItems([]);
@@ -890,19 +876,52 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     restockAppliedRef.current = false;
   }, []);
 
-  const openRestockPopup = useCallback((initialItem?: InventoryItem) => {
+  const openRestockPopup = useCallback(() => {
     const stamp = formatCreatedStamp();
-    const initialLines: RestockLineItem[] = initialItem
-      ? [{ itemId: initialItem.id, name: initialItem.name, qty: 1 }]
-      : [];
+    setEditingRestockId(null);
     setRestockCreatedStamp(stamp);
-    setRestockLineItems(initialLines);
+    setRestockLineItems([]);
     setRestockFreeNotes('');
-    setNewRestockTitle(initialItem?.supplier?.trim() || '');
+    setNewRestockTitle('');
     setRestockComposeQuery('');
     restockAppliedRef.current = false;
     setShowAddRestockPopup(true);
   }, []);
+
+  const openRestockPopupForEdit = useCallback(
+    (note: RestockNote) => {
+      const { freeNotes } = parseNotepadSnapshot(note.notes, items);
+      setEditingRestockId(note.id);
+      setRestockCreatedStamp(formatCreatedStamp(new Date(note.timestamp)));
+      setRestockLineItems(note.lineItems);
+      setRestockFreeNotes(freeNotes);
+      setNewRestockTitle(note.title);
+      setRestockComposeQuery('');
+      restockAppliedRef.current = false;
+      setShowAddRestockPopup(true);
+    },
+    [items]
+  );
+
+  const printRestockNotepad = useCallback(
+    (note?: RestockNote) => {
+      const title = (note?.title ?? newRestockTitle.trim()) || 'Restock';
+      const stamp = note
+        ? formatCreatedStamp(new Date(note.timestamp))
+        : restockCreatedStamp || formatCreatedStamp();
+      const body = note
+        ? buildNotepadPrintBodyFromNotes(title, note.notes, stamp)
+        : buildNotepadPrintBody(title, restockLineItems, restockFreeNotes, stamp);
+      queueNotepadPrint(title, body);
+    },
+    [
+      newRestockTitle,
+      queueNotepadPrint,
+      restockCreatedStamp,
+      restockFreeNotes,
+      restockLineItems,
+    ]
+  );
 
   const registerSupplier = useCallback((name: string, total: number, productIds: string[]) => {
     const trimmed = name.trim() || 'Unknown supplier';
@@ -976,24 +995,38 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     const title = newRestockTitle.trim() || 'Restock batch';
     const now = Date.now();
 
-    applyRestockToInventory(title);
+    if (!editingRestockId) {
+      applyRestockToInventory(title);
+    }
 
-    setRestocks((prev) => [
-      {
-        id: `restock-${now}`,
-        title,
-        notes: buildRestockNotesSnapshot(restockLineItems, restockFreeNotes),
-        timestamp: now,
-        lineItems: restockLineItems,
-      },
-      ...prev,
-    ]);
+    const snapshot = buildRestockNotesSnapshot(restockLineItems, restockFreeNotes);
+    if (editingRestockId) {
+      setRestocks((prev) =>
+        prev.map((n) =>
+          n.id === editingRestockId
+            ? { ...n, title, notes: snapshot, lineItems: restockLineItems, timestamp: now }
+            : n
+        )
+      );
+    } else {
+      setRestocks((prev) => [
+        {
+          id: `restock-${now}`,
+          title,
+          notes: snapshot,
+          timestamp: now,
+          lineItems: restockLineItems,
+        },
+        ...prev,
+      ]);
+    }
 
     closeRestockPopup();
   }, [
     restockLineItems,
     newRestockTitle,
     restockFreeNotes,
+    editingRestockId,
     closeRestockPopup,
     applyRestockToInventory,
     setRestocks,
@@ -1455,39 +1488,28 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         </button>
       </div>
       <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Restocking</h3>
-      <p className={`text-sm px-1 -mt-4 ${textColorClass}`}>Items below threshold • Quick replenish</p>
 
       <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
-        {lowStockItems.length > 0 ? (
-          lowStockItems.map((item, idx) => (
-            <div key={item.id} className={`px-8 py-6 flex items-center justify-between gap-4 ${idx !== 0 ? 'border-t border-white/10' : ''}`}>
-              <div className="flex items-center gap-4">
-                <img src={item.image} alt="" className="w-12 h-12 rounded-xl object-cover" />
-                <div>
-                  <div className={`font-black ${textColorClass}`}>{item.name}</div>
-                  <div className={`pos-subtext text-xs font-black ${cardSubtextMutedClass}`}>{item.stock} / {item.threshold} • {item.category}</div>
-                </div>
-              </div>
-              <button
-                onClick={() => openRestockPopup(item)}
-                className="px-6 py-3 rounded-2xl bg-current/5 font-black text-xs tracking-[1.5px] active:scale-95"
-                style={{ color: accentColor }}
-              >
-                RESTOCK
-              </button>
-            </div>
-          ))
+        {restocks.length > 0 ? (
+          restocks.map((note, idx) =>
+            renderNotepadListRow(
+              note.id,
+              note.title,
+              formatCreatedStamp(new Date(note.timestamp)),
+              getRestockTotalQty(note),
+              () => openRestockPopupForEdit(note),
+              () => printRestockNotepad(note),
+              canViewTransactions,
+              idx,
+              restocks.length,
+              isLight ? 'text-amber-600' : 'text-amber-400'
+            )
+          )
         ) : (
-          <div className={`p-12 text-center pos-subtext text-xs font-black ${cardSubtextMutedClass}`}>All items sufficiently stocked</div>
+          <div className="p-12 text-center">
+            <p className={`pos-subtext text-[11px] font-black ${cardSubtextMutedClass}`}>No restock notes yet</p>
+          </div>
         )}
-      </div>
-
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1">
-          <h4 className={`text-xl font-black tracking-tighter ${textColorClass}`}>Restock notes</h4>
-          {renderRestockViewToggle()}
-        </div>
-        {renderRestockNotesSwitcher()}
       </div>
     </div>
   );
@@ -1995,7 +2017,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   return (
     <div className={`pos-dashboard-root fixed inset-0 z-200 flex flex-col ${isOpen ? 'pos-dashboard-root--open' : 'pos-dashboard-root--closed'}`}>
-      <div className={`pos-dashboard pos-dashboard-shell relative w-full h-full flex flex-col ${isLight ? 'pos-dashboard-shell--light' : 'pos-dashboard-shell--dark'} ${visionHubFocus ? 'pos-dashboard-shell--hub-focus' : ''} ${(isAddingItem || showAddRequestPopup || showAddRestockPopup || showSuppliersPanel || selectedRequest) ? 'pos-dashboard-shell--dimmed' : ''}`}>
+      <div className={`pos-dashboard pos-dashboard-shell relative w-full h-full flex flex-col ${isLight ? 'pos-dashboard-shell--light' : 'pos-dashboard-shell--dark'} ${visionHubFocus ? 'pos-dashboard-shell--hub-focus' : ''} ${(isAddingItem || showAddRequestPopup || showAddRestockPopup || showSuppliersPanel) ? 'pos-dashboard-shell--dimmed' : ''}`}>
 
         {hubCollapsed && (
           <VisionHubPrintPanel
@@ -2009,6 +2031,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             attendantName={activeProfileName}
             onInvoicePrinted={canViewTransactions ? onInvoicePrinted : undefined}
             printDrawerEnabled={canViewTransactions}
+            queuedNotepad={queuedNotepadPrint}
+            onQueuedNotepadConsumed={() => setQueuedNotepadPrint(null)}
             onInteractionChange={setVisionHubFocus}
             onThemeToggle={() => { updateSettings('themeMode', isLight ? 'dark' : 'light'); setIsThemeAnimating(true); }}
             onSettingsOpen={() => { setIsSettingsOpen(true); setIsSettingsAnimating(true); }}
@@ -2727,8 +2751,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         </div>
       )}
 
-      {renderRequestDetailModal()}
-
       {/* REQUESTS ADD MORE POPUP — matches invoice switcher motion + notepad shell */}
       {showAddRequestPopup && (
         <div className="fixed inset-0 z-[400] flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 pointer-events-auto" role="presentation">
@@ -2750,23 +2772,43 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               aria-labelledby="request-notepad-title"
             >
               <div
-                className="px-4 pt-4 pb-3 flex items-center gap-3 border-b shrink-0"
+                className="px-4 pt-4 pb-3 flex items-start gap-3 border-b shrink-0"
                 style={{
                   borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
                 }}
               >
-                <input
-                  id="request-notepad-title"
-                  type="text"
-                  value={newRequesterName}
-                  onChange={(e) => setNewRequesterName(e.target.value)}
-                  placeholder="Requester name"
-                  className={`flex-1 min-w-0 bg-transparent outline-none text-lg font-black tracking-tight placeholder:opacity-30 ${
-                    isLight ? 'text-black' : 'text-white'
-                  }`}
-                  autoFocus
-                />
+                <div className="flex-1 min-w-0">
+                  <input
+                    id="request-notepad-title"
+                    type="text"
+                    value={newRequesterName}
+                    onChange={(e) => setNewRequesterName(e.target.value)}
+                    placeholder="Requester name"
+                    className={`w-full bg-transparent outline-none text-lg font-black tracking-tight placeholder:opacity-30 ${
+                      isLight ? 'text-black' : 'text-white'
+                    }`}
+                    autoFocus
+                  />
+                  {requestCreatedStamp && (
+                    <p className={`pos-subtext text-[10px] font-bold mt-1 ${isLight ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                      {requestCreatedStamp}
+                    </p>
+                  )}
+                </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  {canViewTransactions && (
+                    <button
+                      type="button"
+                      onClick={() => printRequestNotepad()}
+                      disabled={requestLineItems.length === 0 && !newRequesterName.trim()}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all disabled:opacity-40 ${
+                        isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+                      }`}
+                      aria-label="Print request notepad"
+                    >
+                      <Icons.Printer size={18} />
+                    </button>
+                  )}
                   <button
                     onClick={closeRequestPopup}
                     className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all ${
@@ -2777,12 +2819,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     <Icons.X size={18} />
                   </button>
                   <button
-                    onClick={addNewRequest}
+                    onClick={saveRequest}
                     disabled={!newRequesterName.trim() || requestLineItems.length === 0}
                     className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all disabled:opacity-40 ${
                       isLight ? 'bg-emerald-500 text-white' : 'bg-emerald-500 text-white shadow-[0_0_14px_rgb(16,185,129)]'
                     }`}
-                    aria-label="Save new request"
+                    aria-label="Save request"
                   >
                     <Icons.Check size={18} />
                   </button>
@@ -2888,23 +2930,43 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               aria-labelledby="restock-notepad-title"
             >
               <div
-                className="px-4 pt-4 pb-3 flex items-center gap-3 border-b shrink-0"
+                className="px-4 pt-4 pb-3 flex items-start gap-3 border-b shrink-0"
                 style={{
                   borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
                 }}
               >
-                <input
-                  id="restock-notepad-title"
-                  type="text"
-                  value={newRestockTitle}
-                  onChange={(e) => setNewRestockTitle(e.target.value)}
-                  placeholder="Batch name"
-                  className={`flex-1 min-w-0 bg-transparent outline-none text-lg font-black tracking-tight placeholder:opacity-30 ${
-                    isLight ? 'text-black' : 'text-white'
-                  }`}
-                  autoFocus
-                />
+                <div className="flex-1 min-w-0">
+                  <input
+                    id="restock-notepad-title"
+                    type="text"
+                    value={newRestockTitle}
+                    onChange={(e) => setNewRestockTitle(e.target.value)}
+                    placeholder="Batch name"
+                    className={`w-full bg-transparent outline-none text-lg font-black tracking-tight placeholder:opacity-30 ${
+                      isLight ? 'text-black' : 'text-white'
+                    }`}
+                    autoFocus
+                  />
+                  {restockCreatedStamp && (
+                    <p className={`pos-subtext text-[10px] font-bold mt-1 ${isLight ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                      {restockCreatedStamp}
+                    </p>
+                  )}
+                </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  {canViewTransactions && (
+                    <button
+                      type="button"
+                      onClick={() => printRestockNotepad()}
+                      disabled={restockLineItems.length === 0}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all disabled:opacity-40 ${
+                        isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+                      }`}
+                      aria-label="Print restock notepad"
+                    >
+                      <Icons.Printer size={18} />
+                    </button>
+                  )}
                   <button
                     onClick={closeRestockPopup}
                     className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all ${
@@ -2945,7 +3007,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   freeNotes={restockFreeNotes}
                   onFreeNotesChange={setRestockFreeNotes}
                   accentClass={isLight ? 'text-amber-600' : 'text-amber-400'}
-                  timestampLabel={restockCreatedStamp}
                   emptyHint="Type to add products…"
                   footer={
                     <div className="flex justify-end">

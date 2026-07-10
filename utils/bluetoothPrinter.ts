@@ -1090,6 +1090,115 @@ export class BLEPrinter {
     }
     return ok;
   }
+
+  async printNotepadImage(title: string, body: string, attendantName?: string): Promise<boolean> {
+    const spec = getReceiptSpec(this.paperWidth);
+    const width = spec.widthPx;
+    const lines = body.split('\n').map((l) => l.trimEnd()).filter((l, i, arr) => l.length > 0 || i < arr.length);
+    const lineHeight = 20;
+    const headerHeight = attendantName ? 88 : 72;
+    const height = Math.min(spec.maxHeightPx, headerHeight + lines.length * lineHeight + 48);
+
+    logReceiptPrint('start', {
+      mode: 'notepad_raster',
+      invoiceName: title,
+      paperWidth: this.paperWidth,
+      lineCount: lines.length,
+    });
+
+    const result = await this.withBluetoothLock(async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not create 2D canvas context');
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = '#000000';
+      ctx.textBaseline = 'top';
+
+      ctx.font = '700 18px Montserrat, Candara';
+      ctx.textAlign = 'center';
+      ctx.fillText(truncateReceiptText(title.toUpperCase(), spec.maxInvoiceTitleChars), width / 2, 10);
+
+      ctx.font = '300 11px Montserrat, Candara';
+      if (attendantName) {
+        ctx.fillText(formatServedByLine(attendantName, spec), width / 2, 34);
+      }
+
+      const rule = '-'.repeat(Math.floor(spec.maxCols * 0.95));
+      ctx.font = '300 13px Montserrat, Candara';
+      ctx.fillText(rule, width / 2, attendantName ? 54 : 40);
+
+      let y = attendantName ? 72 : 58;
+      ctx.textAlign = 'left';
+      ctx.font = '500 13px Montserrat, Candara';
+      for (const line of lines) {
+        if (y + lineHeight > height - 24) break;
+        const chunks = wrapReceiptLine(line, spec.maxCols);
+        for (const chunk of chunks) {
+          ctx.fillText(chunk, 8, y);
+          y += lineHeight;
+        }
+      }
+
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const data = imgData.data;
+      const bytesWidth = width / 8;
+      const commands: number[] = [0x1B, 0x40];
+      const xL = bytesWidth % 256;
+      const xH = Math.floor(bytesWidth / 256);
+      const yL = height % 256;
+      const yH = Math.floor(height / 256);
+      commands.push(0x1D, 0x76, 0x30, 0, xL, xH, yL, yH);
+
+      for (let row = 0; row < height; row++) {
+        for (let b = 0; b < bytesWidth; b++) {
+          let byteVal = 0;
+          for (let bit = 0; bit < 8; bit++) {
+            const pixelX = b * 8 + bit;
+            const pixelIdx = (row * width + pixelX) * 4;
+            const gray = 0.299 * data[pixelIdx] + 0.587 * data[pixelIdx + 1] + 0.114 * data[pixelIdx + 2];
+            const isBlack = data[pixelIdx + 3] > 50 && gray < 128 ? 1 : 0;
+            byteVal = (byteVal << 1) | isBlack;
+          }
+          commands.push(byteVal);
+        }
+      }
+
+      commands.push(0x1D, 0x56, 0x42, 0x00);
+      await this.writeEscPosData(new Uint8Array(commands));
+    });
+
+    const ok = result !== null;
+    logReceiptPrint(ok ? 'success' : 'failure', {
+      mode: 'notepad_raster',
+      invoiceName: title,
+      paperWidth: this.paperWidth,
+    });
+    return ok;
+  }
+}
+
+function wrapReceiptLine(text: string, maxCols: number): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [''];
+  if (trimmed.length <= maxCols) return [trimmed];
+  const words = trimmed.split(/\s+/);
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxCols) {
+      if (current) lines.push(current);
+      current = word.length > maxCols ? word.slice(0, maxCols) : word;
+    } else {
+      current = next;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines : [trimmed.slice(0, maxCols)];
 }
 
 export const printerInstance = new BLEPrinter();
