@@ -1,5 +1,5 @@
 -- Optional one-time cleanup: remove image payloads/URLs already stored in Supabase.
--- Safe to re-run. Images remain on each device in localStorage only.
+-- Run AFTER setup.sql. Safe to re-run. Images remain on each device in localStorage.
 
 update public.inventory_items
 set image_url = null

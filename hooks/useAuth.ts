@@ -11,7 +11,6 @@ import {
   setAuthSession,
   getOrCreateDevGuestAccount,
   getOrCreateDevGuestAccountAsAdmin,
-  signupWithInvite,
   updateAccountProfiles,
 } from '../utils/auth';
 import { UserProfile } from '../types';
@@ -129,8 +128,10 @@ export const useAuth = () => {
       return { account: result.account };
     }
 
-    const result = await signupWithInvite(username, inviteCode);
-    if ('error' in result && result.error) return { error: result.error };
+    return {
+      error:
+        'Supabase is not connected. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to .env.local (project folder), then stop and restart npm run dev. On a live site, set the same vars in your host (e.g. Vercel) and redeploy.',
+    };
     persistLocalSession(result.account);
     setAccount(result.account);
     setIsAuthenticated(true);

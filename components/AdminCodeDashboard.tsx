@@ -30,6 +30,28 @@ const TABS: { id: AdminTab; label: string }[] = [
 ];
 
 const LONG_PRESS_MS = 520;
+const COPY_FEEDBACK_MS = 2000;
+
+const copyTextToClipboard = async (text: string): Promise<boolean> => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+};
 
 const formatWhen = (value: string | null | undefined): string => {
   if (!value) return '—';
@@ -52,6 +74,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
 }) => {
   const [tab, setTab] = useState<AdminTab>('pending');
   const [codes, setCodes] = useState<AccessCodeRow[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionCode, setActionCode] = useState<string | null>(null);
@@ -60,7 +83,9 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const [detailRow, setDetailRow] = useState<AccessCodeRow | null>(null);
   const [detailMemo, setDetailMemo] = useState('');
   const [savingMemo, setSavingMemo] = useState(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const longPressTimer = useRef<number | null>(null);
+  const copyFeedbackTimer = useRef<number | null>(null);
 
   const panelClass = isLight
     ? 'bg-white/90 border-black/10 text-black'
@@ -74,24 +99,91 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     ? 'bg-white/90 border-black/10 text-black placeholder:text-black/35'
     : 'bg-white/8 border-white/12 text-white placeholder:text-white/35';
 
-  const loadCodes = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const result = await adminListCodes(adminToken, tab);
-    if (!result.ok) {
-      setError(result.error);
-      setCodes([]);
-    } else {
-      setCodes(result.codes);
-    }
-    setLoading(false);
-  }, [adminToken, tab]);
+  const refreshPendingCount = useCallback(async () => {
+    const result = await adminListCodes(adminToken, 'pending');
+    if (result.ok) setPendingCount(result.codes.length);
+  }, [adminToken]);
+
+  const loadCodes = useCallback(
+    async (options?: { showLoading?: boolean }) => {
+      const showLoading = options?.showLoading ?? false;
+      if (showLoading) setLoading(true);
+      setError(null);
+      const result = await adminListCodes(adminToken, tab);
+      if (!result.ok) {
+        setError(result.error);
+        setCodes([]);
+      } else {
+        setCodes(result.codes);
+        if (tab === 'pending') setPendingCount(result.codes.length);
+      }
+      if (showLoading) setLoading(false);
+    },
+    [adminToken, tab]
+  );
 
   useEffect(() => {
-    void loadCodes();
-    const interval = window.setInterval(() => void loadCodes(), 4000);
+    void loadCodes({ showLoading: true });
+    if (tab !== 'pending') void refreshPendingCount();
+    const interval = window.setInterval(() => {
+      void loadCodes();
+      if (tab !== 'pending') void refreshPendingCount();
+    }, 4000);
     return () => window.clearInterval(interval);
-  }, [loadCodes]);
+  }, [loadCodes, refreshPendingCount, tab]);
+
+  useEffect(
+    () => () => {
+      if (copyFeedbackTimer.current !== null) window.clearTimeout(copyFeedbackTimer.current);
+    },
+    []
+  );
+
+  const handleCopyCode = useCallback(async (code: string) => {
+    const ok = await copyTextToClipboard(code);
+    if (!ok) {
+      setError('Could not copy code.');
+      return;
+    }
+    setCopiedCode(code);
+    if (copyFeedbackTimer.current !== null) window.clearTimeout(copyFeedbackTimer.current);
+    copyFeedbackTimer.current = window.setTimeout(() => setCopiedCode(null), COPY_FEEDBACK_MS);
+    if ('vibrate' in navigator) navigator.vibrate(8);
+  }, []);
+
+  const renderCopyableCode = (
+    code: string,
+    sizeClass: string,
+    options?: { stopCard?: boolean }
+  ) => {
+    const isCopied = copiedCode === code;
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          if (options?.stopCard) e.stopPropagation();
+          void handleCopyCode(code);
+        }}
+        onPointerDown={(e) => {
+          if (options?.stopCard) e.stopPropagation();
+        }}
+        className={`inline-flex items-center gap-2 font-mono font-black tracking-widest text-left rounded-lg -mx-1 px-1 transition-colors active:opacity-70 ${
+          isCopied ? 'text-emerald-500' : ''
+        } ${sizeClass}`}
+        aria-label={isCopied ? `Copied ${code}` : `Copy code ${code}`}
+      >
+        <span>{code}</span>
+        {isCopied ? (
+          <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-500">
+            <Icons.Check size={12} />
+            Copied
+          </span>
+        ) : (
+          <span className="text-[10px] font-black uppercase tracking-wider opacity-40">Copy</span>
+        )}
+      </button>
+    );
+  };
 
   const runAction = async (code: string, action: () => Promise<{ ok: boolean; error?: string }>) => {
     setActionCode(code);
@@ -103,6 +195,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       return;
     }
     await loadCodes();
+    await refreshPendingCount();
   };
 
   const openApproveModal = (row: AccessCodeRow) => {
@@ -123,6 +216,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     setApproveTarget(null);
     setApproveMemo('');
     await loadCodes();
+    await refreshPendingCount();
   };
 
   const openDetail = (row: AccessCodeRow) => {
@@ -211,7 +305,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               key={item.id}
               type="button"
               onClick={() => setTab(item.id)}
-              className={`px-5 py-2 rounded-full text-[11px] font-black uppercase tracking-[0.2em] transition-all ${
+              className={`px-5 py-2 rounded-full text-[11px] font-black uppercase tracking-[0.2em] transition-all inline-flex items-center gap-2 ${
                 tab === item.id
                   ? 'bg-blue-500 text-white shadow-md'
                   : isLight
@@ -220,13 +314,25 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               }`}
             >
               {item.label}
+              {item.id === 'pending' && pendingCount > 0 && (
+                <span
+                  className={`min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-black tabular-nums leading-5 text-center ${
+                    tab === 'pending'
+                      ? 'bg-white text-blue-600'
+                      : 'bg-red-500 text-white shadow-sm'
+                  }`}
+                  aria-label={`${pendingCount} pending`}
+                >
+                  {pendingCount > 99 ? '99+' : pendingCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
       </div>
 
       <p className={`text-center text-[10px] opacity-45 px-4 pb-2 ${isLight ? 'text-white' : 'text-white'}`}>
-        Tap a code for details · hold for quick open
+        Tap code to copy · tap card for details · hold for quick open
       </p>
 
       <div className="flex-1 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
@@ -266,7 +372,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-mono font-black text-lg tracking-widest">{row.code}</p>
+                    {renderCopyableCode(row.code, 'text-lg', { stopCard: true })}
                     {row.username && (
                       <p className="text-sm font-bold truncate mt-1">{row.username}</p>
                     )}
@@ -349,7 +455,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 <Icons.X size={16} />
               </button>
             </div>
-            <p className="font-mono font-black text-xl tracking-widest mb-1">{approveTarget.code}</p>
+            <div className="mb-1">{renderCopyableCode(approveTarget.code, 'text-xl')}</div>
             <p className="text-xs opacity-60 mb-4">
               {approveTarget.username ?? 'Unknown user'}
               {approveTarget.email ? ` · ${approveTarget.email}` : ''}
@@ -395,7 +501,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               </button>
             </div>
 
-            <p className="font-mono font-black text-2xl tracking-widest">{detailRow.code}</p>
+            {renderCopyableCode(detailRow.code, 'text-2xl')}
             <p className="text-[10px] uppercase tracking-widest opacity-50 font-black mt-1">{detailRow.status}</p>
 
             {(detailRow.business_name || detailRow.business_phone || detailRow.business_address) && (
