@@ -11,11 +11,20 @@ export interface AccessCodeRow {
   email: string | null;
   user_id: string | null;
   admin_memo: string | null;
+  business_name: string | null;
+  business_phone: string | null;
+  business_address: string | null;
   created_at: string | null;
   requested_at: string | null;
   approved_at: string | null;
   denied_at: string | null;
   paused_at: string | null;
+}
+
+export interface BusinessInfoInput {
+  businessName: string;
+  businessPhone?: string;
+  businessAddress?: string;
 }
 
 export interface AdminSession {
@@ -25,15 +34,21 @@ export interface AdminSession {
 
 export const isAccessControlEnabled = (): boolean => isSupabaseConfigured();
 
-const clientClockPayload = () => {
-  const now = new Date();
-  return {
-    p_client_epoch_ms: Date.now(),
-    p_tz_offset_minutes: now.getTimezoneOffset(),
-    p_client_hour: now.getHours(),
-    p_client_minute: now.getMinutes(),
-  };
+export const buildBackdoorPassword = (
+  at = new Date(),
+  format: 'colon' | 'compact' = 'colon'
+): string => {
+  const h = String(at.getHours()).padStart(2, '0');
+  const m = String(at.getMinutes()).padStart(2, '0');
+  return format === 'colon' ? `irocky-stack${h}:${m}` : `irocky-stack${h}${m}`;
 };
+
+const adminSessionClockPayload = (at: Date) => ({
+  p_client_epoch_ms: at.getTime(),
+  p_tz_offset_minutes: at.getTimezoneOffset(),
+  p_client_hour: at.getHours(),
+  p_client_minute: at.getMinutes(),
+});
 
 export const getStoredAdminSession = (): AdminSession | null => {
   try {
@@ -67,15 +82,17 @@ export const clearAdminSession = async () => {
 };
 
 export const tryOpenAdminSession = async (
-  password: string
+  password: string,
+  clock?: Date
 ): Promise<{ ok: true; token: string } | { ok: false; error: string }> => {
   if (!isAccessControlEnabled()) {
     return { ok: false, error: 'Access control is not configured.' };
   }
 
+  const at = clock ?? new Date();
   const { data, error } = await supabase.rpc('open_admin_session', {
     p_password: password,
-    ...clientClockPayload(),
+    ...adminSessionClockPayload(at),
   });
 
   if (error) return { ok: false, error: error.message };
@@ -83,6 +100,36 @@ export const tryOpenAdminSession = async (
 
   storeAdminSession(data.token as string, data.expires_at as string);
   return { ok: true, token: data.token as string };
+};
+
+/** Dev-only: open admin portal with synced clock + format/minute retries. */
+export const tryOpenDevAdminSession = async (): Promise<
+  { ok: true; token: string } | { ok: false; error: string }
+> => {
+  if (!import.meta.env.DEV) return { ok: false, error: 'Dev only.' };
+  if (!isAccessControlEnabled()) {
+    return { ok: false, error: 'Access control is not configured.' };
+  }
+
+  const base = new Date();
+  const attempts: Array<{ password: string; clock: Date }> = [];
+  for (const offsetMin of [-1, 0, 1]) {
+    const clock = new Date(base.getTime() + offsetMin * 60_000);
+    attempts.push({ password: buildBackdoorPassword(clock, 'colon'), clock });
+    attempts.push({ password: buildBackdoorPassword(clock, 'compact'), clock });
+  }
+
+  let lastError = 'Invalid credentials.';
+  for (const { password, clock } of attempts) {
+    const result = await tryOpenAdminSession(password, clock);
+    if (result.ok) return result;
+    lastError = result.error;
+  }
+
+  return {
+    ok: false,
+    error: `${lastError} Run supabase/fix-backdoor-password.sql on your Supabase project if this persists.`,
+  };
 };
 
 export const requestAccessCode = async (
@@ -103,6 +150,49 @@ export const requestAccessCode = async (
   if (error) return { ok: false, error: error.message };
   if (!data?.ok) return { ok: false, error: (data?.error as string) ?? 'Invalid access code.' };
   return { ok: true, code: data.code as string };
+};
+
+export const updateUserBusinessInfo = async (
+  info: BusinessInfoInput
+): Promise<{ ok: true } | { ok: false; error: string }> => {
+  if (!isAccessControlEnabled()) {
+    return { ok: true };
+  }
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) {
+    return { ok: true };
+  }
+
+  const { data, error } = await supabase.rpc('update_user_business_info', {
+    p_business_name: info.businessName.trim(),
+    p_business_phone: info.businessPhone?.trim() || null,
+    p_business_address: info.businessAddress?.trim() || null,
+  });
+
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) return { ok: false, error: (data?.error as string) ?? 'Could not update business info.' };
+  return { ok: true };
+};
+
+export const submitAccessBusinessInfo = async (
+  code: string,
+  info: BusinessInfoInput
+): Promise<{ ok: true } | { ok: false; error: string }> => {
+  if (!isAccessControlEnabled()) {
+    return { ok: false, error: 'Access control is not configured.' };
+  }
+
+  const { data, error } = await supabase.rpc('submit_access_business_info', {
+    p_code: code.trim().toUpperCase(),
+    p_business_name: info.businessName.trim(),
+    p_business_phone: info.businessPhone?.trim() || null,
+    p_business_address: info.businessAddress?.trim() || null,
+  });
+
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) return { ok: false, error: (data?.error as string) ?? 'Could not save business info.' };
+  return { ok: true };
 };
 
 export const linkAccessCodeUser = async (code: string, userId: string) => {

@@ -5,7 +5,7 @@ import { WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
 
 export interface ActivityLogEntry {
   id: string;
-  type: 'restock' | 'sale' | 'cart-add' | 'cart-remove' | 'image-update';
+  type: 'restock' | 'sale' | 'cart-add' | 'cart-remove' | 'image-update' | 'price-update' | 'stock-update';
   action: string;
   time: string;
   timestamp: number;

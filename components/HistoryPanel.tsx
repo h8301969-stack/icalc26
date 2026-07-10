@@ -3,7 +3,6 @@ import { Icons } from '../constants';
 import { CartLineItem, InvoiceActionLog, InvoicePrintLog, UserProfile } from '../types';
 import { printerInstance } from '../utils/bluetoothPrinter';
 import {
-  formatReceiptItemLine,
   getReceiptSpec,
   logReceiptPrint,
   truncateReceiptText,
@@ -38,6 +37,7 @@ interface HistoryPanelProps {
   onActiveChange?: (active: boolean) => void;
   wallpapers?: { image: string }[];
   shareReceiptSettings?: ShareReceiptSettings;
+  businessName?: string;
 }
 
 const SWITCHER_LAYOUT_OPTIONS = [
@@ -48,6 +48,7 @@ const SWITCHER_LAYOUT_OPTIONS = [
 ];
 
 const LONG_PRESS_MS = 480;
+const INVOICE_LOAD_MS = 400;
 const SCATTERED_GRID_MIN_TILE = 'min(100%, 148px)';
 const SCATTERED_GRID_GAP = '1.1rem';
 
@@ -62,6 +63,12 @@ interface InvoiceCard {
 
 const DRAG_FACTOR = 1.25;
 const SWIPE_THRESHOLD = 22;
+
+const formatSwitcherAmount = (value: number): string => {
+  if (!Number.isFinite(value)) return '0';
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+};
 
 const HistoryPanel: React.FC<HistoryPanelProps> = ({
   isOpen,
@@ -83,7 +90,9 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   onActiveChange,
   wallpapers = [],
   shareReceiptSettings = { layoutMode: 'summary' },
+  businessName = '',
 }) => {
+  const invoiceBrandLabel = businessName.trim() || 'iCalc POS';
   const [attendantNames, setAttendantNames] = useState<Record<string, string>>(() =>
     storage.get(ATTENDANT_NAMES_KEY, {})
   );
@@ -94,6 +103,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const [isSharing, setIsSharing] = useState(false);
   const [attendantPickerInvoice, setAttendantPickerInvoice] = useState<string | null>(null);
   const [receiptPaperWidth, setReceiptPaperWidth] = useState<PaperWidth>(() => printerInstance.paperWidth);
+  const [printMode, setPrintMode] = useState<'image' | 'text'>('image');
   const [wallpaperSlide, setWallpaperSlide] = useState(0);
   const wallpaperSlides = wallpapers.length > 0 ? wallpapers : [{ image: '' }];
 
@@ -141,19 +151,43 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     setAttendantNames((prev) => ({ ...prev, [name]: attendant }));
   }, []);
 
+  const resolvePrintCard = useCallback(
+    (card: InvoiceCard): InvoiceCard => {
+      if (!card.isCurrent) return card;
+      return {
+        ...card,
+        name: invoiceName.trim() || card.name,
+        total: runningTotal || card.total,
+        items: cartItems,
+      };
+    },
+    [invoiceName, runningTotal, cartItems]
+  );
+
+  const canPrintCard = useCallback(
+    (card: InvoiceCard) => {
+      const resolved = resolvePrintCard(card);
+      if (!resolved.name.trim()) return false;
+      if (shareReceiptSettings.layoutMode === 'full' && resolved.items.length === 0) return false;
+      return true;
+    },
+    [resolvePrintCard, shareReceiptSettings.layoutMode]
+  );
+
   const executePrint = useCallback(
     async (card: InvoiceCard): Promise<{ ok: boolean; errors: string[] }> => {
+      const printCard = resolvePrintCard(card);
       setReceiptPaperWidth(printerInstance.paperWidth);
-      const numericTotal = parseFloat(card.total) || 0;
-      const attendant = getAttendantForInvoice(card.name);
-      const items = card.items.map((item, idx) => ({
+      const numericTotal = parseFloat(printCard.total) || 0;
+      const attendant = getAttendantForInvoice(printCard.name);
+      const items = printCard.items.map((item, idx) => ({
         name: item.name || `Item ${idx + 1}`,
         price: item.price,
         quantity: item.quantity,
       }));
 
       const validation = validateReceiptPrint(
-        card.name,
+        printCard.name,
         items,
         printerInstance.paperWidth,
         !!attendant,
@@ -162,7 +196,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       );
       logReceiptPrint('validate', {
         context: 'invoice_switcher',
-        invoiceName: card.name,
+        invoiceName: printCard.name,
         paperWidth: printerInstance.paperWidth,
         itemCount: items.length,
         ok: validation.ok,
@@ -174,7 +208,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         logReceiptPrint('failure', {
           context: 'invoice_switcher',
           reason: 'validation_failed',
-          invoiceName: card.name,
+          invoiceName: printCard.name,
           errors: validation.errors,
         });
         return { ok: false, errors: validation.errors };
@@ -184,24 +218,34 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         logReceiptPrint('validate', {
           context: 'invoice_switcher',
           phase: 'warnings_acknowledged',
-          invoiceName: card.name,
+          invoiceName: printCard.name,
           warnings: validation.warnings,
         });
       }
 
-      const ok = await printerInstance.printInvoiceImage(
-        card.name,
-        items,
-        numericTotal,
-        currency,
-        attendant,
-        shareReceiptSettings.layoutMode
-      );
+      const ok =
+        printMode === 'text'
+          ? await printerInstance.printInvoice(
+              printCard.name,
+              items,
+              numericTotal,
+              currency,
+              attendant,
+              shareReceiptSettings.layoutMode
+            )
+          : await printerInstance.printInvoiceImage(
+              printCard.name,
+              items,
+              numericTotal,
+              currency,
+              attendant,
+              shareReceiptSettings.layoutMode
+            );
 
       if (ok) {
         logReceiptPrint('success', {
           context: 'invoice_switcher',
-          invoiceName: card.name,
+          invoiceName: printCard.name,
           paperWidth: printerInstance.paperWidth,
           itemCount: items.length,
           warnings: validation.warnings,
@@ -212,12 +256,12 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       logReceiptPrint('failure', {
         context: 'invoice_switcher',
         reason: 'print_returned_false',
-        invoiceName: card.name,
+        invoiceName: printCard.name,
         message: 'Printer busy or print aborted.',
       });
       return { ok: false, errors: ['Printer busy or print aborted.'] };
     },
-    [currency, getAttendantForInvoice, shareReceiptSettings.layoutMode]
+    [currency, getAttendantForInvoice, printMode, resolvePrintCard, shareReceiptSettings.layoutMode]
   );
 
   const handleShareClick = useCallback(
@@ -247,11 +291,13 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   const handlePrintClick = useCallback(
     async (card: InvoiceCard) => {
+      const printCard = resolvePrintCard(card);
+      if (!canPrintCard(card)) return;
       if (isPrinting) {
         logReceiptPrint('skipped', {
           context: 'invoice_switcher',
           reason: 'print_in_progress',
-          invoiceName: card.name,
+          invoiceName: printCard.name,
         });
         return;
       }
@@ -263,17 +309,17 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           logReceiptPrint('skipped', {
             context: 'invoice_switcher',
             reason: 'printer_not_connected',
-            invoiceName: card.name,
+            invoiceName: printCard.name,
             message: 'Opening printer connect modal.',
           });
-          setPendingPrintCard(card);
+          setPendingPrintCard(printCard);
           setPrinterModalOpen(true);
           return;
         }
         setReceiptPaperWidth(printerInstance.paperWidth);
         const result = await executePrint(card);
         if (result.ok) {
-          onInvoicePrinted?.(card.name, card.total, card.items);
+          onInvoicePrinted?.(printCard.name, printCard.total, printCard.items);
         } else {
           const detail = result.errors.join(' ');
           alert(detail || 'Print failed. Check the browser console for [iCalc Receipt] details.');
@@ -283,7 +329,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         logReceiptPrint('failure', {
           context: 'invoice_switcher',
           reason: 'exception',
-          invoiceName: card.name,
+          invoiceName: printCard.name,
           message,
         });
         alert(message);
@@ -291,7 +337,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         setIsPrinting(false);
       }
     },
-    [executePrint, isPrinting, onInvoicePrinted]
+    [canPrintCard, executePrint, isPrinting, onInvoicePrinted, resolvePrintCard]
   );
 
   const handleModalPrint = useCallback(async () => {
@@ -351,7 +397,11 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   }, [actionLogs, cartItems, invoiceName, runningTotal]);
 
   const [activeIdx, setActiveIdx] = useState(0);
+  const [loadingInvoiceIdx, setLoadingInvoiceIdx] = useState<number | null>(null);
   const [focusZoomed, setFocusZoomed] = useState(false);
+  const invoiceLoadTimerRef = useRef<number | null>(null);
+  const cardsRef = useRef(cards);
+  cardsRef.current = cards;
   const listLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listLongPressFired = useRef(false);
   const listLongPressIdx = useRef<number | null>(null);
@@ -371,9 +421,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       items,
       receiptPaperWidth,
       !!getAttendantForInvoice(card.name),
-      currency
+      currency,
+      shareReceiptSettings.layoutMode
     );
-  }, [cards, activeIdx, receiptPaperWidth, getAttendantForInvoice, currency]);
+  }, [cards, activeIdx, receiptPaperWidth, getAttendantForInvoice, currency, shareReceiptSettings.layoutMode]);
   const [dragDelta, setDragDelta] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const dragStartX = useRef(0);
@@ -387,20 +438,31 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const [mounted, setMounted] = useState(isOpen);
   const prevCardCountRef = useRef(cards.length);
 
+  const clearInvoiceLoadTimer = useCallback(() => {
+    if (invoiceLoadTimerRef.current !== null) {
+      window.clearTimeout(invoiceLoadTimerRef.current);
+      invoiceLoadTimerRef.current = null;
+    }
+  }, []);
+
   const handleClose = useCallback(() => {
+    clearInvoiceLoadTimer();
+    setLoadingInvoiceIdx(null);
     const root = rootRef.current;
     const active = document.activeElement as HTMLElement | null;
     if (root?.contains(active)) {
       active.blur();
     }
     onClose();
-  }, [onClose]);
+  }, [onClose, clearInvoiceLoadTimer]);
 
   useEffect(() => {
     if (isOpen) {
       setMounted(true);
       setActiveIdx(Math.max(0, cards.length - 1));
       setFocusZoomed(false);
+      setLoadingInvoiceIdx(null);
+      clearInvoiceLoadTimer();
       lastFocusedRef.current = document.activeElement as HTMLElement | null;
       const id = requestAnimationFrame(() => closeRef.current?.focus({ preventScroll: true }));
       return () => cancelAnimationFrame(id);
@@ -413,9 +475,14 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     }
     lastFocusedRef.current?.focus?.({ preventScroll: true });
 
+    clearInvoiceLoadTimer();
+    setLoadingInvoiceIdx(null);
     const timer = window.setTimeout(() => setMounted(false), 500);
-    return () => window.clearTimeout(timer);
-  }, [isOpen, cards.length]);
+    return () => {
+      window.clearTimeout(timer);
+      clearInvoiceLoadTimer();
+    };
+  }, [isOpen, cards.length, clearInvoiceLoadTimer]);
 
   useEffect(() => {
     onActiveChange?.(isOpen || mounted);
@@ -433,25 +500,29 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     setActiveIdx(idx);
   }, [cards.length]);
 
-  const selectInvoice = useCallback((idx: number, options?: { keepOpen?: boolean }) => {
-    const card = cards[idx];
-    if (!card) return;
+  const beginInvoiceLoad = useCallback((idx: number) => {
+    if (idx < 0 || idx >= cardsRef.current.length || loadingInvoiceIdx !== null) return;
+
     setActiveIdx(idx);
-    onSelectInvoice?.(card.name, card.items, options);
-  }, [cards, onSelectInvoice]);
+    setFocusZoomed(false);
+    setLoadingInvoiceIdx(idx);
+    clearInvoiceLoadTimer();
+
+    invoiceLoadTimerRef.current = window.setTimeout(() => {
+      invoiceLoadTimerRef.current = null;
+      setLoadingInvoiceIdx(null);
+      const card = cardsRef.current[idx];
+      if (!card) return;
+      onSelectInvoice?.(card.name, card.items);
+    }, INVOICE_LOAD_MS);
+  }, [loadingInvoiceIdx, onSelectInvoice, clearInvoiceLoadTimer]);
 
   const openInvoiceFocus = useCallback((idx: number) => {
-    if (idx < 0 || idx >= cards.length) return;
+    if (idx < 0 || idx >= cards.length || loadingInvoiceIdx !== null) return;
     setActiveIdx(idx);
     setFocusZoomed(true);
     if ('vibrate' in navigator) navigator.vibrate(10);
-  }, [cards.length]);
-
-  const confirmInvoiceToExpression = useCallback((idx: number = activeIdx) => {
-    if (idx < 0 || idx >= cards.length) return;
-    selectInvoice(idx);
-    setFocusZoomed(false);
-  }, [activeIdx, cards.length, selectInvoice]);
+  }, [cards.length, loadingInvoiceIdx]);
 
   const cancelListLongPress = useCallback(() => {
     if (listLongPressTimer.current) {
@@ -549,12 +620,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       suppressClickSelectRef.current = false;
       return;
     }
-    if (idx === activeIdx) {
-      confirmInvoiceToExpression(idx);
-    } else {
-      previewInvoice(idx);
-    }
-  }, [activeIdx, confirmInvoiceToExpression, previewInvoice]);
+    beginInvoiceLoad(idx);
+  }, [beginInvoiceLoad]);
 
   const handleSwitcherModeChange = useCallback(
     (mode: 'horizontal' | 'grid' | 'vertical' | 'list') => {
@@ -568,6 +635,22 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   );
 
   const textMuted = isLight ? 'text-zinc-400' : 'text-zinc-500';
+
+  const renderInvoiceLoadingOverlay = (idx: number, roundedClass = 'rounded-[32px]') => {
+    if (loadingInvoiceIdx !== idx) return null;
+    return (
+      <div
+        className={`invoice-switcher-loading absolute inset-0 z-30 flex flex-col items-center justify-center bg-white/88 backdrop-blur-[2px] ${roundedClass}`}
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <span className="auth-spinner invoice-switcher-loading__spinner" aria-hidden="true" />
+        <span className="app-subtext text-[10px] font-black uppercase tracking-[0.2em] mt-3 text-black/50">
+          Loading
+        </span>
+      </div>
+    );
+  };
 
   if (!mounted) return null;
 
@@ -759,6 +842,38 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   const scatterRotate = (idx: number) => ((idx % 5) - 2) * 1.4;
 
+  const renderSwitcherProductLine = (
+    item: CartLineItem,
+    index: number,
+    options?: { compact?: boolean; inverted?: boolean }
+  ) => {
+    const name = item.name || `Item ${index + 1}`;
+    const priceLabel = formatSwitcherAmount(item.price);
+    const lineTotal = item.price * item.quantity;
+    const totalLabel = formatSwitcherAmount(lineTotal);
+    const totalClass = options?.inverted
+      ? 'text-emerald-300'
+      : 'invoice-switcher-card__line-total';
+
+    return (
+      <div
+        key={`${name}-${index}`}
+        className={`invoice-switcher-card__line ${options?.compact ? 'invoice-switcher-card__line--compact' : ''}`}
+        title={`${name} ${priceLabel} * ${item.quantity} = ${currency}${totalLabel}`}
+      >
+        <span className="min-w-0 truncate">
+          {name}{' '}
+          <span className="font-semibold">{priceLabel}</span>
+          {' * '}
+          {item.quantity}
+        </span>
+        <span className={`${totalClass} shrink-0 tabular-nums font-semibold`}>
+          {currency}{totalLabel}
+        </span>
+      </div>
+    );
+  };
+
   const renderGridTile = (card: InvoiceCard, idx: number) => {
     const isSelected = idx === activeIdx;
     const isPaid = printedNames.has(card.name);
@@ -768,8 +883,9 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       <button
         key={card.id}
         type="button"
-        onClick={() => openInvoiceFocus(idx)}
-        className={`text-left rounded-2xl w-full aspect-[6/13] flex flex-col transition-all duration-300 active:scale-[0.97] border p-3.5 sm:p-4 gap-2 ${
+        onClick={() => beginInvoiceLoad(idx)}
+        disabled={loadingInvoiceIdx !== null}
+        className={`relative text-left rounded-2xl w-full aspect-[6/13] flex flex-col transition-all duration-300 active:scale-[0.97] border p-3.5 sm:p-4 gap-2 ${
           isSelected && !focusZoomed
             ? 'bg-black text-white border-black shadow-lg ring-2 ring-white/20'
             : isLight
@@ -790,24 +906,27 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             {card.items.length}
           </span>
         </div>
-        <div className="text-[12px] sm:text-[13px] font-black tracking-tight leading-tight line-clamp-3 min-h-[2.8em]">
+        <div className="text-[12px] sm:text-[13px] font-black tracking-tight leading-tight line-clamp-2 min-h-[1.6em]">
           {card.name}
         </div>
-        <div className={`app-subtext text-[11px] font-black mt-auto ${isSelected ? 'opacity-90' : 'opacity-60'}`}>
-          {currency} {card.total}
+        <div className={`mt-1 space-y-0.5 min-h-0 flex-1 overflow-hidden ${isSelected ? 'opacity-90' : 'opacity-70'}`}>
+          {card.items.length === 0 ? (
+            <div className="app-subtext text-[9px] opacity-45">No items yet</div>
+          ) : (
+            card.items.slice(0, 4).map((item, i) =>
+              renderSwitcherProductLine(item, i, { compact: true, inverted: isSelected })
+            )
+          )}
+          {card.items.length > 4 && (
+            <div className={`app-subtext text-[8px] ${isSelected ? 'opacity-60' : 'opacity-45'}`}>
+              +{card.items.length - 4} more
+            </div>
+          )}
         </div>
-        {card.items.length > 0 && (
-          <div className={`app-subtext text-[9px] font-semibold leading-snug line-clamp-2 invoice-receipt-line ${isSelected ? 'opacity-65' : 'opacity-45'}`}>
-            {formatReceiptItemLine(
-              card.items[0].name || 'Item 1',
-              card.items[0].quantity,
-              card.items[0].price,
-              currency,
-              receiptSpec
-            ).line}
-            {card.items.length > 1 ? ` +${card.items.length - 1}` : ''}
-          </div>
-        )}
+        <div className={`app-subtext text-[11px] font-semibold mt-auto shrink-0 ${isSelected ? 'text-emerald-300' : 'text-emerald-600'}`}>
+          Total {currency}{card.total}
+        </div>
+        {renderInvoiceLoadingOverlay(idx, 'rounded-2xl')}
       </button>
     );
   };
@@ -828,13 +947,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             listLongPressFired.current = false;
             return;
           }
-          if (idx === activeIdx) {
-            confirmInvoiceToExpression(idx);
-          } else {
-            setActiveIdx(idx);
-          }
+          beginInvoiceLoad(idx);
         }}
-        className={`w-full text-left rounded-2xl px-4 py-3.5 border flex items-center gap-3 transition-all duration-200 active:scale-[0.99] ${
+        disabled={loadingInvoiceIdx !== null}
+        className={`relative w-full text-left rounded-2xl px-4 py-3.5 border flex items-center gap-3 transition-all duration-200 active:scale-[0.99] ${
           isSelected
             ? isLight
               ? 'bg-black text-white border-black shadow-md'
@@ -854,10 +970,18 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             </span>
           </div>
           <div className="text-sm font-black tracking-tight truncate">{card.name}</div>
+          {card.items.length > 0 && (
+            <div className="mt-1.5 space-y-0.5 max-h-[4.5rem] overflow-hidden">
+              {card.items.slice(0, 3).map((item, i) =>
+                renderSwitcherProductLine(item, i, { compact: true, inverted: isSelected })
+              )}
+            </div>
+          )}
         </div>
-        <div className={`app-subtext text-xs font-black shrink-0 ${isSelected ? 'opacity-90' : 'opacity-65'}`}>
-          {currency} {card.total}
+        <div className={`app-subtext text-xs font-semibold shrink-0 ${isSelected ? 'text-emerald-300' : 'text-emerald-600'}`}>
+          {currency}{card.total}
         </div>
+        {renderInvoiceLoadingOverlay(idx, 'rounded-2xl')}
       </button>
     );
   };
@@ -882,14 +1006,15 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             }`}
             role="dialog"
             aria-modal="true"
-            aria-label={`Invoice card: ${cards[activeIdx].name}. Tap to continue in calculator.`}
+            aria-label={`Invoice card: ${cards[activeIdx].name}. Tap to load in calculator.`}
             onClick={(e) => {
               e.stopPropagation();
-              confirmInvoiceToExpression(activeIdx);
+              beginInvoiceLoad(activeIdx);
             }}
           >
             <div className="absolute inset-0 flex flex-col rounded-[32px] overflow-hidden bg-white text-black shadow-[0_32px_96px_rgba(0,0,0,0.65)] ring-1 ring-white/20">
               {renderCardBody(cards[activeIdx], true)}
+              {renderInvoiceLoadingOverlay(activeIdx)}
             </div>
           </div>
         </div>
@@ -899,89 +1024,38 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   const renderCardContent = (card: InvoiceCard, isActive: boolean) => {
     const attendant = getAttendantForInvoice(card.name);
-    const rule = '-'.repeat(Math.floor(receiptSpec.maxCols * 0.95));
-    const rawTitle = card.isCurrent && isActive ? invoiceName : card.name;
-    const titleDisplay = truncateReceiptText(rawTitle.toUpperCase(), receiptSpec.maxInvoiceTitleChars);
-    const compact = receiptPaperWidth === '25mm';
-    const lineSize = compact ? 'text-[10px]' : 'text-xs';
-    const metaSize = compact ? 'text-[8px]' : 'text-[9px]';
-    const isSummaryReceipt = shareReceiptSettings.layoutMode === 'summary';
 
     return (
-      <div className={`flex-1 flex flex-col min-h-0 text-black invoice-receipt-line ${compact ? 'px-2 py-2 gap-1' : 'px-3 py-3 gap-1.5'}`}>
-        <div className="text-center shrink-0">
-          <div className={`font-bold uppercase tracking-tight ${lineSize}`}>{titleDisplay}</div>
-          {!isSummaryReceipt && (
-            <div className={`opacity-50 ${metaSize}`}>iCalc Spatial POS Receipt</div>
-          )}
-          {isActive && (
-            <div className={`opacity-45 ${metaSize} ${isSummaryReceipt ? 'italic mt-1' : ''}`}>
-              {isSummaryReceipt ? `served by ${truncateReceiptText(attendant, receiptSpec.maxCols - 11)}` : `Served by: ${truncateReceiptText(attendant, receiptSpec.maxCols - 11)}`}
-            </div>
-          )}
-        </div>
-
-        {!isSummaryReceipt && <div className={`opacity-30 text-center ${metaSize}`}>{rule}</div>}
+      <div className="invoice-switcher-card__body invoice-receipt-line">
+        <div className="invoice-switcher-card__rule" aria-hidden="true" />
 
         <div
-          className={`flex-1 overflow-y-auto flex flex-col gap-0.5 custom-scrollbar ${isSummaryReceipt ? 'justify-center' : ''}`}
+          className="invoice-switcher-card__lines custom-scrollbar"
           style={{ touchAction: 'pan-y' }}
         >
-          {isSummaryReceipt ? (
-            <div className={`text-center font-num-bold tabular-nums ${compact ? 'text-lg' : 'text-2xl'}`}>
-              {currency}{card.total}
-            </div>
-          ) : card.items.length === 0 ? (
-            <div
-              className={textMuted}
-              style={{
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 10,
-                fontWeight: 900,
-                letterSpacing: '0.3em',
-                textTransform: 'uppercase',
-                opacity: 0.5,
-              }}
-            >
+          {card.items.length === 0 ? (
+            <div className={`flex-1 flex items-center justify-center ${textMuted} text-[10px] font-black uppercase tracking-[0.28em] opacity-50`}>
               No items yet
             </div>
           ) : (
-            card.items.map((item, i) => {
-              const { displayName, priceText, line } = formatReceiptItemLine(
-                item.name || `Item ${i + 1}`,
-                item.quantity,
-                item.price,
-                currency,
-                receiptSpec
-              );
-              return (
-                <div
-                  key={i}
-                  className={`invoice-receipt-line flex items-baseline justify-between gap-1 ${lineSize} opacity-85`}
-                  title={line}
-                >
-                  <span className="min-w-0 truncate">{displayName}</span>
-                  <span className="shrink-0 tabular-nums">{priceText}</span>
-                </div>
-              );
-            })
+            card.items.map((item, i) => renderSwitcherProductLine(item, i))
           )}
         </div>
 
-        {!isSummaryReceipt && (
-          <>
-            <div className={`opacity-30 text-center ${metaSize}`}>{rule}</div>
-            <div className={`text-right font-bold tabular-nums ${lineSize}`}>
-              TOTAL: {currency}{card.total}
-            </div>
-          </>
+        <div className="invoice-switcher-card__rule" aria-hidden="true" />
+        <div className="invoice-switcher-card__total">
+          <span className="opacity-50 text-[10px] font-black uppercase tracking-widest">Total</span>
+          <span className="invoice-switcher-card__line-total tabular-nums font-semibold">{currency}{card.total}</span>
+        </div>
+
+        {isActive && (
+          <p className="text-[9px] font-bold opacity-45 truncate">
+            Served by &ldquo;{truncateReceiptText(attendant, receiptSpec.maxCols - 13)}&rdquo;
+          </p>
         )}
 
         {isActive && activeReceiptValidation && activeReceiptValidation.warnings.length > 0 && (
-          <div className="shrink-0 mt-1 px-1.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200/80 text-[8px] leading-snug text-amber-900">
+          <div className="shrink-0 px-2 py-1.5 rounded-lg bg-amber-50 border border-amber-200/80 text-[8px] leading-snug text-amber-900">
             {activeReceiptValidation.warnings.map((warning, i) => (
               <div key={i}>{warning}</div>
             ))}
@@ -995,126 +1069,140 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     if (!isActive) return null;
     const attendant = getAttendantForInvoice(card.name);
 
-    const compact = receiptPaperWidth === '25mm';
-
     return (
-      <div
-        className={`shrink-0 border-t border-black/6 bg-white flex items-center gap-2 ${
-          compact ? 'px-2 py-2' : 'px-3 py-2.5'
-        }`}
-        style={{ touchAction: 'auto' }}
-      >
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setAttendantPickerInvoice(card.name);
-            setAttendantPickerOpen(true);
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          className="flex-1 min-w-0 text-left px-4 py-3 rounded-xl border border-black/8 bg-black/[0.03] text-sm font-black tracking-tight text-black hover:bg-black/[0.06] active:scale-[0.99] transition-all truncate"
-          aria-label="Choose name for print"
-        >
-          {attendant}
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            void handleShareClick(card);
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          disabled={isSharing || isPrinting || card.items.length === 0}
-          className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center bg-blue-500 text-white shadow-[0_8px_24px_rgba(59,130,246,0.35)] active:scale-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          aria-label="Share invoice as image"
-          title="Share (WhatsApp, etc.)"
-        >
-          <Icons.Share size={17} />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            void handlePrintClick(card);
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          disabled={isPrinting || isSharing || card.items.length === 0}
-          className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center bg-emerald-500 text-white shadow-[0_8px_24px_rgba(0,0,0,0.22),0_0_14px_rgb(16,185,129)] active:scale-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          aria-label="Print and mark paid"
-        >
-          <Icons.Check size={18} />
-        </button>
+      <div className="invoice-switcher-card__footer" style={{ touchAction: 'auto' }}>
+        <div className="invoice-switcher-card__footer-actions">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setAttendantPickerInvoice(card.name);
+              setAttendantPickerOpen(true);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="flex-1 min-w-0 text-left px-3 py-2.5 rounded-xl border border-black/8 bg-white text-xs font-black tracking-tight text-black hover:bg-black/[0.03] active:scale-[0.99] transition-all truncate"
+            aria-label="Choose name for print"
+          >
+            {attendant}
+          </button>
+
+          <div className="invoice-switcher-card__print-mode shrink-0" role="group" aria-label="Print mode">
+            <button
+              type="button"
+              data-active={printMode === 'text'}
+              onClick={(e) => { e.stopPropagation(); setPrintMode('text'); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              aria-pressed={printMode === 'text'}
+              title="Print raw ESC/POS text"
+            >
+              Text
+            </button>
+            <button
+              type="button"
+              data-active={printMode === 'image'}
+              onClick={(e) => { e.stopPropagation(); setPrintMode('image'); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              aria-pressed={printMode === 'image'}
+              title="Print raster image receipt"
+            >
+              Image
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleShareClick(card);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            disabled={isSharing || isPrinting || card.items.length === 0}
+            className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center bg-blue-500 text-white shadow-[0_6px_18px_rgba(59,130,246,0.35)] active:scale-90 transition-all disabled:opacity-40"
+            aria-label="Share invoice as image"
+            title="Share (WhatsApp, etc.)"
+          >
+            <Icons.Share size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void handlePrintClick(card);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            disabled={isPrinting || isSharing || !canPrintCard(card)}
+            className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center bg-emerald-500 text-white shadow-[0_6px_18px_rgba(16,185,129,0.35)] active:scale-90 transition-all disabled:opacity-40"
+            aria-label="Print invoice name, total, and served by"
+            title="Print invoice name, total, and served by"
+          >
+            <Icons.Printer size={16} />
+          </button>
+        </div>
       </div>
     );
   };
 
   const renderCardBody = (card: InvoiceCard, isActive: boolean) => {
     const isPaid = printedNames.has(card.name);
-    const compact = receiptPaperWidth === '25mm';
-    const headerPad = compact ? 'px-2 pt-3 pb-2' : 'px-3 pt-4 pb-3';
+    const rawTitle = card.isCurrent && isActive ? invoiceName : card.name;
+    const statusLabel = card.isCurrent ? 'Current' : isPaid ? 'Paid' : 'Open';
 
     return (
     <>
-      <div
-        className={`${headerPad} flex items-center justify-between gap-2 shrink-0 text-black bg-white border-b border-black/6`}
-      >
-        <div className="flex-1 min-w-0">
-          <div className="app-subtext text-[8px] font-black text-black/40 mb-0.5">
-            {receiptPaperWidth} receipt · {receiptSpec.maxCols} cols
-            {card.isCurrent ? ' · Current' : isPaid ? ' · Paid' : ' · Unpaid'}
-          </div>
-          {card.isCurrent && isActive ? (
-            <input
-              id="invoice-title"
-              type="text"
-              value={invoiceName}
-              onChange={e => onInvoiceNameChange(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-              placeholder="Invoice #1"
-              aria-label="Invoice name"
-              className={`w-full min-w-0 font-black tracking-tighter bg-transparent outline-none border-b border-transparent focus:border-black/20 transition-colors placeholder:text-black/30 text-black invoice-receipt-line ${
-                compact ? 'text-base' : 'text-xl'
-              }`}
-            />
-          ) : (
-            <div
-              id={isActive ? 'invoice-title' : undefined}
-              className={`font-black tracking-tighter invoice-receipt-line truncate ${
-                compact ? 'text-base' : 'text-xl'
-              }`}
-              title={card.name}
-            >
-              {truncateReceiptText(card.name, receiptSpec.maxInvoiceTitleChars)}
-            </div>
-          )}
-          {card.isCurrent && isActive && invoiceName.length > receiptSpec.maxInvoiceTitleChars && (
-            <div className="app-subtext text-[8px] text-amber-700 mt-0.5">
-              Title truncates to {receiptSpec.maxInvoiceTitleChars} chars on {receiptPaperWidth} paper
-            </div>
-          )}
+      <header className="invoice-switcher-card__header relative">
+        <div className="invoice-switcher-card__brand-row">
+          <span className="invoice-switcher-card__brand" title={invoiceBrandLabel}>
+            {invoiceBrandLabel}
+          </span>
+          <span className={`invoice-switcher-card__badge ${isPaid ? 'invoice-switcher-card__badge--paid' : ''}`}>
+            {statusLabel}
+          </span>
         </div>
 
+        {card.isCurrent && isActive ? (
+          <input
+            id="invoice-title"
+            type="text"
+            value={invoiceName}
+            onChange={e => onInvoiceNameChange(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            placeholder="Invoice #1"
+            aria-label="Invoice name"
+            className="invoice-switcher-card__title w-full min-w-0 bg-transparent outline-none border-b border-transparent focus:border-white/25 transition-colors placeholder:text-white/35 invoice-receipt-line"
+          />
+        ) : (
+          <div
+            id={isActive ? 'invoice-title' : undefined}
+            className="invoice-switcher-card__title invoice-receipt-line truncate"
+            title={card.name}
+          >
+            {truncateReceiptText(rawTitle, receiptSpec.maxInvoiceTitleChars)}
+          </div>
+        )}
+
+        <p className="invoice-switcher-card__meta">
+          {receiptPaperWidth} · {card.items.length} items · raw sync
+        </p>
+
         {isActive && (!isBrowseMode || focusZoomed) && (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="absolute top-3 right-3 flex items-center gap-2">
             {isBrowseMode && focusZoomed && (
               <button
                 type="button"
                 onClick={() => setFocusZoomed(false)}
                 aria-label="Back to invoice browse view"
-                className={`p-2.5 rounded-full transition-colors duration-150 shrink-0 ${
-                  isLight ? 'text-black hover:bg-black/8' : 'text-white hover:bg-white/8'
-                }`}
+                className="p-2 rounded-full text-white/80 hover:bg-white/10 transition-colors"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
               </button>
             )}
             {!onSwitcherModeChange && renderCloseButton()}
           </div>
         )}
-      </div>
+      </header>
 
-      <div className="flex-1 flex flex-col min-h-0 bg-white text-black overflow-hidden">
+      <div className="invoice-switcher-card flex-1 flex flex-col min-h-0 overflow-hidden relative">
         {renderCardContent(card, isActive)}
         {renderCardFooter(card, isActive)}
       </div>
@@ -1133,7 +1221,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             <button
               key={i}
               aria-label={`Go to card ${i + 1}`}
-              onClick={() => (i === activeIdx ? confirmInvoiceToExpression(i) : previewInvoice(i))}
+              onClick={() => beginInvoiceLoad(i)}
               style={{
                 width: i === activeIdx ? 20 : 6,
                 height: 6,
@@ -1254,7 +1342,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
               <div className="text-sm font-black tracking-tight text-white drop-shadow-sm">
                 Invoices
               </div>
-              <p className="app-subtext text-[10px] text-white/50 mt-1">Hold to preview · Tap focused to continue</p>
+              <p className="app-subtext text-[10px] text-white/50 mt-1">Tap to load · Hold to preview</p>
             </div>
 
             <div
@@ -1325,6 +1413,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 onClick={() => handleCardSelectClick(idx)}
               >
                 {renderCardBody(card, isActive)}
+                {renderInvoiceLoadingOverlay(idx)}
               </div>
             );
           })
@@ -1357,6 +1446,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 onClick={() => handleCardSelectClick(idx)}
               >
                 {renderCardBody(card, isActive)}
+                {renderInvoiceLoadingOverlay(idx)}
               </div>
             );
           })

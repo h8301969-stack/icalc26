@@ -13,6 +13,7 @@ import { isCloudBackendEnabled, supabase } from './supabase';
 import { safeEvaluate } from './calculator';
 import { buildPosExpressionFromItems } from './posExpression';
 import { normalizeExpressionViewMode } from './expressionDisplay';
+import { sanitizeImageRefForDb, sanitizeWallpapersForDb } from './supabaseSanitize';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -133,7 +134,7 @@ export const syncInventoryToSupabase = async (
     threshold: item.threshold,
     category: item.category,
     supplier: item.supplier || null,
-    image_url: item.image || null,
+    image_url: sanitizeImageRefForDb(item.image),
     date_added: item.dateAdded,
     last_stocked: item.lastStocked,
   }));
@@ -771,6 +772,9 @@ type DbUserSettingsRow = {
   receipt_layout_mode?: string | null;
   standby_timer_seconds: number;
   active_profile_id: string | null;
+  business_name?: string | null;
+  business_phone?: string | null;
+  business_address?: string | null;
   updated_at?: string;
 };
 
@@ -794,6 +798,9 @@ const mapDbSettingsToApp = (row: DbUserSettingsRow): Partial<AppSettings> => ({
       : 'summary',
   standbyTimerSeconds: row.standby_timer_seconds,
   activeProfileId: row.active_profile_id ?? '',
+  businessName: row.business_name ?? '',
+  businessPhone: row.business_phone ?? '',
+  businessAddress: row.business_address ?? '',
 });
 
 const mapAppSettingsToDb = (
@@ -807,7 +814,7 @@ const mapAppSettingsToDb = (
   haptic_intensity: settings.hapticIntensity,
   theme_mode: settings.themeMode,
   currency: settings.currency,
-  custom_wallpapers: settings.customWallpapers,
+  custom_wallpapers: sanitizeWallpapersForDb(settings.customWallpapers),
   ui_scale: settings.uiScale,
   disable_calculator_card: settings.disableCalculatorCard,
   layout_mode: settings.layoutMode,
@@ -817,6 +824,9 @@ const mapAppSettingsToDb = (
   receipt_layout_mode: settings.receiptLayoutMode,
   standby_timer_seconds: settings.standbyTimerSeconds,
   active_profile_id: settings.activeProfileId || null,
+  business_name: settings.businessName?.trim() || null,
+  business_phone: settings.businessPhone?.trim() || null,
+  business_address: settings.businessAddress?.trim() || null,
 });
 
 export const fetchSettingsFromSupabase = async (
@@ -827,7 +837,7 @@ export const fetchSettingsFromSupabase = async (
   const { data, error } = await supabase
     .from('user_settings')
     .select(
-      'accent_color, glass_blur, haptic_feedback, haptic_intensity, theme_mode, currency, custom_wallpapers, ui_scale, disable_calculator_card, layout_mode, layout_mode_auto, invoice_switcher_mode, expression_view_mode, receipt_layout_mode, standby_timer_seconds, active_profile_id, updated_at'
+      'accent_color, glass_blur, haptic_feedback, haptic_intensity, theme_mode, currency, custom_wallpapers, ui_scale, disable_calculator_card, layout_mode, layout_mode_auto, invoice_switcher_mode, expression_view_mode, receipt_layout_mode, standby_timer_seconds, active_profile_id, business_name, business_phone, business_address, updated_at'
     )
     .eq('user_id', userId)
     .maybeSingle();

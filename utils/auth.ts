@@ -103,6 +103,27 @@ export const getOrCreateDevGuestAccount = (): AppAccount => {
   return account;
 };
 
+/** Dev guest signed in with @admin active — full POS visibility (no masked stats). */
+export const getOrCreateDevGuestAccountAsAdmin = (): AppAccount => {
+  const guest = getOrCreateDevGuestAccount();
+  const profiles = ensureAdminProfile(guest.profiles);
+  const adminGuest: AppAccount = {
+    ...guest,
+    profiles,
+    activeProfileId: ADMIN_PROFILE_ID,
+  };
+  const accounts = getAccounts();
+  const idx = accounts.findIndex((a) => a.id === adminGuest.id);
+  if (idx === -1) {
+    saveAccounts([...accounts, adminGuest]);
+  } else {
+    accounts[idx] = adminGuest;
+    saveAccounts(accounts);
+  }
+  setAuthSession({ accountId: adminGuest.id, username: adminGuest.username });
+  return adminGuest;
+};
+
 export const signupWithInvite = async (
   username: string,
   inviteCode: string

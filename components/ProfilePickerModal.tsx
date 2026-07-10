@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Icons } from '../constants';
-import { UserProfile } from '../types';
+import { NewProfileInput, ProfileSellerType, UserProfile } from '../types';
 import ProfileAvatar from './ProfileAvatar';
 import { ADMIN_PROFILE_NAME, isAdminProfile } from '../utils/auth';
 
@@ -11,10 +11,13 @@ interface ProfilePickerModalProps {
   profiles: UserProfile[];
   activeProfileId: string;
   onSelectProfile: (profileId: string) => void;
-  onAddProfile: (name: string, avatarUrl: string) => void;
+  onAddProfile: (profile: NewProfileInput) => void | Promise<void>;
   onUpdateProfileAvatar: (profileId: string, avatarUrl: string) => void;
   onVerifyAdminPassword?: (password: string) => Promise<{ error?: string; ok?: boolean }>;
 }
+
+const isValidEmail = (email: string): boolean =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
 const readImageFile = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -37,12 +40,16 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
 }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newSellerType, setNewSellerType] = useState<ProfileSellerType>('retailer');
   const [newAvatarUrl, setNewAvatarUrl] = useState('');
   const [avatarTargetId, setAvatarTargetId] = useState<string | null>(null);
   const [adminTargetId, setAdminTargetId] = useState<string | null>(null);
   const [adminPassword, setAdminPassword] = useState('');
   const [adminPasswordError, setAdminPasswordError] = useState<string | null>(null);
   const [isVerifyingAdmin, setIsVerifyingAdmin] = useState(false);
+  const [isCreatingProfile, setIsCreatingProfile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeProfile = profiles.find((p) => p.id === activeProfileId);
@@ -82,14 +89,37 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
     setAvatarTargetId(null);
   };
 
-  const handleCreate = () => {
+  const canCreateProfile =
+    !!newName.trim()
+    && newName.trim().toLowerCase() !== ADMIN_PROFILE_NAME.toLowerCase()
+    && isValidEmail(newEmail)
+    && !!newPhone.trim()
+    && !!newSellerType;
+
+  const handleCreate = async () => {
     const name = newName.trim();
-    if (!name || name.toLowerCase() === ADMIN_PROFILE_NAME.toLowerCase()) return;
-    onAddProfile(name, newAvatarUrl);
-    setNewName('');
-    setNewAvatarUrl('');
-    setIsAdding(false);
-    onClose();
+    const email = newEmail.trim();
+    const phone = newPhone.trim();
+    if (!canCreateProfile || isCreatingProfile) return;
+    setIsCreatingProfile(true);
+    try {
+      await onAddProfile({
+        name,
+        avatarUrl: newAvatarUrl,
+        email,
+        phone,
+        sellerType: newSellerType,
+      });
+      setNewName('');
+      setNewEmail('');
+      setNewPhone('');
+      setNewSellerType('retailer');
+      setNewAvatarUrl('');
+      setIsAdding(false);
+      onClose();
+    } finally {
+      setIsCreatingProfile(false);
+    }
   };
 
   const completeSelect = (profileId: string) => {
@@ -137,16 +167,27 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
   };
 
   const resetAddForm = () => {
+    if (isCreatingProfile) return;
     setIsAdding(false);
     setNewName('');
+    setNewEmail('');
+    setNewPhone('');
+    setNewSellerType('retailer');
     setNewAvatarUrl('');
   };
 
   const resetAll = () => {
+    if (isCreatingProfile) return;
     resetAddForm();
     setAdminTargetId(null);
     setAdminPassword('');
     setAdminPasswordError(null);
+  };
+
+  const handleClose = () => {
+    if (isCreatingProfile) return;
+    resetAll();
+    onClose();
   };
 
   const draftProfile: UserProfile = {
@@ -162,7 +203,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
     <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-4 pointer-events-auto">
       <div
         className={`absolute inset-0 ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
-        onClick={() => { resetAll(); onClose(); }}
+        onClick={handleClose}
         aria-hidden="true"
       />
       <input
@@ -246,8 +287,9 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                 )}
                 <button
                   type="button"
-                  onClick={() => { resetAll(); onClose(); }}
+                  onClick={handleClose}
                   aria-label="Close profiles"
+                  disabled={isCreatingProfile}
                   className={`p-2 rounded-full ${isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
                 >
                   <Icons.X size={22} />
@@ -256,36 +298,108 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
             </div>
 
             {isAdding ? (
-              <div className="p-6 space-y-6">
+              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
                 <div className="flex flex-col items-center gap-3">
                   <ProfileAvatar
                     profile={draftProfile}
                     size={88}
                     isLight={isLight}
-                    onClick={() => openGallery('new')}
+                    onClick={isCreatingProfile ? undefined : () => openGallery('new')}
                     ariaLabel="Choose avatar from gallery"
                   />
                   <span className="app-subtext opacity-40">
                     Tap avatar to choose image
                   </span>
                 </div>
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Profile name"
-                  autoFocus
-                  className={`w-full p-4 rounded-2xl outline-none font-black text-base ${inputClass}`}
-                />
+                <label className="block">
+                  <span className="app-subtext text-[10px] font-black opacity-60 block mb-1.5">
+                    Profile name <span className="text-red-500">*</span>
+                  </span>
+                  <input
+                    type="text"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="Profile name"
+                    autoFocus
+                    disabled={isCreatingProfile}
+                    className={`w-full p-4 rounded-2xl outline-none font-black text-base disabled:opacity-50 ${inputClass}`}
+                  />
+                </label>
+                <label className="block">
+                  <span className="app-subtext text-[10px] font-black opacity-60 block mb-1.5">
+                    Email <span className="text-red-500">*</span>
+                  </span>
+                  <input
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    disabled={isCreatingProfile}
+                    className={`w-full p-4 rounded-2xl outline-none font-black text-base disabled:opacity-50 ${inputClass}`}
+                  />
+                </label>
+                <label className="block">
+                  <span className="app-subtext text-[10px] font-black opacity-60 block mb-1.5">
+                    Number <span className="text-red-500">*</span>
+                  </span>
+                  <input
+                    type="tel"
+                    value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value)}
+                    placeholder="+233 …"
+                    autoComplete="tel"
+                    disabled={isCreatingProfile}
+                    className={`w-full p-4 rounded-2xl outline-none font-black text-base disabled:opacity-50 ${inputClass}`}
+                  />
+                </label>
+                <div>
+                  <span className="app-subtext text-[10px] font-black opacity-60 block mb-2">
+                    Type <span className="text-red-500">*</span>
+                  </span>
+                  <div className={`flex rounded-full overflow-hidden border ${isLight ? 'border-zinc-200' : 'border-white/10'}`}>
+                    <button
+                      type="button"
+                      disabled={isCreatingProfile}
+                      onClick={() => setNewSellerType('retailer')}
+                      className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
+                        newSellerType === 'retailer'
+                          ? isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+                          : 'opacity-50'
+                      }`}
+                    >
+                      Retailer
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isCreatingProfile}
+                      onClick={() => setNewSellerType('wholesaler')}
+                      className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
+                        newSellerType === 'wholesaler'
+                          ? isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+                          : 'opacity-50'
+                      }`}
+                    >
+                      Wholesaler
+                    </button>
+                  </div>
+                </div>
                 <button
                   type="button"
-                  onClick={handleCreate}
-                  disabled={!newName.trim() || newName.trim().toLowerCase() === ADMIN_PROFILE_NAME.toLowerCase()}
-                  className={`w-full py-4 rounded-2xl text-xs font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 ${
+                  onClick={() => void handleCreate()}
+                  disabled={isCreatingProfile || !canCreateProfile}
+                  className={`w-full py-4 rounded-2xl text-xs font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
                     isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                   }`}
                 >
-                  Create profile
+                  {isCreatingProfile ? (
+                    <>
+                      <span className="auth-spinner" aria-hidden="true" />
+                      Creating…
+                    </>
+                  ) : (
+                    'Create profile'
+                  )}
                 </button>
               </div>
             ) : (

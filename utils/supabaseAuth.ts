@@ -13,6 +13,7 @@ import {
   validateLoginAccess,
 } from './accessControl';
 import { isCloudBackendEnabled, isSupabaseConfigured, supabase } from './supabase';
+import { sanitizeAvatarForDb } from './supabaseSanitize';
 
 const AUTH_DOMAIN = 'icalc.users';
 const ADMIN_PROFILE_UUID = '00000000-0000-4000-8000-000000000001';
@@ -83,7 +84,7 @@ const seedUserRows = async (userId: string, username: string, inviteCode: string
       id: ADMIN_PROFILE_UUID,
       user_id: userId,
       name: admin.name,
-      avatar_url: admin.avatarUrl,
+      avatar_url: sanitizeAvatarForDb(admin.avatarUrl),
       is_system: true,
       sort_order: 0,
     },

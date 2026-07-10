@@ -1,4 +1,4 @@
-const CACHE_NAME = 'icalc-26-v7';
+const CACHE_NAME = 'icalc-26-v8';
 const SHELL_ASSETS = [
   './',
   './index.html',
@@ -11,6 +11,9 @@ const SHELL_ASSETS = [
 ];
 
 const isDev = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
+
+/** Never cache Supabase — all methods must reach the live API (POST/PUT/PATCH/DELETE especially). */
+const isSupabaseRequest = (url) => /\.supabase\.co$/i.test(url.hostname);
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -34,14 +37,25 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
+  const { request } = event;
+  const url = new URL(request.url);
+
   if (isDev) {
-    event.respondWith(fetch(event.request));
+    event.respondWith(fetch(request));
     return;
   }
 
-  const { request } = event;
-  const url = new URL(request.url);
+  // Supabase REST, Auth, RPC, Storage, Edge Functions — network only, never cache.
+  if (isSupabaseRequest(url)) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // All mutating requests bypass cache (do not rely on implicit browser default).
+  if (request.method !== 'GET') {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   if (request.mode === 'navigate') {
     event.respondWith(
@@ -71,7 +85,5 @@ self.addEventListener('fetch', (event) => {
         });
       })
     );
-    return;
   }
-
 });

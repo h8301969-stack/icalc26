@@ -12,8 +12,10 @@ import {
 import { formatPosLineItemDisplay, formatPriceLabel, parsePosLineItems } from '../utils/posExpression';
 import { Icons } from '../constants';
 import { InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS';
+import { isAdminProfile } from '../utils/auth';
 
 import SettingsPanel from './SettingsPanel';
+import VisionHubPrintPanel, { HubInvoice } from './VisionHubPrintPanel';
 import { WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
 
 interface POSDashboardProps {
@@ -43,6 +45,7 @@ interface POSDashboardProps {
     themeMode: 'light' | 'dark' | 'system';
     disableCalculatorCard?: boolean;
     layoutMode?: 'portrait' | 'landscape';
+    visionHubDrawerMode?: 'drag' | 'click';
     profiles?: import('../types').UserProfile[];
     activeProfileId?: string;
     currency?: string;
@@ -56,9 +59,12 @@ interface POSDashboardProps {
   onChangePassword?: (current: string, newPassword: string) => Promise<{ error?: string; ok?: boolean }>;
   onLogout?: () => void;
   onVerifyAdminPassword?: (password: string) => Promise<{ error?: string; ok?: boolean }>;
+  canInstallApp?: boolean;
+  isAppInstalled?: boolean;
+  onInstallApp?: () => void;
 }
 
-type DashboardLogFilter = 'all' | 'restock' | 'sale' | 'invoice' | 'unidentified' | '24h' | '48h' | '7d';
+type DashboardLogFilter = 'all' | 'restock' | 'sale' | 'invoice' | 'unidentified' | 'updates' | '24h' | '48h' | '7d';
 
 interface DashboardLogEntry {
   id: string;
@@ -76,6 +82,21 @@ interface DashboardLogEntry {
 
 type SortOption = 'a-z' | 'high-stock' | 'low-stock';
 type FilterOption = 'all' | '24h' | '48h' | '3d' | '7d' | '14d' | 'custom';
+
+const INVENTORY_SORT_OPTIONS: { id: SortOption; label: string }[] = [
+  { id: 'a-z', label: 'A-Z' },
+  { id: 'high-stock', label: 'Stock ↓' },
+  { id: 'low-stock', label: 'Stock ↑' },
+];
+
+const INVENTORY_FILTER_OPTIONS: { id: FilterOption; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: '24h', label: '24h' },
+  { id: '48h', label: '48h' },
+  { id: '3d', label: '3d' },
+  { id: '7d', label: '7d' },
+  { id: '14d', label: '14d' },
+];
 
 
 
@@ -188,14 +209,24 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   onChangePassword,
   onLogout,
   onVerifyAdminPassword,
+  canInstallApp = false,
+  isAppInstalled = false,
+  onInstallApp,
 }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  const activeProfileName = useMemo(() => {
+  const activeProfile = useMemo(() => {
     const profiles = settings.profiles ?? [];
-    const active = profiles.find((p) => p.id === settings.activeProfileId) ?? profiles[0];
-    return active?.name ?? 'Staff';
+    return profiles.find((p) => p.id === settings.activeProfileId) ?? profiles[0] ?? null;
   }, [settings.profiles, settings.activeProfileId]);
+
+  const activeProfileName = activeProfile?.name ?? 'Staff';
+
+  const canEditStock = isAdminProfile(activeProfile) || activeProfile?.sellerType === 'wholesaler';
+  const canEditPrice = isAdminProfile(activeProfile) || activeProfile?.sellerType === 'retailer';
+
+  const [stockEditValue, setStockEditValue] = useState('');
+  const [priceEditValue, setPriceEditValue] = useState('');
   const [inventoryExpanded, setInventoryExpanded] = useState(false);
   const [purchasesExpanded, setPurchasesExpanded] = useState(false);
   const [avgCustomerExpanded, setAvgCustomerExpanded] = useState(false);
@@ -215,6 +246,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [isThemeAnimating, setIsThemeAnimating] = useState(false);
   const [isSettingsAnimating, setIsSettingsAnimating] = useState(false);
   const [isCloseAnimating, setIsCloseAnimating] = useState(false);
+  const [visionHubFocus, setVisionHubFocus] = useState(false);
   
   const [sortOption, setSortOption] = useState<SortOption>('a-z');
   const [filterOption, setFilterOption] = useState<FilterOption>('all');
@@ -223,6 +255,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   const [searchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+
+  useEffect(() => {
+    if (!selectedItem) return;
+    const item = items.find((i) => i.id === selectedItem.id) ?? selectedItem;
+    setStockEditValue(String(item.stock));
+    setPriceEditValue(String(item.price));
+  }, [selectedItem?.id, items]);
   
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('0');
@@ -344,6 +383,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       setInvoicesTodayExpanded(false);
       setMonthlyRevExpanded(false);
       setDailySalesExpanded(false);
+      setVisionHubFocus(false);
     }
   }, [isOpen]);
 
@@ -526,6 +566,48 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     && !restockExpanded && !avgCustomerExpanded && !invoicesTodayExpanded
     && !monthlyRevExpanded && !dailySalesExpanded && !actionLogsExpanded && !namingUnidentified;
 
+  const printedInvoiceNames = useMemo(
+    () => new Set(printLogs.map((log) => log.invoiceName)),
+    [printLogs]
+  );
+
+  const hubInvoices = useMemo<HubInvoice[]>(() => {
+    const grouped = new Map<string, InvoiceActionLog[]>();
+    for (const log of invoiceActionLogs) {
+      if (!grouped.has(log.invoiceName)) grouped.set(log.invoiceName, []);
+      grouped.get(log.invoiceName)!.push(log);
+    }
+
+    const built: HubInvoice[] = [];
+    for (const name of grouped.keys()) {
+      if (name === invoiceName) continue;
+      const logs = grouped.get(name)!;
+      built.push({
+        id: `past-${name}`,
+        name,
+        items: logs.map((l) => ({
+          price: l.price,
+          quantity: l.quantity,
+          name: l.itemName,
+        })),
+        total: logs.reduce((s, l) => s + l.price * l.quantity, 0).toFixed(2),
+        isCurrent: false,
+        isPaid: printedInvoiceNames.has(name),
+      });
+    }
+
+    built.push({
+      id: 'current',
+      name: invoiceName,
+      items: cartItems,
+      total: runningTotal,
+      isCurrent: true,
+      isPaid: printedInvoiceNames.has(invoiceName),
+    });
+
+    return built.filter((inv) => inv.isCurrent || inv.items.length > 0);
+  }, [invoiceActionLogs, cartItems, invoiceName, runningTotal, printedInvoiceNames]);
+
   const latestPurchaseItems = useMemo(() => {
     if (purchases.length === 0) return [];
     const latestRecord = purchases[0]; 
@@ -586,6 +668,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       result = result.filter((log) => log.type === 'invoice-add' || log.type === 'invoice-unidentified');
     } else if (actionLogFilter === 'unidentified') {
       result = result.filter((log) => log.isUnidentified);
+    } else if (actionLogFilter === 'updates') {
+      result = result.filter((log) => log.type === 'price-update' || log.type === 'stock-update');
     } else if (actionLogFilter === '24h') {
       result = result.filter((log) => now - log.timestamp <= oneDay);
     } else if (actionLogFilter === '48h') {
@@ -1489,6 +1573,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       case 'image-update': return <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-500"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>;
       case 'invoice-unidentified': return <div className="p-1.5 rounded-lg bg-red-500/20 text-red-500"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>;
       case 'invoice-add': return <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-500"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>;
+      case 'price-update':
+      case 'stock-update':
+        return <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-500"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg></div>;
       default: return <div className={`p-1.5 rounded-lg ${isLight ? 'bg-black/10 text-black' : 'bg-white/10 text-white'}`}><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></div>;
     }
   };
@@ -1542,6 +1629,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const textColorClass = isLight ? 'text-black' : 'text-white';
   const cardSubtextClass = isLight ? 'text-black' : 'text-white';
   const cardSubtextMutedClass = isLight ? 'text-black/60' : 'text-white/60';
+  const hubChipActiveClass = isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black';
+  const hubChipInactiveClass = isLight ? 'bg-white text-black shadow-sm' : 'bg-black/50 text-white';
   const invertedBarSubtextClass = isLight ? 'text-white/70' : 'text-black/70';
   const heroSubtextClass = 'text-white';
   const panelSubtextClass = isLight ? 'text-black/60' : 'text-white/60';
@@ -1551,6 +1640,76 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     : 'pos-dashboard-card-glass border border-white/10 text-white';
   const statDetailTextClass = 'text-white';
   const statDetailBorderClass = isLight ? 'border-white/15' : 'border-white/20';
+
+  const commitStockUpdate = useCallback(
+    (item: InventoryItem, rawValue: string) => {
+      const parsed = Number.parseInt(rawValue, 10);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed === item.stock) {
+        setStockEditValue(String(item.stock));
+        return;
+      }
+      const now = Date.now();
+      const action = `${item.name} updated from ${item.stock} to ${parsed}`;
+      setItems((prev) =>
+        prev.map((row) => {
+          if (row.id !== item.id) return row;
+          return {
+            ...row,
+            stock: parsed,
+            activities: [
+              {
+                id: `stock-update-${now}`,
+                type: 'stock-update' as const,
+                action,
+                time: 'Just now',
+                timestamp: now,
+                profileName: activeProfileName,
+              },
+              ...row.activities,
+            ],
+          };
+        })
+      );
+      setStockEditValue(String(parsed));
+    },
+    [activeProfileName, setItems]
+  );
+
+  const commitPriceUpdate = useCallback(
+    (item: InventoryItem, rawValue: string) => {
+      const parsed = Number.parseFloat(rawValue);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed === item.price) {
+        setPriceEditValue(String(item.price));
+        return;
+      }
+      const now = Date.now();
+      const oldLabel = formatCurrency(String(item.price));
+      const newLabel = formatCurrency(String(parsed));
+      const action = `${item.name} changed from ${oldLabel} to ${newLabel}`;
+      setItems((prev) =>
+        prev.map((row) => {
+          if (row.id !== item.id) return row;
+          return {
+            ...row,
+            price: parsed,
+            activities: [
+              {
+                id: `price-update-${now}`,
+                type: 'price-update' as const,
+                action,
+                time: 'Just now',
+                timestamp: now,
+                profileName: activeProfileName,
+              },
+              ...row.activities,
+            ],
+          };
+        })
+      );
+      setPriceEditValue(String(parsed));
+    },
+    [activeProfileName, formatCurrency, setItems]
+  );
 
   const getItemActivityLogs = (item: InventoryItem) => {
     const dayAgo = Date.now() - 86400000;
@@ -1576,16 +1735,17 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     }
     return slice.map((log) => {
       const actorName = log.profileName ?? activeProfileName;
+      const isUpdateLog = log.type === 'price-update' || log.type === 'stock-update';
       const rowClass = `w-full flex items-center justify-between gap-2 min-w-0 text-left ${clickable ? 'cursor-pointer hover:opacity-80 active:scale-[0.99] transition-all' : ''}`;
       const rowContent = (
         <>
           <div className="flex items-center gap-2 min-w-0">
             {getLogIcon(log.type)}
             <div className="flex flex-col min-w-0">
-              <span className={`text-[10px] font-black tracking-tight truncate ${log.isUnidentified ? 'text-red-500' : textColorClass}`}>
+              <span className={`text-[10px] font-black tracking-tight truncate ${log.isUnidentified ? 'text-red-500' : isUpdateLog ? 'text-blue-500' : textColorClass}`}>
                 {log.action}
               </span>
-              {log.itemName && (
+              {log.itemName && !isUpdateLog && (
                 <span className={`pos-subtext text-[8px] font-bold truncate ${log.isUnidentified ? 'text-red-400' : cardSubtextMutedClass}`}>
                   {log.itemName}
                 </span>
@@ -1647,14 +1807,14 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       )}
 
       <div className="flex gap-2 flex-wrap pb-1">
-        {(['all', 'restock', 'sale', 'invoice', 'unidentified', '24h', '48h', '7d'] as const).map((opt) => (
+        {(['all', 'restock', 'sale', 'invoice', 'unidentified', 'updates', '24h', '48h', '7d'] as const).map((opt) => (
           <button
             key={opt}
             type="button"
             onClick={() => setActionLogFilter(opt)}
             className={`px-3 py-2 rounded-full pos-subtext text-[9px] font-black transition-all ${actionLogFilter === opt ? (isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black') : (isLight ? 'bg-zinc-100 text-black' : 'bg-white/5 text-white')}`}
           >
-            {opt === 'unidentified' ? 'Unidentified' : opt}
+            {opt === 'unidentified' ? 'Unidentified' : opt === 'updates' ? 'Updates' : opt}
           </button>
         ))}
       </div>
@@ -1816,21 +1976,54 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             <div className="grid grid-cols-2 gap-8">
               <div>
                 <p className={`pos-subtext text-[10px] font-black mb-2 ${cardSubtextMutedClass}`}>Inventory</p>
-                <p className={`text-3xl font-black ${item.stock < item.threshold ? 'text-red-500' : ''}`}>{item.stock} U</p>
+                {canEditStock ? (
+                  <div className="flex items-baseline gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={stockEditValue}
+                      onChange={(e) => setStockEditValue(e.target.value)}
+                      onBlur={() => commitStockUpdate(item, stockEditValue)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      className={`w-full max-w-[8rem] text-3xl font-black bg-transparent border-b-2 outline-none tabular-nums ${
+                        item.stock < item.threshold ? 'text-red-500 border-red-500/40' : `${textColorClass} ${isLight ? 'border-black/15' : 'border-white/20'}`
+                      }`}
+                      aria-label={`Edit stock for ${item.name}`}
+                    />
+                    <span className={`text-xl font-black ${cardSubtextMutedClass}`}>U</span>
+                  </div>
+                ) : (
+                  <p className={`text-3xl font-black ${item.stock < item.threshold ? 'text-red-500' : ''}`}>{item.stock} U</p>
+                )}
               </div>
               <div>
                 <p className={`pos-subtext text-[10px] font-black mb-2 ${cardSubtextMutedClass}`}>Credit Rate</p>
-                <p className="text-3xl font-black">¢{item.price}</p>
+                {canEditPrice ? (
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={priceEditValue}
+                    onChange={(e) => setPriceEditValue(e.target.value)}
+                    onBlur={() => commitPriceUpdate(item, priceEditValue)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    className={`w-full max-w-[10rem] text-3xl font-black bg-transparent border-b-2 outline-none tabular-nums ${textColorClass} ${isLight ? 'border-black/15' : 'border-white/20'}`}
+                    aria-label={`Edit price for ${item.name}`}
+                  />
+                ) : (
+                  <p className="text-3xl font-black">¢{item.price}</p>
+                )}
               </div>
             </div>
-            <button
-              onClick={() => openRestockPopup(item)}
-              aria-label="Replenish this asset"
-              className="w-full py-7 rounded-[20.8px] text-black font-black uppercase tracking-[0.4em] text-[11px] active:scale-95 shadow-2xl flex items-center justify-center gap-4 transition-all"
-              style={{ backgroundColor: accentColor }}
-            >
-              <Icons.Scientific size={18} /> Replenish Asset
-            </button>
           </div>
         </div>
 
@@ -1846,63 +2039,35 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   return (
     <div className={`pos-dashboard-root fixed inset-0 z-200 flex flex-col ${isOpen ? 'pos-dashboard-root--open' : 'pos-dashboard-root--closed'}`}>
-      <div className={`pos-dashboard pos-dashboard-shell relative w-full h-full flex flex-col ${isLight ? 'pos-dashboard-shell--light' : 'pos-dashboard-shell--dark'} ${(isAddingItem || showAddRequestPopup || showAddRestockPopup || showSuppliersPanel || selectedRequest) ? 'pos-dashboard-shell--dimmed' : ''}`}>
-        
-        {/* DASHBOARD HEADER PORTION WITH THEME-INVERTED FIXED BAR */}
-        {hubCollapsed && (
-          <div className="relative pt-8 px-6 pb-6 overflow-hidden shrink-0 z-60">
-             {/* Drag handle removed per request */}
-             
-             {/* THE THEME-INVERTED HEADER BAR */}
-             <div className={`
-               w-full rounded-xl p-8 shadow-[0_32px_80px_rgba(0,0,0,0.25)] pos-dashboard-card-motion
-               ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-zinc-900'}
-             `}>
-               <div className="flex justify-between items-start">
-                 <div className="flex flex-col">
-                    <span className={`pos-subtext text-[9px] font-black mb-1 ${invertedBarSubtextClass}`}>Neural Terminal</span>
-                    <h2 className="vision-hub-title text-4xl font-black tracking-tighter">Vision Hub</h2>
-                    
-                    <div className="mt-4 flex items-center gap-3">
-                      <div className="font-num-medium text-xl tracking-tight leading-none">{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                      <div className={`w-px h-4 ${isLight ? 'bg-white/20' : 'bg-zinc-900/20'}`} />
-                      <div className={`pos-subtext text-[9px] font-bold ${invertedBarSubtextClass}`}>Live Session</div>
-                    </div>
-                 </div>
+      <div className={`pos-dashboard pos-dashboard-shell relative w-full h-full flex flex-col ${isLight ? 'pos-dashboard-shell--light' : 'pos-dashboard-shell--dark'} ${visionHubFocus ? 'pos-dashboard-shell--hub-focus' : ''} ${(isAddingItem || showAddRequestPopup || showAddRestockPopup || showSuppliersPanel || selectedRequest) ? 'pos-dashboard-shell--dimmed' : ''}`}>
 
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => { updateSettings('themeMode', isLight ? 'dark' : 'light'); setIsThemeAnimating(true); }} 
-                      onAnimationEnd={() => setIsThemeAnimating(false)}
-                      className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 ${isThemeAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-black/40 border-white/5 hover:bg-black/60 text-white shadow-[0_0_15px_rgba(255,255,255,0.65)] hover:shadow-[0_0_22px_rgba(255,255,255,0.85)] hover:scale-105' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-900 shadow-[0_8px_20px_rgba(0,0,0,0.28)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.42)] hover:scale-105'}`}
-                      title="Toggle Theme"
-                    >
-                      {isLight ? <Icons.Moon size={16} /> : <Icons.Sun size={16} />}
-                    </button>
-                    <button 
-                      onClick={() => { setIsSettingsOpen(true); setIsSettingsAnimating(true); }} 
-                      onAnimationEnd={() => setIsSettingsAnimating(false)}
-                      className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 ${isSettingsAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-black/40 border-white/5 hover:bg-black/60 text-white shadow-[0_0_15px_rgba(255,255,255,0.65)] hover:shadow-[0_0_22px_rgba(255,255,255,0.85)] hover:scale-105' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-900 shadow-[0_8px_20px_rgba(0,0,0,0.28)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.42)] hover:scale-105'}`}
-                      title="Settings"
-                    >
-                      <Icons.Settings size={16} />
-                    </button>
-                    <button 
-                      onClick={() => { onClose(); setIsCloseAnimating(true); }} 
-                      onAnimationEnd={() => setIsCloseAnimating(false)}
-                      className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 ${isCloseAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-black/40 border-white/5 hover:bg-black/60 text-white shadow-[0_0_15px_rgba(255,255,255,0.65)] hover:shadow-[0_0_22px_rgba(255,255,255,0.85)] hover:scale-105' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-900 shadow-[0_8px_20px_rgba(0,0,0,0.28)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.42)] hover:scale-105'}`}
-                      title="Close"
-                    >
-                      <Icons.X size={16} />
-                    </button>
-                  </div>
-               </div>
-             </div>
-          </div>
+        {hubCollapsed && (
+          <VisionHubPrintPanel
+            isLight={isLight}
+            invertedBarSubtextClass={invertedBarSubtextClass}
+            currentTimeLabel={currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            currency={currency}
+            formatCurrency={formatCurrency}
+            accentColor={accentColor}
+            invoices={hubInvoices}
+            attendantName={activeProfileName}
+            onInvoicePrinted={onInvoicePrinted}
+            onInteractionChange={setVisionHubFocus}
+            onThemeToggle={() => { updateSettings('themeMode', isLight ? 'dark' : 'light'); setIsThemeAnimating(true); }}
+            onSettingsOpen={() => { setIsSettingsOpen(true); setIsSettingsAnimating(true); }}
+            onCloseDashboard={() => { onClose(); setIsCloseAnimating(true); }}
+            isThemeAnimating={isThemeAnimating}
+            isSettingsAnimating={isSettingsAnimating}
+            isCloseAnimating={isCloseAnimating}
+            onThemeAnimationEnd={() => setIsThemeAnimating(false)}
+            onSettingsAnimationEnd={() => setIsSettingsAnimating(false)}
+            onCloseAnimationEnd={() => setIsCloseAnimating(false)}
+            drawerMode={settings.visionHubDrawerMode ?? 'drag'}
+          />
         )}
 
         {/* MAIN SCROLLABLE CONTENT */}
-        <div className="flex-1 overflow-y-auto px-6 space-y-10 custom-scrollbar pb-16 scroll-smooth">
+        <div className={`pos-dashboard-hub-blur-target flex-1 overflow-y-auto px-6 space-y-10 custom-scrollbar pb-16 scroll-smooth`}>
           {hubCollapsed ? (
             <div className="grid grid-cols-2 gap-6 pt-4">
               
@@ -2259,11 +2424,32 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   </div>
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-                      <select value={sortOption} onChange={(e) => setSortOption(e.target.value as SortOption)} className={`p-3 rounded-xl font-black text-[9px] uppercase tracking-widest border-none outline-none min-w-[120px] ${isLight ? 'bg-white shadow-sm' : 'bg-white/10 text-white'}`}>
-                        <option value="a-z">Sort: A-Z</option>
-                        <option value="high-stock">Stock: High-Low</option>
-                        <option value="low-stock">Stock: Low-High</option>
-                      </select>
+                      <div className="flex items-center gap-1 shrink-0" role="group" aria-label="Sort inventory">
+                        {INVENTORY_SORT_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setSortOption(opt.id)}
+                            aria-pressed={sortOption === opt.id}
+                            className={`px-3 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${sortOption === opt.id ? hubChipActiveClass : hubChipInactiveClass}`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-1" role="group" aria-label="Time filter options">
+                        {INVENTORY_FILTER_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setFilterOption(opt.id)}
+                            aria-pressed={filterOption === opt.id}
+                            className={`px-3 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${filterOption === opt.id ? hubChipActiveClass : hubChipInactiveClass}`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2941,6 +3127,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         onChangePassword={onChangePassword}
         onLogout={onLogout}
         onVerifyAdminPassword={onVerifyAdminPassword}
+        canInstallApp={canInstallApp}
+        isAppInstalled={isAppInstalled}
+        onInstallApp={onInstallApp}
       />
 
     </div>

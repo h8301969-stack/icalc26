@@ -6,7 +6,7 @@ import {
   getBluetoothSupport,
   normalizeBluetoothError,
 } from '../utils/bluetoothPrinter';
-import { CartLineItem, UserProfile } from '../types';
+import { CartLineItem, NewProfileInput, UserProfile } from '../types';
 import ProfileAvatar from './ProfileAvatar';
 import ProfilePickerModal from './ProfilePickerModal';
 import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
@@ -24,6 +24,7 @@ interface SettingsSlice {
   invoiceSwitcherMode?: 'horizontal' | 'grid' | 'vertical' | 'list';
   expressionViewMode?: 'auto' | 'list';
   receiptLayoutMode?: 'summary' | 'full';
+  visionHubDrawerMode?: 'drag' | 'click';
 
   standbyTimerSeconds?: number;
   profiles?: UserProfile[];
@@ -47,6 +48,9 @@ interface SettingsPanelProps {
   onChangePassword?: (current: string, newPassword: string) => Promise<{ error?: string; ok?: boolean }>;
   onLogout?: () => void;
   onVerifyAdminPassword?: (password: string) => Promise<{ error?: string; ok?: boolean }>;
+  canInstallApp?: boolean;
+  isAppInstalled?: boolean;
+  onInstallApp?: () => void;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
@@ -66,6 +70,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onChangePassword,
   onLogout,
   onVerifyAdminPassword,
+  canInstallApp = false,
+  isAppInstalled = false,
+  onInstallApp,
 }) => {
   const isLight = isLightProp ?? settings.themeMode === 'light';
 
@@ -226,17 +233,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     _updateSettings({ activeProfileId: profileId });
   };
 
-  const handleAddProfile = (name: string, avatarUrl: string) => {
+  const handleAddProfile = async ({ name, avatarUrl, email, phone, sellerType }: NewProfileInput) => {
     const trimmed = name.trim();
     if (!trimmed || trimmed.toLowerCase() === ADMIN_PROFILE_NAME.toLowerCase()) return;
     const profile: UserProfile = {
       id: `profile-${Date.now()}`,
       name: trimmed,
       avatarUrl,
+      email: email.trim(),
+      phone: phone.trim(),
+      sellerType,
     };
     _updateSettings({
       profiles: ensureAdminProfile([...profiles, profile]),
       activeProfileId: profile.id,
+    });
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
   };
 
@@ -512,6 +525,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               />
             </div>
 
+            {/* Vision Hub drawer */}
+            <div className="pt-2 border-t border-white/10 space-y-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-sm font-black">Vision Hub drawer</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  Drag invoices to the printer, or tap to focus and print
+                </span>
+              </div>
+              <FluidSegmentControl
+                isLight={isLight}
+                className="w-full"
+                ariaLabel="Vision Hub drawer mode"
+                value={settings.visionHubDrawerMode ?? 'drag'}
+                onChange={(visionHubDrawerMode) => applyAppearance({ visionHubDrawerMode })}
+                options={[
+                  { id: 'drag', label: 'Drag', icon: <Icons.Printer size={14} /> },
+                  { id: 'click', label: 'Click', icon: <Icons.List size={14} /> },
+                ]}
+              />
+            </div>
+
             {/* Share & print receipt */}
             <div className="pt-2 border-t border-white/10 space-y-3">
               <div className="flex flex-col gap-1">
@@ -546,6 +580,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 onLabel="Background"
               />
             </div>
+
+            {canInstallApp && !isAppInstalled && onInstallApp && (
+              <div className="pt-2 border-t border-white/10">
+                <div className="flex flex-col gap-1 mb-3">
+                  <span className="text-sm font-black">Install app</span>
+                  <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                    Add iCalc to your home screen for offline access
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void onInstallApp()}
+                  className={`w-full py-3.5 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
+                    isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+                  }`}
+                >
+                  <Icons.Download size={16} />
+                  Install app
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

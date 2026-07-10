@@ -1,43 +1,52 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+export const isPwaInstalled = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const nav = window.navigator as Navigator & { standalone?: boolean };
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches ||
+    nav.standalone === true
+  );
+};
+
 export const usePWAPrompt = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
-  const [isInstalled, setIsInstalled] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(() => isPwaInstalled());
+
+  const syncInstalled = useCallback(() => {
+    const installed = isPwaInstalled();
+    setIsInstalled(installed);
+    if (installed) {
+      setShowPrompt(false);
+      setDeferredPrompt(null);
+    }
+    return installed;
+  }, []);
 
   useEffect(() => {
-    const checkIfInstalled = () => {
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-      const isFullscreen = window.matchMedia('(display-mode: fullscreen)').matches;
-      setIsInstalled(isStandalone || isFullscreen);
-    };
-
     const handleBeforeInstallPrompt = (e: Event) => {
+      if (syncInstalled()) return;
       e.preventDefault();
       const event = e as BeforeInstallPromptEvent;
       setDeferredPrompt(event);
-      setTimeout(() => {
-        setShowPrompt((prev) => {
-          const installed =
-            window.matchMedia('(display-mode: standalone)').matches ||
-            window.matchMedia('(display-mode: fullscreen)').matches;
-          return installed ? prev : true;
-        });
+      window.setTimeout(() => {
+        if (syncInstalled()) return;
+        setShowPrompt(true);
       }, 1000);
     };
 
     const handleAppInstalled = () => {
-      setIsInstalled(true);
-      setShowPrompt(false);
-      setDeferredPrompt(null);
+      syncInstalled();
     };
 
-    checkIfInstalled();
+    syncInstalled();
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
 
@@ -45,10 +54,10 @@ export const usePWAPrompt = () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
-  }, []);
+  }, [syncInstalled]);
 
   const handleInstall = async () => {
-    if (!deferredPrompt) return;
+    if (!deferredPrompt || isInstalled) return;
 
     try {
       await deferredPrompt.prompt();
@@ -57,6 +66,7 @@ export const usePWAPrompt = () => {
         setShowPrompt(false);
       }
       setDeferredPrompt(null);
+      syncInstalled();
     } catch (err) {
       console.error('Error handling install prompt:', err);
     }
@@ -66,9 +76,11 @@ export const usePWAPrompt = () => {
     setShowPrompt(false);
   };
 
+  const canInstall = deferredPrompt !== null && !isInstalled;
+
   return {
-    showPrompt,
-    deferredPrompt: deferredPrompt !== null,
+    showPrompt: showPrompt && !isInstalled,
+    canInstall,
     isInstalled,
     handleInstall,
     handleDismiss,

@@ -52,3 +52,20 @@ export const migrateWallpaperSlides = (
     image: resolveWallpaperImage(slide.image),
   }));
 };
+
+/** Restore local wallpaper images after cloud sync (remote stores text only). */
+export const mergeWallpaperSlidesFromRemote = (
+  local: WallpaperSlide[],
+  remote: WallpaperSlide[]
+): WallpaperSlide[] => {
+  if (!remote.length) return local;
+  return remote.map((remoteSlide, index) => {
+    const localSlide =
+      local[index] ?? local.find((slide) => slide.header === remoteSlide.header);
+    return {
+      header: remoteSlide.header,
+      subHeader: remoteSlide.subHeader,
+      image: localSlide?.image || resolveWallpaperImage(remoteSlide.image) || '',
+    };
+  });
+};

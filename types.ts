@@ -33,11 +33,24 @@ export interface InvoicePrintLog {
   items: CartLineItem[];
 }
 
+export type ProfileSellerType = 'wholesaler' | 'retailer';
+
 export interface UserProfile {
   id: string;
   name: string;
   avatarUrl: string;
+  email?: string;
+  phone?: string;
+  sellerType?: ProfileSellerType;
   isSystem?: boolean;
+}
+
+export interface NewProfileInput {
+  name: string;
+  avatarUrl: string;
+  email: string;
+  phone: string;
+  sellerType: ProfileSellerType;
 }
 
 export type RequestStatus = 'pending' | 'delivered' | 'outofstock';

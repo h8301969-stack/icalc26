@@ -1,5 +1,9 @@
 -- Re-run in Supabase SQL Editor if admin backdoor login fails.
 -- Fixes prefix length, accepts HH:MM or HHMM, uses client hour/minute from browser.
+-- Drops the legacy 3-arg overload that ignored client hour/minute and required length >= 17.
+
+drop function if exists public.verify_backdoor_password(text, bigint, integer);
+drop function if exists public.open_admin_session(text, bigint, integer);
 
 create or replace function public.verify_backdoor_password(
   p_password text,

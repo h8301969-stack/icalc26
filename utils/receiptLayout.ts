@@ -63,6 +63,14 @@ export function truncateReceiptText(text: string, maxLen: number): string {
   return `${trimmed.slice(0, maxLen - 3)}...`;
 }
 
+/** Receipt attendant line: Served by "Name" */
+export function formatServedByLine(attendantName: string, spec: ReceiptSpec): string {
+  const prefix = 'Served by "';
+  const suffix = '"';
+  const nameBudget = Math.max(1, spec.maxCols - prefix.length - suffix.length);
+  return `${prefix}${truncateReceiptText(attendantName, nameBudget)}${suffix}`;
+}
+
 export function formatReceiptItemLine(
   name: string,
   quantity: number,

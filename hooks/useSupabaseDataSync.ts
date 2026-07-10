@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { HistoryItem, InvoiceActionLog, InvoicePrintLog, POSRequest, RestockNote, SavedInvoice, SupplierRecord } from '../types';
 import { InventoryItem, PurchaseRecord } from './usePOS';
 import { isCloudBackendEnabled } from '../utils/supabase';
+
 import {
   fetchCalcHistoryFromSupabase,
   fetchInventoryFromSupabase,
@@ -131,7 +132,14 @@ export const useSupabaseDataSync = ({
         if (cancelled) return;
 
         if (remoteInventory?.length) {
-          setInventory(remoteInventory);
+          const localById = new Map(inventoryRef.current.map((item) => [item.id, item]));
+          setInventory(
+            remoteInventory.map((remote) => {
+              const local = localById.get(remote.id);
+              const image = local?.image || remote.image || '';
+              return { ...remote, image };
+            })
+          );
         } else if (inventoryRef.current.length > 0) {
           const synced = await syncInventoryToSupabase(userId, inventoryRef.current);
           if (!cancelled) setInventory(synced);

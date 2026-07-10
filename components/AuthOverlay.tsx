@@ -4,7 +4,7 @@ import icalcLogo from '../assets/logo/icalc-logo.png';
 import { Icons } from '../constants';
 import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
 import { AppAccount } from '../utils/auth';
-import { checkAccessCodeStatus, subscribeAccessStatus } from '../utils/accessControl';
+import { checkAccessCodeStatus, submitAccessBusinessInfo, subscribeAccessStatus } from '../utils/accessControl';
 import { supabase } from '../utils/supabase';
 
 type AuthMode = 'signup' | 'login';
@@ -24,6 +24,9 @@ interface AuthSettingsSlice {
   themeMode: 'light' | 'dark' | 'system';
   layoutMode?: 'portrait' | 'landscape';
   standbyTimerSeconds?: number;
+  businessName?: string;
+  businessPhone?: string;
+  businessAddress?: string;
 }
 
 type AuthLoadingPhase =
@@ -57,7 +60,7 @@ interface AuthOverlayProps {
   onAuthComplete: (account: AppAccount) => void;
   onAdminPortal?: () => void;
   onFinalizeAccess?: (accessCode: string, username: string) => Promise<AuthResult>;
-  onDevSkip?: () => void;
+  onDevSkip?: () => Promise<{ adminPortal?: true; error?: string } | void>;
   onQuickUnlock?: () => void;
   onExitComplete?: () => void;
 }
@@ -93,6 +96,10 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [authCardAnimKey, setAuthCardAnimKey] = useState(0);
   const [isExiting, setIsExiting] = useState(false);
   const [signupConfirmation, setSignupConfirmation] = useState<{ email: string } | null>(null);
+  const [businessSetup, setBusinessSetup] = useState<{ accessCode: string; username: string } | null>(null);
+  const [businessName, setBusinessName] = useState('');
+  const [businessPhone, setBusinessPhone] = useState('');
+  const [businessAddress, setBusinessAddress] = useState('');
   const [loadingPhase, setLoadingPhase] = useState<AuthLoadingPhase>('default');
   const pendingPollRef = useRef<number | null>(null);
   const pendingUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -100,6 +107,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
   const isLoading = isSubmitting || isEntering;
   const showSignupInsight = signupConfirmation !== null;
+  const showBusinessSetup = businessSetup !== null;
   const isIdle = pane === 'idle' && !isLoading;
   const showAuthForm = pane === 'auth';
   const showSettings = pane === 'settings';
@@ -269,12 +277,34 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     pointerStart.current = null;
   };
 
-  const handleDevSkip = useCallback(() => {
+  const handleDevSkip = useCallback(async () => {
     if (!isDev || isLoading || isExiting || existingAccount || !onDevSkip) return;
-    onDevSkip();
-    setIsExiting(true);
-    if ('vibrate' in navigator) navigator.vibrate(8);
-  }, [isDev, isLoading, isExiting, existingAccount, onDevSkip]);
+
+    flushSync(() => {
+      setIsSubmitting(true);
+    });
+
+    try {
+      const result = await onDevSkip();
+      if (result?.adminPortal) {
+        setLoadingPhase('admin_breached');
+        if ('vibrate' in navigator) navigator.vibrate([20, 40, 20]);
+        await wait(1400);
+        setIsSubmitting(false);
+        setLoadingPhase('default');
+        onAdminPortal?.();
+        return;
+      }
+      if (result?.error) {
+        setIsSubmitting(false);
+        setError(result.error);
+        return;
+      }
+    } catch {
+      setIsSubmitting(false);
+      setError('Could not open admin portal.');
+    }
+  }, [isDev, isLoading, isExiting, existingAccount, onDevSkip, onAdminPortal]);
 
   const dismissSignupConfirmation = useCallback(() => {
     const confirmedEmail = signupConfirmation?.email ?? '';
@@ -295,29 +325,82 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     pendingUnsubscribeRef.current = null;
   }, []);
 
+  const completeAccessGrant = useCallback(
+    async (accessCode: string, pendingUsername: string) => {
+      if (!onFinalizeAccess) return;
+      const finalized = await onFinalizeAccess(accessCode, pendingUsername);
+      if (finalized.error || !finalized.account) {
+        setIsSubmitting(false);
+        setLoadingPhase('default');
+        setError(finalized.error ?? 'Could not complete access.');
+        return;
+      }
+      flushSync(() => {
+        setIsEntering(true);
+        setLoadingPhase('default');
+      });
+      if ('vibrate' in navigator) navigator.vibrate([10, 30]);
+      await wait(AUTH_SUCCESS_HOLD_MS);
+      flushSync(() => {
+        setIsEntering(false);
+        setIsSubmitting(false);
+        setIsExiting(true);
+        setBusinessSetup(null);
+      });
+      onAuthComplete(finalized.account);
+    },
+    [onAuthComplete, onFinalizeAccess]
+  );
+
+  const handleBusinessSetupSubmit = useCallback(async () => {
+    if (!businessSetup || !businessName.trim()) {
+      setError('Enter your business name.');
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+
+    const saved = await submitAccessBusinessInfo(businessSetup.accessCode, {
+      businessName: businessName.trim(),
+      businessPhone: businessPhone.trim(),
+      businessAddress: businessAddress.trim(),
+    });
+
+    if (!saved.ok) {
+      setIsSubmitting(false);
+      setError(saved.error);
+      return;
+    }
+
+    updateSettings?.({
+      businessName: businessName.trim(),
+      businessPhone: businessPhone.trim(),
+      businessAddress: businessAddress.trim(),
+    });
+
+    await completeAccessGrant(businessSetup.accessCode, businessSetup.username);
+  }, [
+    businessSetup,
+    businessName,
+    businessPhone,
+    businessAddress,
+    updateSettings,
+    completeAccessGrant,
+  ]);
+
   const handleAccessStatus = useCallback(
     async (accessCode: string, pendingUsername: string, status: string) => {
       if (status === 'approved' && onFinalizeAccess) {
         stopPendingWatch();
-        const finalized = await onFinalizeAccess(accessCode, pendingUsername);
-        if (finalized.error || !finalized.account) {
-          setIsSubmitting(false);
-          setLoadingPhase('default');
-          setError(finalized.error ?? 'Could not complete access.');
-          return;
-        }
-        flushSync(() => {
-          setIsEntering(true);
-          setLoadingPhase('default');
-        });
-        if ('vibrate' in navigator) navigator.vibrate([10, 30]);
-        await wait(AUTH_SUCCESS_HOLD_MS);
-        flushSync(() => {
-          setIsEntering(false);
-          setIsSubmitting(false);
-          setIsExiting(true);
-        });
-        onAuthComplete(finalized.account);
+        setIsSubmitting(false);
+        setLoadingPhase('default');
+        setBusinessName('');
+        setBusinessPhone('');
+        setBusinessAddress('');
+        setBusinessSetup({ accessCode, username: pendingUsername });
+        setPane('auth');
+        setAuthCardAnimKey((k) => k + 1);
+        if ('vibrate' in navigator) navigator.vibrate([12, 40, 12]);
         return;
       }
 
@@ -330,7 +413,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         setError('Access was denied.');
       }
     },
-    [onAuthComplete, onFinalizeAccess, stopPendingWatch]
+    [onFinalizeAccess, stopPendingWatch]
   );
 
   const startPendingApprovalWatch = useCallback(
@@ -360,7 +443,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting || isEntering || showSignupInsight) return;
+    if (isSubmitting || isEntering || showSignupInsight || showBusinessSetup) return;
     setError(null);
     setSignupConfirmation(null);
     setLoadingPhase('default');
@@ -544,7 +627,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 z-[1000] flex flex-col items-center justify-between p-6 sm:p-12 transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) ${!isLoading && !isExiting ? 'touch-none' : ''} ${isExiting ? 'opacity-0 scale-125 pointer-events-none' : 'opacity-100 scale-100'}`}
+      className={`auth-screen fixed inset-0 z-[1000] flex flex-col items-center justify-between p-6 sm:p-12 transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) ${!isLoading && !isExiting ? 'touch-none' : ''} ${isExiting ? 'opacity-0 scale-125 pointer-events-none' : 'opacity-100 scale-100'}`}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
@@ -608,7 +691,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         {showAuthForm && (
           <div
             key={authCardAnimKey}
-            className={`relative w-full rounded-2xl p-6 border shadow-2xl animate-auth-card-enter ${panelClass} ${isLoading ? 'opacity-40 pointer-events-none' : ''}`}
+            className={`relative w-full rounded-2xl p-6 border shadow-2xl animate-auth-card-enter ${panelClass} ${isLoading && !showBusinessSetup ? 'opacity-40 pointer-events-none' : ''}`}
           >
             <div className="flex rounded-full overflow-hidden border mb-5 text-[10px] font-black uppercase tracking-widest">
               <button
@@ -640,7 +723,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   onChange={(e) => setUsername(e.target.value)}
                   onKeyDown={(e) => e.stopPropagation()}
                   autoComplete="username"
-                  disabled={isLoading || showSignupInsight}
+                  disabled={isLoading || showSignupInsight || showBusinessSetup}
                   className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm disabled:opacity-50 ${inputClass}`}
                   placeholder={mode === 'signup' ? 'Choose a username' : 'Username or email'}
                 />
@@ -717,6 +800,88 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 </button>
               )}
             </form>
+
+            {showBusinessSetup && businessSetup && (
+              <div
+                className="absolute inset-0 z-10 flex items-center justify-center p-4 rounded-2xl bg-black/25 backdrop-blur-sm"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="business-setup-title"
+              >
+                <div
+                  className={`w-full rounded-[24px] border px-6 py-7 shadow-2xl animate-insight-pop ${
+                    isLight
+                      ? 'bg-white/95 border-black/10 text-black'
+                      : 'pos-dashboard-card-glass border-white/12 text-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <Icons.Trends size={20} className="text-emerald-500" />
+                    <h4 id="business-setup-title" className="app-subtext text-sm font-black">
+                      Access granted
+                    </h4>
+                  </div>
+                  <p className={`app-subtext text-xs leading-relaxed text-center mb-5 ${isLight ? 'text-black/70' : 'text-white/75'}`}>
+                    Set up your business details. Your business name appears on invoice cards.
+                  </p>
+
+                  <form
+                    className="space-y-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void handleBusinessSetupSubmit();
+                    }}
+                  >
+                    <label className="block">
+                      <span className="app-subtext opacity-60 text-[10px] font-black block mb-1.5">Business name</span>
+                      <input
+                        type="text"
+                        value={businessName}
+                        onChange={(e) => setBusinessName(e.target.value)}
+                        autoFocus
+                        required
+                        className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm ${inputClass}`}
+                        placeholder="Your shop or business"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="app-subtext opacity-60 text-[10px] font-black block mb-1.5">Phone number</span>
+                      <input
+                        type="tel"
+                        value={businessPhone}
+                        onChange={(e) => setBusinessPhone(e.target.value)}
+                        className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm ${inputClass}`}
+                        placeholder="+233 …"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="app-subtext opacity-60 text-[10px] font-black block mb-1.5">
+                        Address <span className="opacity-50">optional</span>
+                      </span>
+                      <input
+                        type="text"
+                        value={businessAddress}
+                        onChange={(e) => setBusinessAddress(e.target.value)}
+                        className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm ${inputClass}`}
+                        placeholder="Street, city"
+                      />
+                    </label>
+
+                    {error && (
+                      <p className="text-xs font-bold text-red-500" role="alert">{error}</p>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isSubmitting || !businessName.trim()}
+                      className={`w-full mt-2 py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all active:scale-[0.98] min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
+                    >
+                      {isSubmitting ? 'Saving…' : 'Continue'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
 
             {showSignupInsight && signupConfirmation && (
               <div

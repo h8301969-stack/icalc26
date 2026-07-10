@@ -1,7 +1,10 @@
-// Web Bluetooth ESC/POS Printer Utility
+// Web Bluetooth + WebUSB ESC/POS Printer Utility
 import { storage } from '../hooks/storage';
+import { getUsbSupport, UsbPrinterTransport, usbDeviceId, usbDeviceLabel } from './usbPrinter';
+import icalcLogo from '../assets/logo/icalc-logo.png';
 import {
   formatReceiptItemLine,
+  formatServedByLine,
   getReceiptSpec,
   logReceiptPrint,
   truncateReceiptText,
@@ -17,11 +20,14 @@ export interface BLEDevice {
   device: BluetoothDevice;
 }
 
+export type PrinterTransport = 'ble' | 'usb';
+
 export interface SavedPrinter {
   id: string;
   name: string;
   paperWidth: '58mm' | '25mm';
   lastConnected: number;
+  transport?: PrinterTransport;
 }
 
 export type PrinterDeviceStatus = 'connected' | 'available' | 'saved';
@@ -49,6 +55,9 @@ export interface BluetoothSupportInfo {
 
 const PAIRED_PRINTERS_KEY = 'ble_paired_printers';
 const DEFAULT_PAPER_WIDTH_KEY = 'ble_default_paper_width';
+const PRINTER_TRANSPORT_KEY = 'printer_transport_mode';
+
+export { getUsbSupport };
 
 /** Common BLE thermal-printer GATT services (must be listed in optionalServices). */
 const PRINTER_SERVICE_UUIDS = [
@@ -147,12 +156,19 @@ export class BLEPrinter {
   private device: BluetoothDevice | null = null;
   private server: BluetoothRemoteGATTServer | null = null;
   private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
+  private usb = new UsbPrinterTransport();
   private connectionListeners = new Set<() => void>();
   private disconnectHandler: ((event: Event) => void) | null = null;
   private isBluetoothBusy = false;
 
   public paperWidth: PaperWidth = storage.get<PaperWidth>(DEFAULT_PAPER_WIDTH_KEY, '58mm');
-  public isConnected: boolean = false;
+  public transport: PrinterTransport = storage.get<PrinterTransport>(PRINTER_TRANSPORT_KEY, 'ble');
+
+  get isConnected(): boolean {
+    return this.transport === 'usb' ? this.usb.isConnected : this.bleConnected;
+  }
+
+  private bleConnected = false;
 
   private serviceUUID = PRINTER_SERVICE_UUIDS[0];
   private charUUID = KNOWN_WRITE_CHAR_UUIDS[0];
@@ -174,11 +190,21 @@ export class BLEPrinter {
   }
 
   getConnectedDeviceId(): string | null {
+    if (this.transport === 'usb') return this.usb.getConnectedDeviceId();
     return this.device?.id ?? null;
   }
 
   getConnectedDeviceName(): string | null {
+    if (this.transport === 'usb') return this.usb.getConnectedDeviceName();
     return this.device?.name ?? null;
+  }
+
+  setTransport(mode: PrinterTransport) {
+    if (this.transport === mode) return;
+    this.disconnect();
+    this.transport = mode;
+    storage.set(PRINTER_TRANSPORT_KEY, mode);
+    this.notifyConnectionChange();
   }
 
   getSavedPrinters(): SavedPrinter[] {
@@ -199,6 +225,7 @@ export class BLEPrinter {
       name: device.name || 'Thermal Printer',
       paperWidth: this.paperWidth,
       lastConnected: Date.now(),
+      transport: 'ble',
     });
     storage.set(PAIRED_PRINTERS_KEY, saved.slice(0, 12));
   }
@@ -269,7 +296,7 @@ export class BLEPrinter {
     if (this.disconnectHandler) return;
 
     this.disconnectHandler = () => {
-      this.isConnected = false;
+      this.bleConnected = false;
       this.server = null;
       this.characteristic = null;
       this.notifyConnectionChange();
@@ -360,7 +387,7 @@ export class BLEPrinter {
       }
       this.server = null;
       this.characteristic = null;
-      this.isConnected = false;
+      this.bleConnected = false;
     }
 
     try {
@@ -459,7 +486,7 @@ export class BLEPrinter {
     this.attachDisconnectHandler(device);
 
     this.characteristic = await this.rediscoverServices(device);
-    this.isConnected = true;
+    this.bleConnected = true;
     this.savePairedDevice(device);
     this.notifyConnectionChange();
 
@@ -468,7 +495,8 @@ export class BLEPrinter {
 
   async getKnownPrinters(): Promise<KnownPrinter[]> {
     const saved = [...this.getSavedPrinters()];
-    const authorized = await this.getAuthorizedDevices();
+    const authorizedBle = await this.getAuthorizedDevices();
+    const authorizedUsb = await this.usb.getAuthorizedDevices();
     const connectedId = this.getConnectedDeviceId();
     const merged = new Map<string, SavedPrinter>();
 
@@ -476,13 +504,26 @@ export class BLEPrinter {
       merged.set(entry.id, entry);
     }
 
-    for (const device of authorized) {
+    for (const device of authorizedBle) {
       const existing = merged.get(device.id);
       merged.set(device.id, {
         id: device.id,
         name: device.name || existing?.name || 'Thermal Printer',
         paperWidth: existing?.paperWidth ?? this.paperWidth,
         lastConnected: existing?.lastConnected ?? 0,
+        transport: 'ble',
+      });
+    }
+
+    for (const usbDevice of authorizedUsb) {
+      const id = usbDeviceId(usbDevice);
+      const existing = merged.get(id);
+      merged.set(id, {
+        id,
+        name: usbDeviceLabel(usbDevice) || existing?.name || 'USB Printer',
+        paperWidth: existing?.paperWidth ?? this.paperWidth,
+        lastConnected: existing?.lastConnected ?? 0,
+        transport: 'usb',
       });
     }
 
@@ -493,10 +534,26 @@ export class BLEPrinter {
     });
 
     return list.map((entry) => {
-      const device = authorized.find((d) => d.id === entry.id) ?? null;
+      if (entry.transport === 'usb') {
+        const isAuthorized = authorizedUsb.some((d) => usbDeviceId(d) === entry.id);
+        const isConnected =
+          entry.id === connectedId && this.transport === 'usb' && this.usb.isConnected;
+        let status: PrinterDeviceStatus = 'saved';
+        if (isConnected) status = 'connected';
+        else if (isAuthorized) status = 'available';
+        return {
+          saved: entry,
+          device: null,
+          isConnected,
+          isAuthorized,
+          status,
+        };
+      }
+
+      const device = authorizedBle.find((d) => d.id === entry.id) ?? null;
       const gattConnected = device?.gatt?.connected ?? false;
       const isConnected =
-        entry.id === connectedId && (this.isConnected || gattConnected);
+        entry.id === connectedId && this.transport === 'ble' && (this.bleConnected || gattConnected);
 
       let status: PrinterDeviceStatus = 'saved';
       if (isConnected) status = 'connected';
@@ -514,20 +571,25 @@ export class BLEPrinter {
 
   async scanAndConnect(): Promise<string> {
     try {
+      this.setTransport('ble');
       this.assertBluetoothAvailable();
       const device = await this.requestPrinterDevice();
       return await this.connectGATT(device);
     } catch (err: unknown) {
-      this.isConnected = false;
+      this.bleConnected = false;
       throw normalizeBluetoothError(err);
     }
   }
 
   async connectToSavedPrinter(printerId: string): Promise<string> {
     try {
-      this.assertBluetoothAvailable();
-
       const saved = this.getSavedPrinters().find((p) => p.id === printerId);
+      if (saved?.transport === 'usb') {
+        return await this.connectToSavedUsbPrinter(printerId);
+      }
+
+      this.setTransport('ble');
+      this.assertBluetoothAvailable();
       const authorized = await this.getAuthorizedDevices();
       let device = authorized.find((d) => d.id === printerId);
 
@@ -537,7 +599,7 @@ export class BLEPrinter {
 
       return await this.connectGATT(device);
     } catch (err: unknown) {
-      this.isConnected = false;
+      this.bleConnected = false;
       throw normalizeBluetoothError(err);
     }
   }
@@ -552,6 +614,15 @@ export class BLEPrinter {
 
   /** Silently reconnect to a previously paired printer (no browser picker). */
   async ensureConnected(): Promise<boolean> {
+    if (this.transport === 'usb') {
+      if (this.usb.isConnected) return true;
+      const savedUsbIds = this.getSavedPrinters()
+        .filter((p) => p.transport === 'usb')
+        .sort((a, b) => b.lastConnected - a.lastConnected)
+        .map((p) => p.id);
+      return this.usb.ensureConnected(savedUsbIds);
+    }
+
     if (this.isConnected && this.device?.gatt?.connected && this.characteristic) {
       return true;
     }
@@ -566,9 +637,9 @@ export class BLEPrinter {
       }
 
       const authorized = await this.getAuthorizedDevices();
-      const saved = [...this.getSavedPrinters()].sort(
-        (a, b) => b.lastConnected - a.lastConnected
-      );
+      const saved = [...this.getSavedPrinters()]
+        .filter((p) => p.transport !== 'usb')
+        .sort((a, b) => b.lastConnected - a.lastConnected);
 
       for (const entry of saved) {
         const device = authorized.find((d) => d.id === entry.id);
@@ -604,8 +675,42 @@ export class BLEPrinter {
     this.device = null;
     this.server = null;
     this.characteristic = null;
-    this.isConnected = false;
+    this.bleConnected = false;
+    this.usb.disconnect();
     this.notifyConnectionChange();
+  }
+
+  private saveUsbDevice(name: string, id: string) {
+    const saved = this.getSavedPrinters().filter((p) => p.id !== id);
+    saved.unshift({
+      id,
+      name,
+      paperWidth: this.paperWidth,
+      lastConnected: Date.now(),
+      transport: 'usb',
+    });
+    storage.set(PAIRED_PRINTERS_KEY, saved.slice(0, 12));
+  }
+
+  async scanAndConnectUsb(): Promise<string> {
+    try {
+      this.setTransport('usb');
+      const name = await this.usb.requestAndConnect();
+      const id = this.usb.getConnectedDeviceId();
+      if (id) this.saveUsbDevice(name, id);
+      this.notifyConnectionChange();
+      return name;
+    } catch (err: unknown) {
+      throw err instanceof Error ? err : new Error('USB printer connection failed.');
+    }
+  }
+
+  async connectToSavedUsbPrinter(printerId: string): Promise<string> {
+    this.setTransport('usb');
+    const name = await this.usb.connectToId(printerId);
+    this.saveUsbDevice(name, printerId);
+    this.notifyConnectionChange();
+    return name;
   }
 
   private async getWriteCharacteristic(): Promise<BluetoothRemoteGATTCharacteristic> {
@@ -659,6 +764,15 @@ export class BLEPrinter {
     }
   }
 
+  private async writeEscPosData(data: Uint8Array): Promise<void> {
+    if (this.transport === 'usb') {
+      await this.usb.writeInChunks(data);
+      return;
+    }
+    const characteristic = await this.getWriteCharacteristic();
+    await this.writeDataInChunks(characteristic, data);
+  }
+
   async printInvoice(
     invoiceName: string,
     items: CartItem[],
@@ -710,8 +824,6 @@ export class BLEPrinter {
     });
 
     const result = await this.withBluetoothLock(async () => {
-    const characteristic = await this.getWriteCharacteristic();
-
     const encoder = new TextEncoder();
     const commands: number[] = [];
     const rule = '-'.repeat(spec.maxCols);
@@ -726,7 +838,7 @@ export class BLEPrinter {
     const subTitle = `iCalc Spatial POS Receipt\n`;
     commands.push(...Array.from(encoder.encode(subTitle)));
     if (attendantName) {
-      commands.push(...Array.from(encoder.encode(`Served by: ${truncateReceiptText(attendantName, spec.maxCols - 11)}\n`)));
+      commands.push(...Array.from(encoder.encode(`${formatServedByLine(attendantName, spec)}\n`)));
     }
     commands.push(...Array.from(encoder.encode(`${rule}\n`)));
 
@@ -758,7 +870,7 @@ export class BLEPrinter {
     commands.push(0x1D, 0x56, 0x42, 0x00);
 
     const data = new Uint8Array(commands);
-    await this.writeDataInChunks(characteristic, data);
+    await this.writeEscPosData(data);
     });
 
     const ok = result !== null;
@@ -833,8 +945,6 @@ export class BLEPrinter {
     });
 
     const result = await this.withBluetoothLock(async () => {
-    const characteristic = await this.getWriteCharacteristic();
-
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -849,21 +959,40 @@ export class BLEPrinter {
     ctx.textBaseline = 'top';
 
     const rule = '-'.repeat(Math.floor(spec.maxCols * 0.95));
+    let headerOffset = 10;
+
+    try {
+      const logo = await new Promise<HTMLImageElement | null>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = icalcLogo;
+      });
+      if (logo) {
+        const logoSize = Math.min(48, Math.floor(width * 0.22));
+        const logoX = (width - logoSize) / 2;
+        ctx.drawImage(logo, logoX, 8, logoSize, logoSize);
+        headerOffset = 8 + logoSize + 6;
+      }
+    } catch {
+      // logo optional for raster print
+    }
 
     ctx.font = '700 20px Montserrat, Candara';
     ctx.textAlign = 'center';
-    ctx.fillText(truncateReceiptText(invoiceName.toUpperCase(), spec.maxInvoiceTitleChars), width / 2, 10);
+    ctx.fillText(truncateReceiptText(invoiceName.toUpperCase(), spec.maxInvoiceTitleChars), width / 2, headerOffset);
 
     ctx.font = '300 12px Montserrat, Candara';
-    ctx.fillText('iCalc Spatial POS Receipt', width / 2, 35);
+    ctx.fillText('iCalc Spatial POS Receipt', width / 2, headerOffset + 25);
     if (attendantName) {
-      ctx.fillText(`Served by: ${truncateReceiptText(attendantName, spec.maxCols - 11)}`, width / 2, 50);
+      ctx.fillText(formatServedByLine(attendantName, spec), width / 2, headerOffset + 40);
     }
 
     ctx.font = '300 14px Montserrat, Candara';
-    ctx.fillText(rule, width / 2, attendantName ? 68 : 68);
+    const ruleY = attendantName ? headerOffset + 58 : headerOffset + 48;
+    ctx.fillText(rule, width / 2, ruleY);
 
-    let currentY = 85;
+    let currentY = ruleY + 17;
 
     if (layoutMode === 'full') {
       items.forEach((item, idx) => {
@@ -940,7 +1069,7 @@ export class BLEPrinter {
     commands.push(0x1D, 0x56, 0x42, 0x00);
 
     const printData = new Uint8Array(commands);
-    await this.writeDataInChunks(characteristic, printData);
+    await this.writeEscPosData(printData);
     });
 
     const ok = result !== null;

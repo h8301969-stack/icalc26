@@ -10,11 +10,12 @@ import {
   logoutAccount,
   setAuthSession,
   getOrCreateDevGuestAccount,
+  getOrCreateDevGuestAccountAsAdmin,
   signupWithInvite,
   updateAccountProfiles,
 } from '../utils/auth';
 import { UserProfile } from '../types';
-import { isAccessControlEnabled, getStoredAdminSession } from '../utils/accessControl';
+import { isAccessControlEnabled, getStoredAdminSession, tryOpenDevAdminSession } from '../utils/accessControl';
 import { isCloudBackendEnabled, isSupabaseConfigured, supabase } from '../utils/supabase';
 import {
   attemptBackdoorLogin,
@@ -213,6 +214,25 @@ export const useAuth = () => {
     return guest;
   }, []);
 
+  const skipDevAuthAsAdmin = useCallback((): AppAccount | null => {
+    if (!import.meta.env.DEV) return null;
+    const guest = getOrCreateDevGuestAccountAsAdmin();
+    persistLocalSession(guest);
+    setAccount(guest);
+    setIsAuthenticated(true);
+    return guest;
+  }, []);
+
+  const openDevAdminPortal = useCallback(async (): Promise<
+    { adminPortal: true } | { error: string }
+  > => {
+    const result = await tryOpenDevAdminSession();
+    if (!result.ok) return { error: result.error };
+    setAdminSessionToken(result.token);
+    setIsAdminPortal(true);
+    return { adminPortal: true };
+  }, []);
+
   const changePassword = useCallback(
     async (currentPassword: string, newPassword: string) => {
       if (!account) return { error: 'Not signed in.' };
@@ -297,6 +317,8 @@ export const useAuth = () => {
     login,
     logout,
     skipDevAuth,
+    skipDevAuthAsAdmin,
+    openDevAdminPortal,
     changePassword,
     syncProfiles,
     verifyPassword,

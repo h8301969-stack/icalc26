@@ -4,6 +4,7 @@ import {
   printerInstance,
   KnownPrinter,
   getBluetoothSupport,
+  getUsbSupport,
   normalizeBluetoothError,
 } from '../utils/bluetoothPrinter';
 import { PAPER_WIDTH_OPTIONS, type PaperWidth } from '../utils/receiptLayout';
@@ -31,6 +32,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [bluetoothSupport, setBluetoothSupport] = useState(getBluetoothSupport);
+  const [usbSupport, setUsbSupport] = useState(getUsbSupport);
   const [paperWidth, setPaperWidth] = useState<PaperWidth>(() => printerInstance.paperWidth);
 
   const refreshPrinterState = useCallback(async () => {
@@ -52,6 +54,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setBluetoothSupport(getBluetoothSupport());
+    setUsbSupport(getUsbSupport());
     void refreshPrinterState();
 
     const bt = navigator.bluetooth;
@@ -82,6 +85,27 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
       }
     } catch (err: unknown) {
       const message = normalizeBluetoothError(err).message;
+      if (!message.toLowerCase().includes('cancel')) {
+        setErrorMessage(message);
+      }
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleUsbConnect = async () => {
+    setIsScanning(true);
+    setConnectingId(null);
+    setErrorMessage(null);
+    try {
+      const connectedName = await printerInstance.scanAndConnectUsb();
+      setPrinterName(connectedName);
+      await refreshPrinterState();
+      if (autoPrintOnConnect) {
+        await handlePrint();
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'USB connection failed.';
       if (!message.toLowerCase().includes('cancel')) {
         setErrorMessage(message);
       }
@@ -216,13 +240,13 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-black truncate">{entry.saved.name}</div>
                   <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
-                    {entry.status === 'available' ? 'Ready to connect' : 'Saved printer'}
+                    {(entry.saved.transport === 'usb' ? 'USB · ' : 'BLE · ') + (entry.status === 'available' ? 'Ready to connect' : 'Saved printer')}
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => handleConnectSaved(entry.saved.id)}
-                  disabled={isBusy || isScanning || !bluetoothSupport.supported}
+                  disabled={isBusy || isScanning || (entry.saved.transport !== 'usb' && !bluetoothSupport.supported)}
                   className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 shrink-0"
                 >
                   {isBusy ? '...' : 'Connect'}
@@ -243,7 +267,26 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             disabled={isScanning || connectingId !== null || !bluetoothSupport.supported}
             className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all"
           >
-            {isScanning ? 'Searching...' : 'Scan & Connect Printer'}
+            {isScanning ? 'Searching...' : 'Scan Bluetooth Printer'}
+          </button>
+
+          {usbSupport.message && (
+            <div className={`p-3 rounded-lg text-xs font-bold leading-normal border ${
+              usbSupport.supported
+                ? 'bg-violet-500/10 border-violet-500/20 text-violet-600'
+                : 'bg-amber-500/10 border-amber-500/20 text-amber-600'
+            }`}>
+              {usbSupport.message}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => void handleUsbConnect()}
+            disabled={isScanning || connectingId !== null || !usbSupport.supported}
+            className="w-full py-3.5 rounded-xl bg-violet-600 text-white text-xs font-black uppercase tracking-widest hover:bg-violet-700 active:scale-95 disabled:opacity-50 transition-all"
+          >
+            {isScanning ? 'Connecting...' : 'Connect USB Printer'}
           </button>
 
           {errorMessage && (

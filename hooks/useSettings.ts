@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS = {
   invoiceSwitcherMode: 'horizontal' as 'horizontal' | 'grid' | 'vertical' | 'list',
   expressionViewMode: 'auto' as ExpressionViewMode,
   receiptLayoutMode: 'summary' as ReceiptLayoutMode,
+  visionHubDrawerMode: 'drag' as 'drag' | 'click',
   standbyTimerSeconds: 0,
   profiles: [] as UserProfile[],
   activeProfileId: '',
@@ -204,11 +205,16 @@ export const useSettings = (options: UseSettingsOptions = {}) => {
     setSettings((prev) => ({ ...prev, activeProfileId: profileId }));
   }, []);
 
-  const addProfile = useCallback((name: string, avatarUrl = '') => {
+  const addProfile = useCallback((
+    name: string,
+    avatarUrl = '',
+    extras?: Pick<UserProfile, 'email' | 'phone' | 'sellerType'>
+  ) => {
     const profile: UserProfile = {
       id: `profile-${Date.now()}`,
       name: name.trim(),
       avatarUrl,
+      ...extras,
     };
     setSettings((prev) => ({
       ...prev,
@@ -218,7 +224,10 @@ export const useSettings = (options: UseSettingsOptions = {}) => {
     return profile.id;
   }, []);
 
-  const updateProfile = useCallback((profileId: string, updates: Partial<Pick<UserProfile, 'name' | 'avatarUrl'>>) => {
+  const updateProfile = useCallback((
+    profileId: string,
+    updates: Partial<Pick<UserProfile, 'name' | 'avatarUrl' | 'email' | 'phone' | 'sellerType'>>
+  ) => {
     setSettings((prev) => ({
       ...prev,
       profiles: prev.profiles.map((p) =>
