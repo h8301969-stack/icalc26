@@ -2007,7 +2007,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             accentColor={accentColor}
             invoices={hubInvoices}
             attendantName={activeProfileName}
-            onInvoicePrinted={onInvoicePrinted}
+            onInvoicePrinted={canViewTransactions ? onInvoicePrinted : undefined}
+            printDrawerEnabled={canViewTransactions}
             onInteractionChange={setVisionHubFocus}
             onThemeToggle={() => { updateSettings('themeMode', isLight ? 'dark' : 'light'); setIsThemeAnimating(true); }}
             onSettingsOpen={() => { setIsSettingsOpen(true); setIsSettingsAnimating(true); }}
@@ -3005,7 +3006,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         runningTotal={cartItems.length > 0 ? (parseFloat(runningTotal) || 0) : latestPurchaseTotal}
         invoiceName={cartItems.length > 0 ? invoiceName : latestPurchaseName}
         currency={currency}
-        onInvoicePrinted={onInvoicePrinted}
         accountUsername={accountUsername}
         onChangePassword={onChangePassword}
         onLogout={onLogout}

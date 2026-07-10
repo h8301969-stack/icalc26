@@ -25,6 +25,7 @@ interface VisionHubPrintPanelProps {
   invoices: HubInvoice[];
   attendantName: string;
   drawerMode?: VisionHubDrawerMode;
+  printDrawerEnabled?: boolean;
   onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
   onInteractionChange?: (active: boolean) => void;
   onThemeToggle: () => void;
@@ -56,6 +57,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
   invoices,
   attendantName,
   drawerMode = 'drag',
+  printDrawerEnabled = true,
   onInvoicePrinted,
   onInteractionChange,
   onThemeToggle,
@@ -92,7 +94,8 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
   const isClickMode = drawerMode === 'click';
   const drawerHeight = isClickMode ? DRAWER_HEIGHT_CLICK : DRAWER_HEIGHT_DRAG;
 
-  const hubActive = expanded || isDragging || dragY > 4 || focusedInvoiceId !== null;
+  const hubActive =
+    printDrawerEnabled && (expanded || isDragging || dragY > 4 || focusedInvoiceId !== null);
 
   useEffect(() => {
     onInteractionChange?.(hubActive);
@@ -159,6 +162,12 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
     setIsDragging(false);
   }, []);
 
+  useEffect(() => {
+    if (!printDrawerEnabled && expanded) {
+      collapseDrawer();
+    }
+  }, [printDrawerEnabled, expanded, collapseDrawer]);
+
   const focusInvoice = useCallback((invoiceId: string) => {
     setFocusedInvoiceId(invoiceId);
   }, []);
@@ -189,6 +198,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
 
   const runPrint = useCallback(
     async (invoice: HubInvoice) => {
+      if (!printDrawerEnabled || !onInvoicePrinted) return;
       if (isPrinting) return;
       const hasTotal = (parseFloat(invoice.total) || 0) > 0;
       if (invoice.items.length === 0 && !hasTotal) return;
@@ -213,11 +223,11 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
         window.setTimeout(() => setPrintFlash(null), 520);
       }
     },
-    [executePrint, isPrinting, onInvoicePrinted, showReconnectPrompt, showPrintSuccess]
+    [executePrint, isPrinting, onInvoicePrinted, printDrawerEnabled, showReconnectPrompt, showPrintSuccess]
   );
 
   const handleHubPointerDown = (e: React.PointerEvent) => {
-    if (isSwipeDragging) return;
+    if (!printDrawerEnabled || isSwipeDragging) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     dragStartY.current = e.clientY;
     setIsDragging(true);
@@ -239,7 +249,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
     setIsDragging(false);
     const moved = Math.abs(e.clientY - dragStartY.current);
 
-    if (!expanded && (dragY >= OPEN_THRESHOLD || moved < 14)) {
+    if (printDrawerEnabled && !expanded && (dragY >= OPEN_THRESHOLD || moved < 14)) {
       setExpanded(true);
       setDragY(0);
       return;
@@ -536,13 +546,13 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
   };
 
   const handleModalPrint = useCallback(async () => {
-    if (!pendingPrint) return;
+    if (!printDrawerEnabled || !onInvoicePrinted || !pendingPrint) return;
     const ok = await executePrint(pendingPrint);
     if (!ok) throw new Error('Print failed.');
     onInvoicePrinted?.(pendingPrint.name, pendingPrint.total, pendingPrint.items);
     showPrintSuccess();
     setPendingPrint(null);
-  }, [pendingPrint, executePrint, onInvoicePrinted, showPrintSuccess]);
+  }, [pendingPrint, executePrint, onInvoicePrinted, printDrawerEnabled, showPrintSuccess]);
 
   const panelTranslate = expanded ? Math.max(0, dragY) : dragY;
   const drawerProgress = expanded ? 1 : Math.min(1, dragY / OPEN_THRESHOLD);
@@ -594,7 +604,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
                   <div className="font-num-medium text-xl tracking-tight leading-none shrink-0">{currentTimeLabel}</div>
                   <div className={`w-px h-4 shrink-0 ${isLight ? 'bg-white/20' : 'bg-zinc-900/20'}`} />
                   <div className={`pos-subtext text-[9px] font-bold shrink-0 ${invertedBarSubtextClass}`}>
-                    {expanded ? 'Print hub open' : 'Live Session'}
+                    {printDrawerEnabled ? (expanded ? 'Print hub open' : 'Live Session') : 'Admin print hub'}
                   </div>
                 </div>
               </div>
@@ -638,6 +648,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
               </div>
             </div>
 
+            {printDrawerEnabled && (
             <div
               className={`vision-hub-drawer ${expanded ? 'vision-hub-drawer--open' : 'overflow-hidden'} ${
                 isClickMode ? 'vision-hub-drawer--click' : ''
@@ -664,10 +675,12 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
                 )
               )}
             </div>
+            )}
           </div>
         </div>
       </div>
 
+      {printDrawerEnabled && (
       <PrinterConnectModal
         isOpen={printerModalOpen}
         onClose={() => {
@@ -679,6 +692,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
         autoPrintOnConnect
         onPrint={handleModalPrint}
       />
+      )}
     </>
   );
 };
