@@ -9,13 +9,14 @@ import {
   RestockNote,
   SupplierRecord,
 } from '../types';
-import { formatPosLineItemDisplay, formatPriceLabel, parsePosLineItems } from '../utils/posExpression';
+import { formatPosLineItemDisplay, formatPriceLabel } from '../utils/posExpression';
 import { Icons } from '../constants';
 import { InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS';
 import { isAdminProfile } from '../utils/auth';
 
 import SettingsPanel from './SettingsPanel';
 import VisionHubPrintPanel, { HubInvoice } from './VisionHubPrintPanel';
+import InventoryNotepad from './InventoryNotepad';
 import { WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
 
 interface POSDashboardProps {
@@ -145,37 +146,41 @@ interface RequestLineItem {
   qty: number;
 }
 
-function parseRequestLines(notes: string, currency = 'GHS'): RequestLineItem[] {
-  const normalized = notes.replace(/×/g, 'x').trim();
-  if (!normalized) return [];
+function parseNotepadLines(notes: string): RequestLineItem[] {
+  const lines: RequestLineItem[] = [];
+  const raw = notes.trim();
+  if (!raw) return [];
 
-  const hasExpr = /x\d/i.test(normalized) || normalized.includes('+');
-  if (hasExpr) {
-    return parsePosLineItems(normalized).map((item) => ({
-      label: formatPriceLabel(item.price, currency),
-      qty: item.quantity,
-    }));
+  for (const part of raw.split('\n')) {
+    const line = part.trim();
+    if (!line || /^=\s*\d/.test(line)) continue;
+    const match = line.match(/^(.+?)[\t ]*[×x][\t ]*(\d+(?:\.\d+)?)\s*$/i);
+    if (match) {
+      lines.push({
+        label: match[1].trim(),
+        qty: Math.max(1, Math.round(parseFloat(match[2]))),
+      });
+    }
   }
+  return lines;
+}
 
-  return normalized
+function parseRequestLines(notes: string): RequestLineItem[] {
+  const fromNotepad = parseNotepadLines(notes);
+  if (fromNotepad.length > 0) return fromNotepad;
+
+  return notes
+    .replace(/^=\s*\d+.*$/gm, '')
     .split(/[\n,;]+/)
     .map((line) => line.trim())
     .filter(Boolean)
     .map((label) => ({ label, qty: 1 }));
 }
 
-function parseRequestTotals(notes: string, currency = 'GHS'): { itemCount: number; total: number } {
-  const lines = parseRequestLines(notes, currency);
-  if (lines.length === 0) return { itemCount: 0, total: 0 };
-
-  const normalized = notes.replace(/×/g, 'x');
-  const hasExpr = /x\d/i.test(normalized) || normalized.includes('+');
+function parseRequestTotals(notes: string): { itemCount: number; total: number } {
+  const lines = parseRequestLines(notes);
   const itemCount = lines.reduce((sum, line) => sum + line.qty, 0);
-  const total = hasExpr
-    ? parsePosLineItems(normalized).reduce((sum, item) => sum + item.price * item.quantity, 0)
-    : 0;
-
-  return { itemCount, total };
+  return { itemCount, total: 0 };
 }
 
 const POSDashboard: React.FC<POSDashboardProps> = ({
@@ -272,15 +277,16 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [showAddRequestPopup, setShowAddRequestPopup] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<POSRequest | null>(null);
   const [newRequesterName, setNewRequesterName] = useState('');
-  const [requestNotes, setRequestNotes] = useState('');
+  const [requestLineItems, setRequestLineItems] = useState<RestockLineItem[]>([]);
+  const [requestComposeQuery, setRequestComposeQuery] = useState('');
+  const [requestFreeNotes, setRequestFreeNotes] = useState('');
 
   // Restock notepad states
   const [showAddRestockPopup, setShowAddRestockPopup] = useState(false);
   const [newRestockTitle, setNewRestockTitle] = useState('');
   const [restockCreatedStamp, setRestockCreatedStamp] = useState('');
   const [restockLineItems, setRestockLineItems] = useState<RestockLineItem[]>([]);
-  const [restockSearchQuery, setRestockSearchQuery] = useState('');
-  const [showRestockSearch, setShowRestockSearch] = useState(false);
+  const [restockComposeQuery, setRestockComposeQuery] = useState('');
   const [restockFreeNotes, setRestockFreeNotes] = useState('');
 
   const [restockViewMode, setRestockViewMode] = useState<RestockViewMode>('list');
@@ -410,7 +416,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           latestTimestamp: log.timestamp,
         };
       })
-      .filter((card) => card.items.length > 0);
+      .filter((card) => card.items.length > 0 || (parseFloat(card.total) || 0) > 0);
   }, [printLogs, invoiceActionLogs, invoiceName]);
 
   const todayStart = useMemo(
@@ -429,23 +435,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   );
 
   const stats = useMemo(() => {
-    const invoiceMonthlyRev = paidInvoiceCards
+    const monthlyRev = paidInvoiceCards
       .filter((c) => c.latestTimestamp >= monthStart)
       .reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0);
-    const invoiceDailyRev = paidInvoiceCards
+    const dailyRev = paidInvoiceCards
       .filter((c) => c.latestTimestamp >= todayStart)
       .reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0);
-    const purchaseMonthlyRev = purchases
-      .filter((p) => p.timestamp >= monthStart)
-      .reduce((acc, p) => acc + p.total, 0);
-    const purchaseDailyRev = purchases
-      .filter((p) => p.timestamp >= todayStart)
-      .reduce((acc, p) => acc + p.total, 0);
-
-    const monthlyRev = invoiceMonthlyRev + purchaseMonthlyRev;
-    const dailyRev = invoiceDailyRev + purchaseDailyRev;
-    const totalRev = paidInvoiceCards.reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0)
-      + purchases.reduce((acc, p) => acc + p.total, 0);
+    const totalRev = paidInvoiceCards.reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0);
     const invoicesToday = paidInvoiceCards.filter(
       (c) => c.latestTimestamp >= todayStart
     ).length;
@@ -457,7 +453,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     const criticalItems = items.filter((i) => i.stock < i.threshold).length;
 
     return { totalRev, monthlyRev, dailyRev, avgPerCustomer, invoicesToday, stockLevel, criticalItems };
-  }, [paidInvoiceCards, purchases, items, monthStart, todayStart]);
+  }, [paidInvoiceCards, items, monthStart, todayStart]);
 
   const invoicesTodayList = useMemo(() => {
     return paidInvoiceCards
@@ -507,21 +503,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         });
       });
 
-    purchases
-      .filter((p) => p.timestamp >= monthStart)
-      .forEach((p) => {
-        rows.push({
-          id: p.id,
-          name: p.itemName,
-          total: p.total,
-          timestamp: p.timestamp,
-          items: [{ price: p.price, quantity: p.quantity, name: p.itemName }],
-          kind: 'purchase',
-        });
-      });
-
     return rows.sort((a, b) => b.timestamp - a.timestamp);
-  }, [paidInvoiceCards, purchases, monthStart]);
+  }, [paidInvoiceCards, monthStart]);
 
   const dailySalesList = useMemo(() => {
     const rows: Array<{
@@ -546,21 +529,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         });
       });
 
-    purchases
-      .filter((p) => p.timestamp >= todayStart)
-      .forEach((p) => {
-        rows.push({
-          id: p.id,
-          name: p.itemName,
-          total: p.total,
-          timestamp: p.timestamp,
-          items: [{ price: p.price, quantity: p.quantity, name: p.itemName }],
-          kind: 'purchase',
-        });
-      });
-
     return rows.sort((a, b) => b.timestamp - a.timestamp);
-  }, [paidInvoiceCards, purchases, todayStart]);
+  }, [paidInvoiceCards, todayStart]);
 
   const hubCollapsed = !inventoryExpanded && !purchasesExpanded && !requestsExpanded
     && !restockExpanded && !avgCustomerExpanded && !invoicesTodayExpanded
@@ -732,9 +702,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   const addNewRequest = () => {
     const requester = newRequesterName.trim();
-    if (!requester) return;
-    const notes = requestNotes.trim();
-    const { itemCount, total } = parseRequestTotals(notes, currency);
+    if (!requester || requestLineItems.length === 0) return;
+    const notes = buildRestockNotesSnapshot(requestLineItems, requestFreeNotes);
+    const { itemCount } = parseRequestTotals(notes);
     const newReq: POSRequest = {
       id: 'req-' + Date.now(),
       requester,
@@ -742,18 +712,30 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       status: 'pending',
       timestamp: Date.now(),
       itemCount,
-      total,
+      total: 0,
     };
     setRequests(prev => [newReq, ...prev]);
     setNewRequesterName('');
-    setRequestNotes('');
+    setRequestLineItems([]);
+    setRequestComposeQuery('');
+    setRequestFreeNotes('');
     setShowAddRequestPopup(false);
   };
 
   const closeRequestPopup = () => {
     setShowAddRequestPopup(false);
     setNewRequesterName('');
-    setRequestNotes('');
+    setRequestLineItems([]);
+    setRequestComposeQuery('');
+    setRequestFreeNotes('');
+  };
+
+  const openRequestPopup = () => {
+    setNewRequesterName('');
+    setRequestLineItems([]);
+    setRequestComposeQuery('');
+    setRequestFreeNotes('');
+    setShowAddRequestPopup(true);
   };
 
   const requestStatusClass = (status: RequestStatus) =>
@@ -784,12 +766,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           </span>
         </div>
       </div>
-      <div className="shrink-0 text-right">
-        <div className={`pos-subtext text-[10px] font-black ${cardSubtextClass}`}>Total:</div>
-        <div className={`font-num-medium text-sm font-black tabular-nums tracking-tight ${textColorClass}`}>
-          {req.total > 0 ? formatCurrency(req.total.toString()) : '—'}
-        </div>
-      </div>
       <div className={`shrink-0 text-xs px-4 py-1 rounded-full font-black tracking-widest uppercase ${requestStatusClass(req.status)}`}>
         {req.status}
       </div>
@@ -799,7 +775,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const renderRequestDetailModal = () => {
     if (!selectedRequest) return null;
     const req = selectedRequest;
-    const lines = parseRequestLines(req.notes, currency);
+    const lines = parseRequestLines(req.notes);
     const qtyTotal = lines.reduce((sum, line) => sum + line.qty, 0) || req.itemCount;
 
     return (
@@ -866,9 +842,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 {lines.length > 0 ? (
                   <div className="space-y-1 pb-2">
                     {lines.map((line, i) => (
-                      <div key={i} className={`flex items-center justify-between gap-4 text-base leading-7 font-medium ${isLight ? 'text-zinc-800' : 'text-zinc-200'}`}>
+                      <div
+                        key={i}
+                        className={`grid items-center gap-3 text-base leading-7 font-medium ${isLight ? 'text-zinc-800' : 'text-zinc-200'}`}
+                        style={{ gridTemplateColumns: '1fr 4.5rem' }}
+                      >
                         <span className="min-w-0 truncate">{line.label}</span>
-                        <span className={`shrink-0 tabular-nums font-black ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>
+                        <span className={`text-right tabular-nums font-black ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>
                           × {line.qty}
                         </span>
                       </div>
@@ -880,17 +860,17 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
 
               <div
-                className="shrink-0 px-5 py-4 flex items-center justify-between border-t"
+                className="shrink-0 px-5 py-4 border-t"
                 style={{ borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
               >
-                <span className={`text-xl font-black tabular-nums ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>
-                  = {qtyTotal}
-                </span>
-                <div className="text-right">
-                  <div className={`pos-subtext text-[10px] font-black ${panelSubtextClass}`}>Total:</div>
-                  <div className={`text-sm font-black tabular-nums ${isLight ? 'text-black' : 'text-white'}`}>
-                    {req.total > 0 ? formatCurrency(req.total.toString()) : '—'}
-                  </div>
+                <div
+                  className="grid items-center gap-3"
+                  style={{ gridTemplateColumns: '1fr 4.5rem' }}
+                >
+                  <span />
+                  <span className={`text-xl font-black tabular-nums text-right ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>
+                    = {qtyTotal}
+                  </span>
                 </div>
               </div>
             </div>
@@ -900,24 +880,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     );
   };
 
-  const restockOverallQty = useMemo(
-    () => restockLineItems.reduce((sum, line) => sum + line.qty, 0),
-    [restockLineItems]
-  );
-
-  const restockSearchResults = useMemo(() => {
-    const q = restockSearchQuery.trim().toLowerCase();
-    if (!q) return [];
-    return items.filter((item) => item.name.toLowerCase().includes(q)).slice(0, 8);
-  }, [items, restockSearchQuery]);
-
   const closeRestockPopup = useCallback(() => {
     setShowAddRestockPopup(false);
     setNewRestockTitle('');
     setRestockCreatedStamp('');
     setRestockLineItems([]);
-    setRestockSearchQuery('');
-    setShowRestockSearch(false);
+    setRestockComposeQuery('');
     setRestockFreeNotes('');
     restockAppliedRef.current = false;
   }, []);
@@ -931,8 +899,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     setRestockLineItems(initialLines);
     setRestockFreeNotes('');
     setNewRestockTitle(initialItem?.supplier?.trim() || '');
-    setRestockSearchQuery('');
-    setShowRestockSearch(false);
+    setRestockComposeQuery('');
     restockAppliedRef.current = false;
     setShowAddRestockPopup(true);
   }, []);
@@ -996,17 +963,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     registerSupplier(title, total, restockLineItems.map((l) => l.itemId));
     restockAppliedRef.current = true;
   }, [restockLineItems, setItems, registerSupplier, activeProfileName]);
-
-  const addProductToRestock = useCallback((item: InventoryItem) => {
-    setRestockLineItems((prev) => {
-      const existing = prev.find((line) => line.itemId === item.id);
-      return existing
-        ? prev.map((line) => (line.itemId === item.id ? { ...line, qty: line.qty + 1 } : line))
-        : [...prev, { itemId: item.id, name: item.name, qty: 1 }];
-    });
-    setRestockSearchQuery('');
-    setShowRestockSearch(false);
-  }, []);
 
   const updateRestock = useCallback(() => {
     if (restockLineItems.length === 0) return;
@@ -2474,7 +2430,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 </button>
 
                 <button
-                  onClick={() => setShowAddRequestPopup(true)}
+                  onClick={openRequestPopup}
                   className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 active:scale-95 transition-all ${isLight ? 'bg-emerald-500 text-white shadow-lg' : 'bg-emerald-500 text-white shadow-[0_0_16px_rgb(16,185,129)]'}`}
                   aria-label="Add more request"
                 >
@@ -2641,7 +2597,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
                 {/* GREEN FLOATING + ADD MORE BUTTON */}
                 <button
-                  onClick={() => setShowAddRequestPopup(true)}
+                  onClick={openRequestPopup}
                   className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 active:scale-95 transition-all ${isLight ? 'bg-emerald-500 text-white shadow-lg' : 'bg-emerald-500 text-white shadow-[0_0_16px_rgb(16,185,129)]'}`}
                   aria-label="Add more request"
                 >
@@ -2691,27 +2647,39 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Transaction Archive</h3>
               <div className={`rounded-2xl overflow-hidden ${levitateClass}`} role="list" aria-label="Transaction records">
-                {purchases.map((p, idx) => (
-                  <div 
-                    key={p.id} 
-                    role="listitem"
-                    tabIndex={0}
-                    aria-label={`Transaction ${idx + 1}: ${p.itemName}, total ${formatCurrency(p.total.toString())} on ${p.date}`}
-                    className={`p-10 flex flex-col gap-2 ${idx !== purchases.length - 1 ? 'border-b border-zinc-100 dark:border-white/5' : ''}`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <span className={`text-xl font-black tracking-tight ${textColorClass}`}>{p.itemName}</span>
-                      <span className="text-xl font-black" style={{ color: accentColor }}>{formatCurrency(p.total.toString())}</span>
-                    </div>
-                    <div className={`flex justify-between items-center pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>
-                      <span>{p.date}</span>
-                      <span>Qty: {p.quantity}</span>
-                    </div>
-                  </div>
-                ))}
-                {purchases.length === 0 && (
+                {[...paidInvoiceCards]
+                  .sort((a, b) => b.latestTimestamp - a.latestTimestamp)
+                  .map((card, idx, list) => {
+                    const qty = card.items.reduce((sum, item) => sum + item.quantity, 0);
+                    const dateLabel = new Date(card.latestTimestamp).toLocaleString([], {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    });
+                    return (
+                      <div
+                        key={card.id}
+                        role="listitem"
+                        tabIndex={0}
+                        aria-label={`Transaction ${idx + 1}: ${card.name}, total ${formatCurrency(card.total)} on ${dateLabel}`}
+                        className={`p-10 flex flex-col gap-2 ${idx !== list.length - 1 ? 'border-b border-zinc-100 dark:border-white/5' : ''}`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <span className={`text-xl font-black tracking-tight ${textColorClass}`}>{card.name}</span>
+                          <span className="text-xl font-black" style={{ color: accentColor }}>{formatCurrency(card.total)}</span>
+                        </div>
+                        <div className={`flex justify-between items-center pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>
+                          <span>{dateLabel}</span>
+                          <span>Qty: {qty || 1}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                {paidInvoiceCards.length === 0 && (
                   <div className="p-10 text-center">
                     <p className={`pos-subtext text-[11px] font-black ${cardSubtextMutedClass}`}>No transactions yet</p>
+                    <p className={`text-xs mt-2 opacity-60 ${textColorClass}`}>Transactions appear after a confirmed print</p>
                   </div>
                 )}
               </div>
@@ -2809,7 +2777,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   </button>
                   <button
                     onClick={addNewRequest}
-                    disabled={!newRequesterName.trim()}
+                    disabled={!newRequesterName.trim() || requestLineItems.length === 0}
                     className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all disabled:opacity-40 ${
                       isLight ? 'bg-emerald-500 text-white' : 'bg-emerald-500 text-white shadow-[0_0_14px_rgb(16,185,129)]'
                     }`}
@@ -2821,21 +2789,24 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
 
               <div
-                className="flex-1 min-h-0 px-5 py-4"
+                className="flex-1 min-h-0 flex flex-col"
                 style={{
                   backgroundImage: isLight
                     ? 'repeating-linear-gradient(transparent, transparent 27px, rgba(0,0,0,0.035) 27px, rgba(0,0,0,0.035) 28px)'
                     : 'repeating-linear-gradient(transparent, transparent 27px, rgba(255,255,255,0.04) 27px, rgba(255,255,255,0.04) 28px)',
                 }}
               >
-                <textarea
-                  value={requestNotes}
-                  onChange={(e) => setRequestNotes(e.target.value)}
-                  placeholder="Products / notes..."
-                  className={`w-full h-full resize-none bg-transparent outline-none text-base leading-7 font-medium placeholder:opacity-30 ${
-                    isLight ? 'text-zinc-800' : 'text-zinc-200'
-                  }`}
-                  style={{ lineHeight: '28px' }}
+                <InventoryNotepad
+                  isLight={isLight}
+                  items={items}
+                  lineItems={requestLineItems}
+                  onLineItemsChange={setRequestLineItems}
+                  composeQuery={requestComposeQuery}
+                  onComposeQueryChange={setRequestComposeQuery}
+                  freeNotes={requestFreeNotes}
+                  onFreeNotesChange={setRequestFreeNotes}
+                  accentClass={isLight ? 'text-emerald-600' : 'text-emerald-400'}
+                  emptyHint="Type to add products…"
                 />
               </div>
             </div>
@@ -2934,18 +2905,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 />
                 <div className="flex items-center gap-2 shrink-0">
                   <button
-                    type="button"
-                    onClick={() => setShowRestockSearch((v) => !v)}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all ${
-                      showRestockSearch
-                        ? 'bg-amber-500 text-white'
-                        : isLight ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white'
-                    }`}
-                    aria-label="Search products"
-                  >
-                    <Icons.Search size={18} />
-                  </button>
-                  <button
                     onClick={closeRestockPopup}
                     className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all ${
                       isLight ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white'
@@ -2967,48 +2926,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 </div>
               </div>
 
-              {showRestockSearch && (
-                <div
-                  className={`px-4 py-3 border-b shrink-0 space-y-2 ${isLight ? 'bg-white text-black' : 'bg-black text-white'}`}
-                  style={{ borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
-                >
-                  <input
-                    type="search"
-                    value={restockSearchQuery}
-                    onChange={(e) => setRestockSearchQuery(e.target.value)}
-                    placeholder="Search inventory..."
-                    className={`w-full px-4 py-2.5 rounded-xl outline-none text-sm font-bold ${
-                      isLight ? 'bg-white text-black border border-black/10' : 'bg-black text-white border border-white/15'
-                    }`}
-                    autoFocus
-                  />
-                  {restockSearchResults.length > 0 && (
-                    <div className={`max-h-40 overflow-y-auto rounded-xl border custom-scrollbar ${
-                      isLight ? 'bg-white border-black/10' : 'bg-black border-white/15'
-                    }`}>
-                      {restockSearchResults.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => addProductToRestock(item)}
-                          className={`w-full text-left px-4 py-3 text-sm font-bold transition-colors ${
-                            isLight ? 'hover:bg-black/5 text-black' : 'hover:bg-white/10 text-white'
-                          }`}
-                        >
-                          {item.name}
-                          <span className={`pos-subtext ml-2 text-[10px] font-black ${cardSubtextMutedClass}`}>
-                            {item.stock}u
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {restockSearchQuery.trim() && restockSearchResults.length === 0 && (
-                    <p className={`pos-subtext text-xs font-bold px-1 ${cardSubtextMutedClass}`}>No products found</p>
-                  )}
-                </div>
-              )}
-
               <div
                 className="flex-1 min-h-0 flex flex-col"
                 style={{
@@ -3017,68 +2934,34 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     : 'repeating-linear-gradient(transparent, transparent 27px, rgba(255,255,255,0.04) 27px, rgba(255,255,255,0.04) 28px)',
                 }}
               >
-                <div className="px-5 pt-4 pb-2 shrink-0">
-                  <p
-                    className={`text-sm font-bold leading-7 select-none ${isLight ? 'text-zinc-600' : 'text-zinc-400'}`}
-                    aria-label="Restock timestamp"
-                  >
-                    {restockCreatedStamp}
-                  </p>
-                </div>
-
-                <div className="flex-1 min-h-0 overflow-y-auto px-5 custom-scrollbar">
-                  {restockLineItems.length > 0 ? (
-                    <div className="space-y-1 pb-2">
-                      {restockLineItems.map((line) => (
-                        <div
-                          key={line.itemId}
-                          className="flex items-center justify-between gap-4 text-base leading-7 font-medium"
-                        >
-                          <span className={`min-w-0 truncate ${isLight ? 'text-zinc-800' : 'text-zinc-200'}`}>{line.name}</span>
-                          <span className={`shrink-0 tabular-nums font-black ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
-                            × {line.qty}
-                          </span>
-                        </div>
-                      ))}
+                <InventoryNotepad
+                  isLight={isLight}
+                  items={items}
+                  lineItems={restockLineItems}
+                  onLineItemsChange={setRestockLineItems}
+                  composeQuery={restockComposeQuery}
+                  onComposeQueryChange={setRestockComposeQuery}
+                  freeNotes={restockFreeNotes}
+                  onFreeNotesChange={setRestockFreeNotes}
+                  accentClass={isLight ? 'text-amber-600' : 'text-amber-400'}
+                  timestampLabel={restockCreatedStamp}
+                  emptyHint="Type to add products…"
+                  footer={
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={updateRestock}
+                        disabled={restockLineItems.length === 0}
+                        className={`px-5 py-2.5 rounded-full font-black text-xs tracking-[0.2em] uppercase active:scale-95 transition-all disabled:opacity-40 ${
+                          isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+                        }`}
+                        aria-label="Update restock time and apply inventory"
+                      >
+                        Update
+                      </button>
                     </div>
-                  ) : (
-                    <p className={`text-sm leading-7 opacity-40 ${isLight ? 'text-zinc-800' : 'text-zinc-200'}`}>
-                      Search products to add lines…
-                    </p>
-                  )}
-                </div>
-
-                <div className="px-5 py-3 shrink-0">
-                  <textarea
-                    value={restockFreeNotes}
-                    onChange={(e) => setRestockFreeNotes(e.target.value)}
-                    placeholder="Optional notes..."
-                    rows={2}
-                    className={`w-full resize-none bg-transparent outline-none text-sm leading-6 font-medium placeholder:opacity-30 ${
-                      isLight ? 'text-zinc-700' : 'text-zinc-300'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div
-                className="shrink-0 px-5 py-4 flex items-center justify-between border-t"
-                style={{ borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
-              >
-                <span className={`text-xl font-black tabular-nums ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
-                  = {restockOverallQty}
-                </span>
-                <button
-                  type="button"
-                  onClick={updateRestock}
-                  disabled={restockLineItems.length === 0}
-                  className={`px-5 py-2.5 rounded-full font-black text-xs tracking-[0.2em] uppercase active:scale-95 transition-all disabled:opacity-40 ${
-                    isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
-                  }`}
-                  aria-label="Update restock time and apply inventory"
-                >
-                  Update
-                </button>
+                  }
+                />
               </div>
             </div>
           </div>

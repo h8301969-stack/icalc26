@@ -189,7 +189,9 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
 
   const runPrint = useCallback(
     async (invoice: HubInvoice) => {
-      if (isPrinting || invoice.items.length === 0) return;
+      if (isPrinting) return;
+      const hasTotal = (parseFloat(invoice.total) || 0) > 0;
+      if (invoice.items.length === 0 && !hasTotal) return;
       setIsPrinting(true);
       setPrintFlash(invoice.id);
       try {
@@ -361,7 +363,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
               type="button"
               className="vision-hub-click-print-btn"
               style={{ backgroundColor: accentColor }}
-              disabled={isPrinting || focusedInvoice.items.length === 0}
+              disabled={isPrinting || (focusedInvoice.items.length === 0 && !(parseFloat(focusedInvoice.total) || 0))}
               onClick={() => void runPrint(focusedInvoice)}
             >
               <Icons.Printer size={18} />
@@ -567,7 +569,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
 
       <div ref={panelRef} className="vision-hub-panel relative shrink-0 z-[70]">
         <div
-          className="relative pt-8 px-6 pb-2 overflow-visible touch-manipulation"
+          className={`relative pt-8 px-6 pb-2 touch-manipulation ${expanded ? 'overflow-hidden' : 'overflow-visible'}`}
           style={{
             transform: `translateY(${panelTranslate}px)`,
             transition: isDragging ? 'none' : 'transform 0.38s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -580,7 +582,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
           <div
             className={`vision-hub-shell w-full rounded-xl p-8 shadow-[0_32px_80px_rgba(0,0,0,0.25)] pos-dashboard-card-motion ${headerShellClass} ${
               hubActive ? 'vision-hub-shell--active' : ''
-            }`}
+            } ${expanded ? 'vision-hub-shell--drawer-open' : ''}`}
           >
             <div className="flex justify-between items-start gap-4">
               <div className="flex flex-col min-w-0 flex-1 pr-2">
@@ -641,9 +643,10 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
                 isClickMode ? 'vision-hub-drawer--click' : ''
               }`}
               style={{
+                height: expanded ? drawerHeight : `${drawerProgress * drawerHeight}px`,
                 maxHeight: expanded ? drawerHeight : `${drawerProgress * drawerHeight}px`,
                 opacity: expanded ? 1 : drawerProgress,
-                transition: isDragging ? 'none' : 'max-height 0.42s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s ease',
+                transition: isDragging ? 'none' : 'height 0.42s cubic-bezier(0.16, 1, 0.3, 1), max-height 0.42s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s ease',
               }}
             >
               {(expanded || drawerProgress > 0.12) && (

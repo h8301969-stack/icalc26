@@ -335,7 +335,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         settings.receiptLayoutMode ?? 'summary'
       );
       if (!ok) return;
-      onInvoicePrinted?.(titleToPrint, String(totalToPrint), itemsToPrint);
       setPrintSuccess(true);
       setTimeout(() => setPrintSuccess(false), 3000);
     } catch (err: unknown) {

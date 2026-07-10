@@ -119,6 +119,14 @@ const AppContent: React.FC = () => {
     getSavedInvoices,
   } = useInvoice(expression, items, settings.currency, activeProfileName);
 
+  /** Record a sale only after a successful print (invoice switcher confirm, Vision Hub print, etc.). */
+  const handleInvoicePrinted = useCallback(
+    (name: string, total: string, items: CartLineItem[]) => {
+      recordPrint(name, total, items);
+    },
+    [recordPrint]
+  );
+
   const handleInvoiceHydrated = useCallback(
     (data: {
       invoiceName: string;
@@ -1244,7 +1252,7 @@ const AppContent: React.FC = () => {
             runningTotal={parseFloat(runningTotal) || 0}
             invoiceName={invoiceName}
             currency={settings.currency}
-            onInvoicePrinted={recordPrint}
+            onInvoicePrinted={handleInvoicePrinted}
             accountUsername={account?.username}
             onChangePassword={handleChangePassword}
             onLogout={handleLogout}
@@ -1270,7 +1278,7 @@ const AppContent: React.FC = () => {
         printLogs={printLogs}
         profiles={settings.profiles ?? []}
         activeProfileId={settings.activeProfileId ?? ''}
-        onInvoicePrinted={recordPrint}
+        onInvoicePrinted={handleInvoicePrinted}
         onSelectInvoice={handleSelectInvoice}
         switcherMode={settings.invoiceSwitcherMode ?? 'horizontal'}
         onSwitcherModeChange={(mode) => updateSettings({ invoiceSwitcherMode: mode })}
@@ -1308,7 +1316,7 @@ const AppContent: React.FC = () => {
           if (typeof keyOrPatch === 'string') updateSettings({ [keyOrPatch]: value } as Partial<typeof settings>);
           else updateSettings(keyOrPatch);
         }}
-        onInvoicePrinted={recordPrint}
+        onInvoicePrinted={handleInvoicePrinted}
         onResolveUnidentifiedPrice={resolveUnidentifiedPrice}
         canViewTransactions={canViewTransactions}
         accountUsername={account?.username}
