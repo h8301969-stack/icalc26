@@ -7,7 +7,7 @@ import {
   getUsbSupport,
   normalizeBluetoothError,
 } from '../utils/bluetoothPrinter';
-import { PAPER_WIDTH_OPTIONS, type PaperWidth } from '../utils/receiptLayout';
+
 
 interface PrinterConnectModalProps {
   isOpen: boolean;
@@ -33,22 +33,14 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [bluetoothSupport, setBluetoothSupport] = useState(getBluetoothSupport);
   const [usbSupport, setUsbSupport] = useState(getUsbSupport);
-  const [paperWidth, setPaperWidth] = useState<PaperWidth>(() => printerInstance.paperWidth);
-
   const refreshPrinterState = useCallback(async () => {
     const known = await printerInstance.getKnownPrinters();
     setKnownPrinters(known);
-    setPaperWidth(printerInstance.paperWidth);
     if (printerInstance.isConnected) {
       setPrinterName(printerInstance.getConnectedDeviceName());
     } else {
       setPrinterName(null);
     }
-  }, []);
-
-  const handlePaperWidthChange = useCallback((width: PaperWidth) => {
-    printerInstance.setPaperWidth(width);
-    setPaperWidth(width);
   }, []);
 
   useEffect(() => {
@@ -190,36 +182,6 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             </div>
           )}
 
-          <div className="space-y-2">
-            <div className="flex flex-col gap-1">
-              <span className="text-sm font-black">Paper width</span>
-              <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                58mm for standard (57mm) rolls · 25mm for mini printers
-              </span>
-            </div>
-            <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest">
-              {PAPER_WIDTH_OPTIONS.map(({ id, label }) => {
-                const active = paperWidth === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => handlePaperWidthChange(id)}
-                    className={`flex-1 py-2.5 transition-all ${
-                      active
-                        ? isLight
-                          ? 'bg-black text-white'
-                          : 'bg-white text-black'
-                        : 'opacity-50'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {printerName && (
             <div className="flex items-center justify-between p-3 rounded-xl bg-green-500/10 border border-green-500/20">
               <div className="min-w-0">
@@ -230,34 +192,49 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             </div>
           )}
 
-          {knownPrinters.filter((e) => e.status !== 'connected').map((entry) => {
-            const isBusy = connectingId === entry.saved.id;
-            return (
-              <div
-                key={entry.saved.id}
-                className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${rowBg}`}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-black truncate">{entry.saved.name}</div>
-                  <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
-                    {(entry.saved.transport === 'usb' ? 'USB · ' : 'BLE · ') + (entry.status === 'available' ? 'Ready to connect' : 'Saved printer')}
+          {knownPrinters.length > 0 && (
+            <div className="space-y-2">
+              <span className="text-sm font-black">Available printers</span>
+              {knownPrinters.map((entry) => {
+                const isBusy = connectingId === entry.saved.id;
+                const isConnected = entry.status === 'connected';
+                const statusLabel = isConnected
+                  ? 'Connected'
+                  : entry.status === 'available'
+                    ? 'Ready to connect'
+                    : 'Saved printer';
+                return (
+                  <div
+                    key={entry.saved.id}
+                    className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${rowBg}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-black truncate">{entry.saved.name}</div>
+                      <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+                        {(entry.saved.transport === 'usb' ? 'USB · ' : 'BLE · ') + statusLabel}
+                      </div>
+                    </div>
+                    {isConnected ? (
+                      <span className="text-green-500 shrink-0"><Icons.Check size={18} /></span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleConnectSaved(entry.saved.id)}
+                        disabled={isBusy || isScanning || (entry.saved.transport !== 'usb' && !bluetoothSupport.supported)}
+                        className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 shrink-0"
+                      >
+                        {isBusy ? '...' : 'Connect'}
+                      </button>
+                    )}
                   </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleConnectSaved(entry.saved.id)}
-                  disabled={isBusy || isScanning || (entry.saved.transport !== 'usb' && !bluetoothSupport.supported)}
-                  className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 shrink-0"
-                >
-                  {isBusy ? '...' : 'Connect'}
-                </button>
-              </div>
-            );
-          })}
+                );
+              })}
+            </div>
+          )}
 
           {knownPrinters.length === 0 && (
             <div className={`app-subtext text-[10px] opacity-45 p-4 rounded-xl text-center ${isLight ? 'text-black' : 'text-white'}`}>
-              No printers yet. Scan to pair your first device.
+              No printers yet. Search to pair your first device.
             </div>
           )}
 
@@ -267,7 +244,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             disabled={isScanning || connectingId !== null || !bluetoothSupport.supported}
             className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all"
           >
-            {isScanning ? 'Searching...' : 'Scan Bluetooth Printer'}
+            {isScanning ? 'Searching...' : 'Search for Bluetooth Printer'}
           </button>
 
           {usbSupport.message && (

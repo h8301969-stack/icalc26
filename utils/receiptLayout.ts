@@ -159,10 +159,9 @@ export type ReceiptLogPhase = 'validate' | 'start' | 'success' | 'failure' | 'sk
 
 export function logReceiptPrint(phase: ReceiptLogPhase, payload: Record<string, unknown>) {
   const entry = { phase, at: new Date().toISOString(), ...payload };
-  const tag = '[iCalc Receipt]';
-  if (phase === 'failure') console.error(tag, entry);
-  else if (phase === 'skipped') console.warn(tag, entry);
-  else console.log(tag, entry);
+  if (phase === 'failure') console.error('[iCalc PRINT_FAIL]', entry);
+  else if (phase === 'skipped') console.warn('[iCalc Receipt]', entry);
+  else console.log('[iCalc Receipt]', entry);
 }
 
 /** CSS width for switcher card shell matching thermal paper proportion */

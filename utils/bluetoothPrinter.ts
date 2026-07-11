@@ -85,6 +85,19 @@ const KNOWN_WRITE_CHAR_UUIDS = [
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const logPrinterFail = (
+  step: string,
+  err: unknown,
+  context: Record<string, unknown> = {}
+): void => {
+  console.error('[iCalc PRINT_FAIL]', {
+    step,
+    at: new Date().toISOString(),
+    message: err instanceof Error ? err.message : String(err),
+    ...context,
+  });
+};
+
 const isUserCancelled = (err: unknown): boolean => {
   const message = err instanceof Error ? err.message : String(err);
   return /cancel|canceled|cancelled|aborted by the user/i.test(message);
@@ -577,6 +590,9 @@ export class BLEPrinter {
       return await this.connectGATT(device);
     } catch (err: unknown) {
       this.bleConnected = false;
+      if (!isUserCancelled(err)) {
+        logPrinterFail('ble_scan_connect', err, { transport: 'ble' });
+      }
       throw normalizeBluetoothError(err);
     }
   }
@@ -600,6 +616,9 @@ export class BLEPrinter {
       return await this.connectGATT(device);
     } catch (err: unknown) {
       this.bleConnected = false;
+      if (!isUserCancelled(err)) {
+        logPrinterFail('ble_connect_saved', err, { transport: 'ble', printerId });
+      }
       throw normalizeBluetoothError(err);
     }
   }
@@ -655,7 +674,10 @@ export class BLEPrinter {
         return true;
       }
     } catch (err) {
-      console.warn('Auto printer connect failed:', err);
+      logPrinterFail('auto_connect', err, {
+        transport: this.transport,
+        deviceName: this.getConnectedDeviceName(),
+      });
     }
 
     return false;
@@ -701,6 +723,9 @@ export class BLEPrinter {
       this.notifyConnectionChange();
       return name;
     } catch (err: unknown) {
+      if (!isUserCancelled(err)) {
+        logPrinterFail('usb_scan_connect', err, { transport: 'usb' });
+      }
       throw err instanceof Error ? err : new Error('USB printer connection failed.');
     }
   }
@@ -765,12 +790,21 @@ export class BLEPrinter {
   }
 
   private async writeEscPosData(data: Uint8Array): Promise<void> {
-    if (this.transport === 'usb') {
-      await this.usb.writeInChunks(data);
-      return;
+    try {
+      if (this.transport === 'usb') {
+        await this.usb.writeInChunks(data);
+        return;
+      }
+      const characteristic = await this.getWriteCharacteristic();
+      await this.writeDataInChunks(characteristic, data);
+    } catch (err) {
+      logPrinterFail('write_escpos', err, {
+        transport: this.transport,
+        deviceName: this.getConnectedDeviceName(),
+        bytes: data.length,
+      });
+      throw err;
     }
-    const characteristic = await this.getWriteCharacteristic();
-    await this.writeDataInChunks(characteristic, data);
   }
 
   async printInvoice(
