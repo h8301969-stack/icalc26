@@ -1,5 +1,8 @@
--- Admin sets business info on access codes; users fetch it after approval.
--- Run in Supabase SQL editor after setup.sql.
+-- Admin business info on grant/approve (separate from setup.sql).
+--
+-- Run this file in the Supabase SQL editor AFTER setup.sql.
+-- Safe to re-run: uses create or replace.
+-- Do not merge into setup.sql — keeps GitHub/Supabase deploys from conflicting.
 
 create or replace function public.admin_set_access_business_info(
   p_token uuid,
