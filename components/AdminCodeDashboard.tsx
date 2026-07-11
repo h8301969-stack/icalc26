@@ -55,6 +55,9 @@ const copyTextToClipboard = async (text: string): Promise<boolean> => {
   }
 };
 
+const maskPassword = (value: string): string =>
+  value.length > 0 ? '•'.repeat(Math.min(value.length, 16)) : '••••••••';
+
 const formatWhen = (value: string | null | undefined): string => {
   if (!value) return '—';
   const parsed = Date.parse(value);
@@ -87,6 +90,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const [savingMemo, setSavingMemo] = useState(false);
   const [passwordHistory, setPasswordHistory] = useState<PasswordHistoryRow[]>([]);
   const [passwordHistoryLoading, setPasswordHistoryLoading] = useState(false);
+  const [revealedPasswordIds, setRevealedPasswordIds] = useState<Set<string>>(() => new Set());
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const longPressTimer = useRef<number | null>(null);
   const copyFeedbackTimer = useRef<number | null>(null);
@@ -240,10 +244,20 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     [adminToken]
   );
 
+  const togglePasswordReveal = useCallback((id: string) => {
+    setRevealedPasswordIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
   const openDetail = (row: AccessCodeRow) => {
     setDetailRow(row);
     setDetailMemo(row.admin_memo ?? '');
     setPasswordHistory([]);
+    setRevealedPasswordIds(new Set());
     setError(null);
     if (row.user_id) void loadPasswordHistory(row.user_id);
   };
@@ -582,39 +596,56 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                   <p className="app-subtext text-[10px] opacity-45 py-2">No passwords recorded yet.</p>
                 ) : (
                   <ul className="space-y-2">
-                    {passwordHistory.map((entry) => (
-                      <li
-                        key={entry.id}
-                        className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 ${
-                          entry.is_current
-                            ? isLight
-                              ? 'bg-emerald-100 border border-emerald-200'
-                              : 'bg-emerald-500/15 border border-emerald-400/25'
-                            : isLight
-                              ? 'bg-white border border-zinc-100'
-                              : 'bg-black/20 border border-white/8'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => void handleCopyCode(entry.password_value)}
-                          className="min-w-0 text-left"
-                          aria-label={`Copy password ${entry.password_value}`}
+                    {passwordHistory.map((entry) => {
+                      const isRevealed = revealedPasswordIds.has(entry.id);
+                      return (
+                        <li
+                          key={entry.id}
+                          className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 ${
+                            entry.is_current
+                              ? isLight
+                                ? 'bg-emerald-100 border border-emerald-200'
+                                : 'bg-emerald-500/15 border border-emerald-400/25'
+                              : isLight
+                                ? 'bg-white border border-zinc-100'
+                                : 'bg-black/20 border border-white/8'
+                          }`}
                         >
-                          <span className="font-mono font-black text-sm tracking-widest block truncate">
-                            {entry.password_value}
-                          </span>
-                          <span className="text-[10px] opacity-50 font-bold uppercase tracking-wider">
-                            {entry.source.replace('_', ' ')} · {formatWhen(entry.created_at)}
-                          </span>
-                        </button>
-                        {entry.is_current && (
-                          <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-emerald-500">
-                            Current
-                          </span>
-                        )}
-                      </li>
-                    ))}
+                          <button
+                            type="button"
+                            onClick={() => void handleCopyCode(entry.password_value)}
+                            className="min-w-0 flex-1 text-left"
+                            aria-label={`Copy password ${entry.password_value}`}
+                          >
+                            <span className="font-mono font-black text-sm tracking-widest block truncate">
+                              {isRevealed ? entry.password_value : maskPassword(entry.password_value)}
+                            </span>
+                            <span className="text-[10px] opacity-50 font-bold uppercase tracking-wider">
+                              {entry.source.replace('_', ' ')} · {formatWhen(entry.created_at)}
+                            </span>
+                          </button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {entry.is_current && (
+                              <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500">
+                                Current
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => togglePasswordReveal(entry.id)}
+                              className={`h-8 w-8 rounded-lg flex items-center justify-center border transition-colors active:scale-95 ${
+                                isLight
+                                  ? 'border-black/10 bg-white/80 text-black/55 hover:text-black'
+                                  : 'border-white/12 bg-white/8 text-white/55 hover:text-white'
+                              }`}
+                              aria-label={isRevealed ? 'Hide password' : 'Show password'}
+                            >
+                              {isRevealed ? <Icons.EyeOff size={16} /> : <Icons.Eye size={16} />}
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
