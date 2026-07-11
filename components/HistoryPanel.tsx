@@ -1034,7 +1034,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         <div className="invoice-switcher-card__rule" aria-hidden="true" />
         <div className="invoice-switcher-card__total">
           <span className="opacity-50 text-[10px] font-black uppercase tracking-widest">Total</span>
-          <span className="invoice-switcher-card__line-total tabular-nums font-semibold">{currency}{card.total}</span>
+          <span className="invoice-switcher-card__total-value tabular-nums">{currency}{card.total}</span>
         </div>
 
         {isActive && (
@@ -1148,7 +1148,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         )}
 
         <p className="invoice-switcher-card__meta">
-          {receiptPaperWidth} · {card.items.length} items · raw sync
+          Auto {receiptPaperWidth} · {card.items.length} items
         </p>
 
         {isActive && (!isBrowseMode || focusZoomed) && (

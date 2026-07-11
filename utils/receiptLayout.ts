@@ -7,6 +7,18 @@ export const PAPER_WIDTH_OPTIONS: { id: PaperWidth; label: string; hint: string 
   { id: '25mm', label: '25mm', hint: 'Mini / label printer' },
 ];
 
+/** Infer thermal paper width from printer name (BLE/USB). Defaults to 58mm when unknown. */
+export function detectPaperWidthFromDeviceName(deviceName: string): PaperWidth {
+  const lower = deviceName.toLowerCase();
+  if (/\b25\b|25mm|2\.5\s*inch|micro|mini|label|narrow|milestone|phomemo|niimbot/.test(lower)) {
+    return '25mm';
+  }
+  if (/\b57\b|57mm|\b58\b|58mm|80mm|standard|epson|star|bixolon|rongta|xprinter|goojprt/.test(lower)) {
+    return '58mm';
+  }
+  return '58mm';
+}
+
 export const RECEIPT_LAYOUT_OPTIONS: { id: ReceiptLayoutMode; label: string; hint: string }[] = [
   { id: 'summary', label: 'Total only', hint: 'Name · total · attendant' },
   { id: 'full', label: 'Full invoice', hint: 'All line items' },

@@ -1,4 +1,5 @@
 import { CartLineItem } from '../types';
+import { RECEIPT_THEME } from './receiptCanvas';
 import { ReceiptLayoutMode } from './receiptLayout';
 
 export interface ShareReceiptSettings {
@@ -14,6 +15,7 @@ export interface InvoiceSharePayload {
 }
 
 const CANVAS_WIDTH = 720;
+const HEADER_HEIGHT = 148;
 
 const formatShareTotal = (total: string, currency: string): string => {
   const num = parseFloat(total) || 0;
@@ -26,7 +28,7 @@ const formatShareTotal = (total: string, currency: string): string => {
     JPY: `¥${val}`,
     NGN: `₦${val}`,
   };
-  return symbols[currency] ?? val;
+  return symbols[currency] ?? `${currency}${val}`;
 };
 
 const formatItemLine = (item: CartLineItem, index: number, currency: string): string => {
@@ -47,12 +49,11 @@ export const renderInvoiceShareImage = (
   const isFull = shareSettings.layoutMode === 'full';
   const attendant = attendantName?.trim() ?? '';
 
-  let height = 80;
-  height += 52; // invoice name
-  if (isFull && items.length > 0) height += 24 + items.length * 28;
-  height += 72; // total
-  if (attendant) height += 40;
-  height = Math.max(height, 200);
+  let height = HEADER_HEIGHT + 24;
+  if (isFull && items.length > 0) height += items.length * 32;
+  height += 88;
+  if (attendant) height += 36;
+  height = Math.max(height, 240);
 
   const canvas = document.createElement('canvas');
   canvas.width = CANVAS_WIDTH;
@@ -61,51 +62,66 @@ export const renderInvoiceShareImage = (
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Could not create canvas');
 
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, CANVAS_WIDTH, height);
+  const headerGradient = ctx.createLinearGradient(0, 0, CANVAS_WIDTH, HEADER_HEIGHT);
+  headerGradient.addColorStop(0, RECEIPT_THEME.headerTop);
+  headerGradient.addColorStop(0.5, RECEIPT_THEME.headerMid);
+  headerGradient.addColorStop(1, RECEIPT_THEME.headerBottom);
+  ctx.fillStyle = headerGradient;
+  ctx.fillRect(0, 0, CANVAS_WIDTH, HEADER_HEIGHT);
 
-  let y = 48;
+  ctx.fillStyle = RECEIPT_THEME.bodyBg;
+  ctx.fillRect(0, HEADER_HEIGHT, CANVAS_WIDTH, height - HEADER_HEIGHT);
+
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#000000';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = RECEIPT_THEME.headerText;
+  ctx.font = '700 12px Montserrat, Candara';
+  ctx.fillText('ICALC', CANVAS_WIDTH / 2, 28);
+  ctx.font = '700 28px Montserrat, Candara';
+  ctx.fillText(invoiceName, CANVAS_WIDTH / 2, 52);
 
-  ctx.font = '600 22px Montserrat, Candara';
-  ctx.fillText(invoiceName, CANVAS_WIDTH / 2, y);
-  y += 52;
+  let y = HEADER_HEIGHT + 28;
+  ctx.fillStyle = RECEIPT_THEME.bodyText;
 
   if (isFull && items.length > 0) {
     ctx.textAlign = 'left';
-    ctx.font = '300 14px Montserrat, Candara';
+    ctx.font = '500 15px Montserrat, Candara';
     items.forEach((item, index) => {
       ctx.fillText(formatItemLine(item, index, currency), 48, y);
-      y += 28;
+      y += 32;
     });
     y += 8;
-    ctx.textAlign = 'center';
   }
 
-  ctx.font = '700 44px Montserrat, Candara';
-  ctx.fillText(formatShareTotal(total, currency), CANVAS_WIDTH / 2, y);
+  ctx.strokeStyle = RECEIPT_THEME.rule;
+  ctx.beginPath();
+  ctx.moveTo(48, y);
+  ctx.lineTo(CANVAS_WIDTH - 48, y);
+  ctx.stroke();
+  y += 20;
+
+  ctx.textAlign = 'left';
+  ctx.font = '700 12px Montserrat, Candara';
+  ctx.fillStyle = RECEIPT_THEME.muted;
+  ctx.fillText('TOTAL', 48, y);
+
+  ctx.textAlign = 'right';
+  ctx.font = '800 40px Montserrat, Candara';
+  ctx.fillStyle = RECEIPT_THEME.totalGreen;
+  ctx.fillText(formatShareTotal(total, currency), CANVAS_WIDTH - 48, y - 6);
   y += 72;
 
   if (attendant) {
     const prefix = 'served by ';
     const name = attendant;
-    ctx.font = 'italic 300 14px Montserrat, Candara';
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    const prefixWidth = ctx.measureText(prefix).width;
-    ctx.font = '700 13px Montserrat, Candara';
-    const nameWidth = ctx.measureText(name).width;
-    const totalWidth = prefixWidth + nameWidth;
-    const startX = (CANVAS_WIDTH - totalWidth) / 2;
-
     ctx.textAlign = 'left';
-    ctx.font = 'italic 300 14px Montserrat, Candara';
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillText(prefix, startX, y);
-    ctx.font = '700 13px Montserrat, Candara';
-    ctx.fillStyle = '#000000';
-    ctx.fillText(name, startX + prefixWidth, y);
-    ctx.textAlign = 'center';
+    ctx.font = 'italic 500 14px Montserrat, Candara';
+    ctx.fillStyle = RECEIPT_THEME.muted;
+    const prefixWidth = ctx.measureText(prefix).width;
+    ctx.fillText(prefix, (CANVAS_WIDTH - prefixWidth - ctx.measureText(name).width) / 2, y);
+    ctx.font = '700 14px Montserrat, Candara';
+    ctx.fillStyle = RECEIPT_THEME.bodyText;
+    ctx.fillText(name, (CANVAS_WIDTH - prefixWidth - ctx.measureText(name).width) / 2 + prefixWidth, y);
   }
 
   return canvas;
@@ -126,11 +142,7 @@ export const shareInvoiceAsImage = async (
     const file = new File([blob], fileName, { type: 'image/png' });
 
     if (navigator.share && navigator.canShare?.({ files: [file] })) {
-      await navigator.share({
-        files: [file],
-        title: payload.invoiceName,
-        text: `Invoice: ${payload.invoiceName}`,
-      });
+      await navigator.share({ files: [file], title: payload.invoiceName });
       return { ok: true };
     }
 
@@ -141,9 +153,7 @@ export const shareInvoiceAsImage = async (
     link.click();
     URL.revokeObjectURL(url);
     return { ok: true };
-  } catch (err: unknown) {
-    if (err instanceof Error && err.name === 'AbortError') return { ok: true };
-    const message = err instanceof Error ? err.message : 'Share failed';
-    return { ok: false, error: message };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Share failed.' };
   }
 };

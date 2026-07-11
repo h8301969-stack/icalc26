@@ -1495,20 +1495,20 @@ select.app-input--dark {
   font-variant-numeric: tabular-nums;
 }
 
-/* Invoice switcher — modern receipt card shell */
+/* Invoice switcher — white/blue gradient receipt */
 .invoice-switcher-card {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: linear-gradient(180deg, #ffffff 0%, #fafafa 100%);
+  background: #ffffff;
   color: #0a0a0a;
 }
 .invoice-switcher-card__header {
   flex-shrink: 0;
   padding: 0.85rem 1rem 0.75rem;
-  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1e 55%, #0f172a 100%);
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 52%, #60a5fa 100%);
   color: #fff;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 .invoice-switcher-card__brand-row {
   display: flex;
@@ -1586,7 +1586,11 @@ select.app-input--dark {
   justify-content: space-between;
   gap: 0.5rem;
   font-size: 0.72rem;
-  opacity: 0.88;
+  color: #0a0a0a;
+}
+.invoice-switcher-card__line-total {
+  color: #0a0a0a;
+  font-weight: 600;
 }
 .invoice-switcher-card__total {
   display: flex;
@@ -1595,13 +1599,18 @@ select.app-input--dark {
   font-size: 0.82rem;
   font-weight: 800;
   letter-spacing: -0.02em;
+  color: #0a0a0a;
+}
+.invoice-switcher-card__total-value {
+  color: #16a34a;
+  font-weight: 900;
+  font-size: 1rem;
 }
 .invoice-switcher-card__footer {
   flex-shrink: 0;
   padding: 0.65rem 0.75rem 0.75rem;
-  background: rgba(0, 0, 0, 0.03);
+  background: #ffffff;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
-  backdrop-filter: blur(12px);
 }
 .invoice-switcher-card__footer-actions {
   display: flex;

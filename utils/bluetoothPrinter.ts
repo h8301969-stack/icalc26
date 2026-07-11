@@ -1,8 +1,9 @@
 // Web Bluetooth + WebUSB ESC/POS Printer Utility
 import { storage } from '../hooks/storage';
 import { getUsbSupport, UsbPrinterTransport, usbDeviceId, usbDeviceLabel } from './usbPrinter';
-import icalcLogo from '../assets/logo/icalc-logo.png';
+import { drawThermalReceiptCanvas } from './receiptCanvas';
 import {
+  detectPaperWidthFromDeviceName,
   formatReceiptItemLine,
   formatServedByLine,
   getReceiptSpec,
@@ -243,54 +244,29 @@ export class BLEPrinter {
     storage.set(PAIRED_PRINTERS_KEY, saved.slice(0, 12));
   }
 
-  private detectPaperWidthFromName(deviceName: string): PaperWidth | null {
-    const lower = deviceName.toLowerCase();
-    if (/\b25\b|25mm|2\.5\s*inch|micro|mini|label|narrow/.test(lower)) {
-      return '25mm';
-    }
-    if (/\b57\b|57mm|\b58\b|58mm|80mm|standard/.test(lower)) {
-      return '58mm';
-    }
-    return null;
-  }
-
-  private resolvePaperWidth(device: BluetoothDevice) {
-    const saved = this.getSavedPrinters().find((p) => p.id === device.id);
-    if (saved?.paperWidth) {
-      this.paperWidth = saved.paperWidth;
-      return;
-    }
-
-    const detected = this.detectPaperWidthFromName(device.name || '');
-    if (detected) {
-      this.paperWidth = detected;
-      return;
-    }
-
-    this.paperWidth = storage.get<PaperWidth>(DEFAULT_PAPER_WIDTH_KEY, '58mm');
-  }
-
-  setPaperWidth(width: PaperWidth) {
+  private applyAutoPaperWidth(deviceId: string, deviceName: string) {
+    const detected = detectPaperWidthFromDeviceName(deviceName);
+    const saved = this.getSavedPrinters().find((p) => p.id === deviceId);
+    const width = detected ?? saved?.paperWidth ?? '58mm';
     this.paperWidth = width;
     storage.set(DEFAULT_PAPER_WIDTH_KEY, width);
 
-    const saved = this.getSavedPrinters();
-    if (saved.length > 0) {
-      storage.set(
-        PAIRED_PRINTERS_KEY,
-        saved.map((p) => ({ ...p, paperWidth: width }))
-      );
-    } else if (this.device?.id) {
-      storage.set(PAIRED_PRINTERS_KEY, [
-        {
-          id: this.device.id,
-          name: this.device.name || 'Thermal Printer',
-          paperWidth: width,
-          lastConnected: Date.now(),
-        },
-      ]);
-    }
+    const printers = this.getSavedPrinters().filter((p) => p.id !== deviceId);
+    const existing = saved ?? {
+      id: deviceId,
+      name: deviceName || 'Thermal Printer',
+      paperWidth: width,
+      lastConnected: Date.now(),
+      transport: this.transport,
+    };
+    printers.unshift({ ...existing, name: deviceName || existing.name, paperWidth: width, lastConnected: Date.now() });
+    storage.set(PAIRED_PRINTERS_KEY, printers.slice(0, 12));
+  }
 
+  /** @deprecated Manual width override removed — width is auto-detected per printer. */
+  setPaperWidth(width: PaperWidth) {
+    this.paperWidth = width;
+    storage.set(DEFAULT_PAPER_WIDTH_KEY, width);
     this.notifyConnectionChange();
   }
 
@@ -495,7 +471,7 @@ export class BLEPrinter {
     this.assertBluetoothAvailable();
 
     this.device = device;
-    this.resolvePaperWidth(device);
+    this.applyAutoPaperWidth(device.id, device.name || 'Thermal Printer');
     this.attachDisconnectHandler(device);
 
     this.characteristic = await this.rediscoverServices(device);
@@ -703,6 +679,7 @@ export class BLEPrinter {
   }
 
   private saveUsbDevice(name: string, id: string) {
+    this.applyAutoPaperWidth(id, name);
     const saved = this.getSavedPrinters().filter((p) => p.id !== id);
     saved.unshift({
       id,
@@ -980,111 +957,42 @@ export class BLEPrinter {
 
     const result = await this.withBluetoothLock(async () => {
     const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    await drawThermalReceiptCanvas(canvas, {
+      invoiceName,
+      items,
+      runningTotal,
+      currency,
+      attendantName,
+      layoutMode,
+      spec,
+    });
 
+    const printWidth = canvas.width;
+    const printHeight = canvas.height;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Could not create 2D canvas context');
 
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, width, height);
-
-    ctx.fillStyle = '#000000';
-    ctx.textBaseline = 'top';
-
-    const rule = '-'.repeat(Math.floor(spec.maxCols * 0.95));
-    let headerOffset = 10;
-
-    try {
-      const logo = await new Promise<HTMLImageElement | null>((resolve) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => resolve(null);
-        img.src = icalcLogo;
-      });
-      if (logo) {
-        const logoSize = Math.min(48, Math.floor(width * 0.22));
-        const logoX = (width - logoSize) / 2;
-        ctx.drawImage(logo, logoX, 8, logoSize, logoSize);
-        headerOffset = 8 + logoSize + 6;
-      }
-    } catch {
-      // logo optional for raster print
-    }
-
-    ctx.font = '700 20px Montserrat, Candara';
-    ctx.textAlign = 'center';
-    ctx.fillText(truncateReceiptText(invoiceName.toUpperCase(), spec.maxInvoiceTitleChars), width / 2, headerOffset);
-
-    ctx.font = '300 12px Montserrat, Candara';
-    ctx.fillText('iCalc Spatial POS Receipt', width / 2, headerOffset + 25);
-    if (attendantName) {
-      ctx.fillText(formatServedByLine(attendantName, spec), width / 2, headerOffset + 40);
-    }
-
-    ctx.font = '300 14px Montserrat, Candara';
-    const ruleY = attendantName ? headerOffset + 58 : headerOffset + 48;
-    ctx.fillText(rule, width / 2, ruleY);
-
-    let currentY = ruleY + 17;
-
-    if (layoutMode === 'full') {
-      items.forEach((item, idx) => {
-        const { displayName, priceText } = formatReceiptItemLine(
-          item.name || `Item ${idx + 1}`,
-          item.quantity,
-          item.price,
-          currency,
-          spec
-        );
-
-        ctx.textAlign = 'left';
-        ctx.font = '500 13px Montserrat, Candara';
-        ctx.fillText(displayName, 8, currentY);
-
-        ctx.textAlign = 'right';
-        ctx.fillText(priceText, width - 8, currentY);
-
-        currentY += itemHeight;
-      });
-    }
-
-    ctx.textAlign = 'center';
-    ctx.font = '300 14px Montserrat, Candara';
-    ctx.fillText(rule, width / 2, currentY);
-    currentY += 15;
-
-    ctx.textAlign = 'right';
-    ctx.font = '700 16px Montserrat, Candara';
-    ctx.fillText(`TOTAL: ${currency}${runningTotal.toFixed(2)}`, width - 8, currentY);
-    currentY += 25;
-
-    ctx.textAlign = 'center';
-    ctx.font = 'italic 300 12px Montserrat, Candara';
-    ctx.fillText('Thank you for', width / 2, currentY);
-    ctx.fillText('your purchase!', width / 2, currentY + 15);
-
-    const imgData = ctx.getImageData(0, 0, width, height);
+    const imgData = ctx.getImageData(0, 0, printWidth, printHeight);
     const data = imgData.data;
 
-    const bytesWidth = width / 8;
+    const bytesWidth = printWidth / 8;
     const commands: number[] = [];
 
     commands.push(0x1B, 0x40);
 
     const xL = bytesWidth % 256;
     const xH = Math.floor(bytesWidth / 256);
-    const yL = height % 256;
-    const yH = Math.floor(height / 256);
+    const yL = printHeight % 256;
+    const yH = Math.floor(printHeight / 256);
 
     commands.push(0x1D, 0x76, 0x30, 0, xL, xH, yL, yH);
 
-    for (let y = 0; y < height; y++) {
+    for (let y = 0; y < printHeight; y++) {
       for (let b = 0; b < bytesWidth; b++) {
         let byteVal = 0;
         for (let bit = 0; bit < 8; bit++) {
           const pixelX = b * 8 + bit;
-          const pixelIdx = (y * width + pixelX) * 4;
+          const pixelIdx = (y * printWidth + pixelX) * 4;
 
           const r = data[pixelIdx];
           const g = data[pixelIdx + 1];
