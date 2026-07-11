@@ -3,6 +3,7 @@ import { Icons } from '../constants';
 import { CartLineItem, InvoiceActionLog, InvoicePrintLog, UserProfile } from '../types';
 import { printerInstance } from '../utils/bluetoothPrinter';
 import {
+  formatReceiptItemLine,
   getReceiptSpec,
   logReceiptPrint,
   truncateReceiptText,
@@ -50,7 +51,8 @@ const SWITCHER_LAYOUT_OPTIONS = [
 
 const LONG_PRESS_MS = 480;
 const INVOICE_LOAD_MS = 400;
-const SCATTERED_GRID_MIN_TILE = 'min(100%, 148px)';
+const SWITCHER_DISPLAY_PAPER_WIDTH: PaperWidth = '58mm';
+const SCATTERED_GRID_MIN_TILE = 'min(100%, 168px)';
 const SCATTERED_GRID_GAP = '1.1rem';
 
 interface InvoiceCard {
@@ -108,8 +110,12 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const wallpaperSlides = wallpapers.length > 0 ? wallpapers : [{ image: '' }];
 
   const activeProfile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
-  const receiptSpec = useMemo(() => getReceiptSpec(receiptPaperWidth), [receiptPaperWidth]);
-  const receiptStageClass = `invoice-receipt-stage invoice-receipt-stage--${receiptPaperWidth}`;
+  const switcherReceiptSpec = useMemo(
+    () => getReceiptSpec(SWITCHER_DISPLAY_PAPER_WIDTH),
+    []
+  );
+  const receiptStageClass =
+    'invoice-receipt-stage invoice-receipt-stage--58mm invoice-switcher-shell-stage';
 
   const printedNames = useMemo(
     () => new Set(printLogs.map((log) => log.invoiceName)),
@@ -835,15 +841,36 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const renderSwitcherProductLine = (
     item: CartLineItem,
     index: number,
-    options?: { compact?: boolean; inverted?: boolean }
+    options?: { compact?: boolean; usePrintLayout?: boolean }
   ) => {
     const name = item.name || `Item ${index + 1}`;
-    const priceLabel = formatSwitcherAmount(item.price);
     const lineTotal = item.price * item.quantity;
     const totalLabel = formatSwitcherAmount(lineTotal);
-    const totalClass = options?.inverted
-      ? 'text-emerald-300'
-      : 'invoice-switcher-card__line-total';
+
+    if (options?.usePrintLayout) {
+      const { displayName, priceText } = formatReceiptItemLine(
+        name,
+        item.quantity,
+        item.price,
+        currency,
+        switcherReceiptSpec
+      );
+
+      return (
+        <div
+          key={`${name}-${index}`}
+          className={`invoice-switcher-card__line ${options?.compact ? 'invoice-switcher-card__line--compact' : ''}`}
+          title={`${name} ${item.quantity}x ${currency}${item.price.toFixed(2)} = ${currency}${totalLabel}`}
+        >
+          <span className="min-w-0 truncate">{displayName}</span>
+          <span className="invoice-switcher-card__line-total shrink-0 tabular-nums font-semibold">
+            {priceText}
+          </span>
+        </div>
+      );
+    }
+
+    const priceLabel = formatSwitcherAmount(item.price);
 
     return (
       <div
@@ -857,7 +884,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           {' * '}
           {item.quantity}
         </span>
-        <span className={`${totalClass} shrink-0 tabular-nums font-semibold`}>
+        <span className="invoice-switcher-card__line-total shrink-0 tabular-nums font-semibold">
           {currency}{totalLabel}
         </span>
       </div>
@@ -880,10 +907,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         type="button"
         onClick={() => beginInvoiceLoad(idx)}
         disabled={loadingInvoiceIdx !== null}
-        className={`relative text-left rounded-2xl w-full aspect-[6/13] flex flex-col transition-all duration-300 active:scale-[0.97] ${
+        className={`relative text-left rounded-2xl flex flex-col transition-all duration-300 active:scale-[0.97] ${
           isSelected && !focusZoomed
-            ? 'p-0 border-0 bg-transparent shadow-lg ring-2 ring-blue-400/35 overflow-hidden'
-            : `border p-3.5 sm:p-4 gap-2 ${
+            ? 'invoice-grid-tile--58mm p-0 border-0 bg-transparent shadow-lg ring-2 ring-blue-400/35 overflow-hidden'
+            : `w-full aspect-[6/13] border p-3.5 sm:p-4 gap-2 ${
                 isLight
                   ? 'bg-white/95 border-black/8 hover:bg-white text-black shadow-sm'
                   : 'bg-white/12 border-white/12 hover:bg-white/18 text-white'
@@ -905,6 +932,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             currency={currency}
             variant="tile"
             maxItemLines={4}
+            meta={`58mm · ${card.items.length} items`}
+            usePrintLayout
           />
         ) : (
           <>
@@ -981,6 +1010,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             currency={currency}
             variant="list"
             maxItemLines={3}
+            meta={`58mm · ${card.items.length} items`}
+            usePrintLayout
           />
         ) : (
           <>
@@ -1050,6 +1081,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   const renderCardContent = (card: InvoiceCard, isActive: boolean) => {
     const attendant = getAttendantForInvoice(card.name);
+    const showFullPrintLayout = isActive || isBrowseMode;
 
     return (
       <div className="invoice-switcher-card__body invoice-receipt-line">
@@ -1064,20 +1096,26 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
               No items yet
             </div>
           ) : (
-            card.items.map((item, i) => renderSwitcherProductLine(item, i))
+            card.items.map((item, i) =>
+              renderSwitcherProductLine(item, i, { usePrintLayout: showFullPrintLayout })
+            )
           )}
         </div>
 
         <div className="invoice-switcher-card__rule" aria-hidden="true" />
         <div className="invoice-switcher-card__total">
-          <span className="opacity-50 text-[10px] font-black uppercase tracking-widest">Total</span>
+          <span className="invoice-switcher-card__total-label">Total</span>
           <span className="invoice-switcher-card__total-value tabular-nums">{currency}{card.total}</span>
         </div>
 
         {isActive && (
-          <p className="text-[9px] font-bold opacity-45 truncate">
-            Served by &ldquo;{truncateReceiptText(attendant, receiptSpec.maxCols - 13)}&rdquo;
+          <p className="invoice-switcher-card__served-by truncate">
+            Served by &ldquo;{truncateReceiptText(attendant, switcherReceiptSpec.maxCols - 13)}&rdquo;
           </p>
+        )}
+
+        {isActive && (
+          <p className="invoice-switcher-card__thanks">Thank you for your purchase</p>
         )}
 
         {isActive && activeReceiptValidation && activeReceiptValidation.warnings.length > 0 && (
@@ -1091,56 +1129,64 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     );
   };
 
+  const renderCardActionRail = (card: InvoiceCard, isActive: boolean) => {
+    if (!isActive) {
+      return <div className="invoice-switcher-action-rail invoice-switcher-action-rail--placeholder" aria-hidden="true" />;
+    }
+
+    return (
+      <div className="invoice-switcher-action-rail" style={{ touchAction: 'auto' }}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleShareClick(card);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          disabled={isSharing || isPrinting || card.items.length === 0}
+          className="invoice-switcher-action-rail__btn invoice-switcher-action-rail__btn--share"
+          aria-label="Share invoice as image"
+          title="Share (WhatsApp, etc.)"
+        >
+          <Icons.Share size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void handlePrintClick(card);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          disabled={isPrinting || isSharing || !canPrintCard(card)}
+          className="invoice-switcher-action-rail__btn invoice-switcher-action-rail__btn--print"
+          aria-label="Print invoice name, total, and served by"
+          title="Print invoice name, total, and served by"
+        >
+          <Icons.Printer size={16} />
+        </button>
+      </div>
+    );
+  };
+
   const renderCardFooter = (card: InvoiceCard, isActive: boolean) => {
     if (!isActive) return null;
     const attendant = getAttendantForInvoice(card.name);
 
     return (
-      <div className="invoice-switcher-card__footer" style={{ touchAction: 'auto' }}>
-        <div className="invoice-switcher-card__footer-actions">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setAttendantPickerInvoice(card.name);
-              setAttendantPickerOpen(true);
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-            className="flex-1 min-w-0 text-left px-3 py-2.5 rounded-xl border border-black/8 bg-white text-xs font-black tracking-tight text-black hover:bg-black/[0.03] active:scale-[0.99] transition-all truncate"
-            aria-label="Choose name for print"
-          >
-            {attendant}
-          </button>
-
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              void handleShareClick(card);
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-            disabled={isSharing || isPrinting || card.items.length === 0}
-            className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center bg-blue-500 text-white shadow-[0_6px_18px_rgba(59,130,246,0.35)] active:scale-90 transition-all disabled:opacity-40"
-            aria-label="Share invoice as image"
-            title="Share (WhatsApp, etc.)"
-          >
-            <Icons.Share size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              void handlePrintClick(card);
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-            disabled={isPrinting || isSharing || !canPrintCard(card)}
-            className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center bg-emerald-500 text-white shadow-[0_6px_18px_rgba(16,185,129,0.35)] active:scale-90 transition-all disabled:opacity-40"
-            aria-label="Print invoice name, total, and served by"
-            title="Print invoice name, total, and served by"
-          >
-            <Icons.Printer size={16} />
-          </button>
-        </div>
+      <div className="invoice-switcher-card__footer invoice-switcher-card__footer--attendant" style={{ touchAction: 'auto' }}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setAttendantPickerInvoice(card.name);
+            setAttendantPickerOpen(true);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="invoice-switcher-card__attendant-btn"
+          aria-label="Choose name for print"
+        >
+          {attendant}
+        </button>
       </div>
     );
   };
@@ -1151,67 +1197,75 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     const statusLabel = card.isCurrent ? 'Current' : isPaid ? 'Paid' : 'Open';
 
     return (
-    <>
-      <header className="invoice-switcher-card__header relative">
-        <div className="invoice-switcher-card__brand-row">
-          <span className="invoice-switcher-card__brand" title={invoiceBrandLabel}>
-            {invoiceBrandLabel}
-          </span>
-          <span className={`invoice-switcher-card__badge ${isPaid ? 'invoice-switcher-card__badge--paid' : ''}`}>
-            {statusLabel}
-          </span>
+    <div className="invoice-switcher-shell flex flex-col h-full min-h-0">
+      <div className="invoice-switcher-shell__row flex flex-1 min-h-0">
+        <div className="invoice-switcher-printable flex flex-col min-h-0 min-w-0">
+          <header className="invoice-switcher-card__header relative">
+            <div className="invoice-switcher-card__brand-row">
+              <span className="invoice-switcher-card__brand" title={invoiceBrandLabel}>
+                {invoiceBrandLabel}
+              </span>
+              <span className={`invoice-switcher-card__badge ${isPaid ? 'invoice-switcher-card__badge--paid' : ''}`}>
+                {statusLabel}
+              </span>
+            </div>
+
+            {card.isCurrent && isActive ? (
+              <input
+                id="invoice-title"
+                type="text"
+                value={invoiceName}
+                onChange={e => onInvoiceNameChange(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                placeholder="Invoice #1"
+                aria-label="Invoice name"
+                className="invoice-switcher-card__title w-full min-w-0 bg-transparent outline-none border-b border-transparent focus:border-white/25 transition-colors placeholder:text-white/35 invoice-receipt-line"
+              />
+            ) : (
+              <div
+                id={isActive ? 'invoice-title' : undefined}
+                className="invoice-switcher-card__title invoice-receipt-line truncate"
+                title={card.name}
+              >
+                {truncateReceiptText(rawTitle, switcherReceiptSpec.maxInvoiceTitleChars)}
+              </div>
+            )}
+
+            <p className="invoice-switcher-card__meta">
+              58mm · {card.items.length} items
+            </p>
+
+            {isActive && (!isBrowseMode || focusZoomed) && (
+              <div className="absolute top-3 right-3 flex items-center gap-2">
+                {isBrowseMode && focusZoomed && (
+                  <button
+                    type="button"
+                    onClick={() => setFocusZoomed(false)}
+                    aria-label="Back to invoice browse view"
+                    className="p-2 rounded-full text-white/80 hover:bg-white/10 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
+                )}
+                {!onSwitcherModeChange && renderCloseButton()}
+              </div>
+            )}
+          </header>
+
+          <div className="invoice-switcher-card flex-1 flex flex-col min-h-0 overflow-hidden relative">
+            {renderCardContent(card, isActive)}
+          </div>
         </div>
 
-        {card.isCurrent && isActive ? (
-          <input
-            id="invoice-title"
-            type="text"
-            value={invoiceName}
-            onChange={e => onInvoiceNameChange(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-            placeholder="Invoice #1"
-            aria-label="Invoice name"
-            className="invoice-switcher-card__title w-full min-w-0 bg-transparent outline-none border-b border-transparent focus:border-white/25 transition-colors placeholder:text-white/35 invoice-receipt-line"
-          />
-        ) : (
-          <div
-            id={isActive ? 'invoice-title' : undefined}
-            className="invoice-switcher-card__title invoice-receipt-line truncate"
-            title={card.name}
-          >
-            {truncateReceiptText(rawTitle, receiptSpec.maxInvoiceTitleChars)}
-          </div>
-        )}
-
-        <p className="invoice-switcher-card__meta">
-          Auto {receiptPaperWidth} · {card.items.length} items
-        </p>
-
-        {isActive && (!isBrowseMode || focusZoomed) && (
-          <div className="absolute top-3 right-3 flex items-center gap-2">
-            {isBrowseMode && focusZoomed && (
-              <button
-                type="button"
-                onClick={() => setFocusZoomed(false)}
-                aria-label="Back to invoice browse view"
-                className="p-2 rounded-full text-white/80 hover:bg-white/10 transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-              </button>
-            )}
-            {!onSwitcherModeChange && renderCloseButton()}
-          </div>
-        )}
-      </header>
-
-      <div className="invoice-switcher-card flex-1 flex flex-col min-h-0 overflow-hidden relative">
-        {renderCardContent(card, isActive)}
-        {renderCardFooter(card, isActive)}
+        {renderCardActionRail(card, isActive)}
       </div>
+
+      {renderCardFooter(card, isActive)}
 
       {isActive && switcherMode === 'horizontal' && cards.length > 1 && (
         <div
+          className="invoice-switcher-shell__dots"
           style={{
             display: 'flex',
             justifyContent: 'center',
@@ -1246,7 +1300,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           ))}
         </div>
       )}
-    </>
+    </div>
     );
   };
 
@@ -1315,12 +1369,12 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             </div>
 
             <div
-              className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-6 sm:px-5 sm:pb-8 transition-all duration-500 ${
+              className={`invoice-receipt-stage flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-6 sm:px-5 sm:pb-8 transition-all duration-500 ${
                 focusZoomed ? 'blur-xl brightness-[0.45] scale-[0.96]' : ''
               }`}
             >
               <div
-                className="grid min-h-full content-start"
+                className="grid min-h-full content-start justify-items-center"
                 style={{
                   gridTemplateColumns: `repeat(auto-fill, minmax(${SCATTERED_GRID_MIN_TILE}, 1fr))`,
                   gap: SCATTERED_GRID_GAP,

@@ -1,5 +1,8 @@
 import React from 'react';
 import { CartLineItem } from '../types';
+import { formatReceiptItemLine, getReceiptSpec } from '../utils/receiptLayout';
+
+const SWITCHER_RECEIPT_SPEC = getReceiptSpec('58mm');
 
 export type InvoiceReceiptStatus = 'Current' | 'Paid' | 'Open' | 'Saved';
 
@@ -20,6 +23,7 @@ export interface InvoiceReceiptPreviewProps {
   maxItemLines?: number;
   meta?: string;
   className?: string;
+  usePrintLayout?: boolean;
 }
 
 const InvoiceReceiptPreview: React.FC<InvoiceReceiptPreviewProps> = ({
@@ -33,6 +37,7 @@ const InvoiceReceiptPreview: React.FC<InvoiceReceiptPreviewProps> = ({
   maxItemLines,
   meta,
   className = '',
+  usePrintLayout = false,
 }) => {
   const isPaid = status === 'Paid';
   const visibleItems = maxItemLines != null ? items.slice(0, maxItemLines) : items;
@@ -72,8 +77,32 @@ const InvoiceReceiptPreview: React.FC<InvoiceReceiptPreviewProps> = ({
             <>
               {visibleItems.map((item, index) => {
                 const name = item.name || `Item ${index + 1}`;
-                const priceLabel = formatLineAmount(item.price);
                 const lineTotal = formatLineAmount(item.price * item.quantity);
+
+                if (usePrintLayout) {
+                  const { displayName, priceText } = formatReceiptItemLine(
+                    name,
+                    item.quantity,
+                    item.price,
+                    currency,
+                    SWITCHER_RECEIPT_SPEC
+                  );
+
+                  return (
+                    <div
+                      key={`${name}-${index}`}
+                      className="invoice-switcher-card__line invoice-switcher-card__line--compact"
+                      title={`${name} ${item.quantity}x ${currency}${item.price.toFixed(2)} = ${currency}${lineTotal}`}
+                    >
+                      <span className="min-w-0 truncate">{displayName}</span>
+                      <span className="invoice-switcher-card__line-total shrink-0 tabular-nums font-semibold">
+                        {priceText}
+                      </span>
+                    </div>
+                  );
+                }
+
+                const priceLabel = formatLineAmount(item.price);
 
                 return (
                   <div
