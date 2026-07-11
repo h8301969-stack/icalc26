@@ -191,7 +191,7 @@ export const useInvoice = (
     }));
   }, [getInvoiceExpression, invoiceName, pastLogs]);
 
-  const hydrateInvoiceState = (data: {
+  const hydrateInvoiceState = useCallback((data: {
     invoiceName: string;
     pastLogs: InvoiceActionLog[];
     printLogs: InvoicePrintLog[];
@@ -206,7 +206,7 @@ export const useInvoice = (
         data.savedInvoices.map((invoice) => [invoice.name, invoice.expression])
       );
     }
-  };
+  }, []);
 
   return {
     invoiceName,

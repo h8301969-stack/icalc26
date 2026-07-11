@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   safeEvaluate,
   evaluateExpression,
@@ -24,6 +24,11 @@ export const useCalculator = (
 
   // Movable blinker / cursor position inside the expression (preferred insertion point)
   const [cursorPos, setCursorPos] = useState(0);
+  const cursorPosRef = useRef(0);
+
+  useEffect(() => {
+    cursorPosRef.current = cursorPos;
+  }, [cursorPos]);
 
   const pushToUndo = useCallback((val: string) => {
     setUndoStack(prev => [...prev, val].slice(-50));
@@ -76,11 +81,13 @@ export const useCalculator = (
       if (isOp) {
         const sym = char === '*' ? '×' : char === '/' ? '÷' : char;
         const newExpr = expression + sym;
+        cursorPosRef.current = newExpr.length;
         setExpression(newExpr);
         setCursorPos(newExpr.length);
         return;
       }
       const fresh = char === '.' ? '0.' : char;
+      cursorPosRef.current = fresh.length;
       setExpression(fresh);
       setCursorPos(fresh.length);
       return;
@@ -90,13 +97,15 @@ export const useCalculator = (
     setExpression(prev => {
       const sym = char === '*' ? '×' : char === '/' ? '÷' : char;
 
-      let pos = cursorPos;
+      let pos = cursorPosRef.current;
       if (pos < 0 || pos > prev.length) pos = prev.length;
 
       // Special handling when at '0' start
       if (prev === '0' && !['+', '×', '÷', '.', '%'].includes(sym)) {
         const newExpr = sym;
-        setCursorPos(newExpr.length);
+        const nextPos = newExpr.length;
+        cursorPosRef.current = nextPos;
+        setCursorPos(nextPos);
         return newExpr;
       }
 
@@ -108,17 +117,21 @@ export const useCalculator = (
           // allow
         } else {
           const newExpr = prev.slice(0, -1) + sym;
-          setCursorPos(newExpr.length);
+          const nextPos = newExpr.length;
+          cursorPosRef.current = nextPos;
+          setCursorPos(nextPos);
           return newExpr;
         }
       }
 
       // Insert at current cursor position (movable blinker support)
       const newExpr = prev.slice(0, pos) + sym + prev.slice(pos);
-      setCursorPos(pos + 1);
+      const nextPos = pos + 1;
+      cursorPosRef.current = nextPos;
+      setCursorPos(nextPos);
       return newExpr;
     });
-  }, [expression, isResultMode, triggerHaptic, pushToUndo, cursorPos]);
+  }, [expression, isResultMode, triggerHaptic, pushToUndo]);
 
   const toggleSign = useCallback(() => {
     triggerHaptic();
@@ -184,21 +197,24 @@ export const useCalculator = (
     triggerHaptic();
     setExpression('0');
     setIsResultMode(false);
+    cursorPosRef.current = 0;
     setCursorPos(0);
   }, [triggerHaptic]);
 
   const deleteLast = useCallback(() => {
     triggerHaptic();
     setExpression(prev => {
-      let pos = cursorPos;
+      let pos = cursorPosRef.current;
       if (pos === null || pos < 0) pos = prev.length;
       if (pos === 0) return prev || '0';
       const newExpr = prev.slice(0, pos - 1) + prev.slice(pos);
-      setCursorPos(Math.max(0, pos - 1));
+      const nextPos = Math.max(0, pos - 1);
+      cursorPosRef.current = nextPos;
+      setCursorPos(nextPos);
       return newExpr || '0';
     });
     setIsResultMode(false);
-  }, [triggerHaptic, cursorPos]);
+  }, [triggerHaptic]);
 
   const pasteExpression = useCallback((raw: string) => {
     const sanitized = sanitizeClipboardExpression(raw);
@@ -209,19 +225,22 @@ export const useCalculator = (
     setIsResultMode(false);
 
     setExpression((prev) => {
-      let pos = cursorPos;
+      let pos = cursorPosRef.current;
       if (pos < 0 || pos > prev.length) pos = prev.length;
 
       if (prev === '0') {
+        cursorPosRef.current = sanitized.length;
         setCursorPos(sanitized.length);
         return sanitized;
       }
 
       const newExpr = prev.slice(0, pos) + sanitized + prev.slice(pos);
-      setCursorPos(pos + sanitized.length);
+      const nextPos = pos + sanitized.length;
+      cursorPosRef.current = nextPos;
+      setCursorPos(nextPos);
       return newExpr;
     });
-  }, [expression, cursorPos, triggerHaptic, pushToUndo]);
+  }, [expression, triggerHaptic, pushToUndo]);
 
   const addInventoryItem = useCallback((price: number) => {
     triggerHaptic();
@@ -232,21 +251,24 @@ export const useCalculator = (
 
     setExpression((prev) => {
       if (prev === '0') {
+        cursorPosRef.current = segment.length;
         setCursorPos(segment.length);
         return segment;
       }
 
-      let pos = cursorPos;
+      let pos = cursorPosRef.current;
       if (pos < 0 || pos > prev.length) pos = prev.length;
 
       const before = prev.slice(0, pos);
       const needsSeparator = before.length > 0 && !before.endsWith('+');
       const insert = needsSeparator ? `+${segment}` : segment;
       const newExpr = before + insert + prev.slice(pos);
-      setCursorPos(pos + insert.length);
+      const nextPos = pos + insert.length;
+      cursorPosRef.current = nextPos;
+      setCursorPos(nextPos);
       return newExpr;
     });
-  }, [expression, cursorPos, triggerHaptic, pushToUndo]);
+  }, [expression, triggerHaptic, pushToUndo]);
 
   return {
     expression,

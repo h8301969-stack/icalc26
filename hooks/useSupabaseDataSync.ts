@@ -89,6 +89,8 @@ export const useSupabaseDataSync = ({
   const requestsRef = useRef(requests);
   const restocksRef = useRef(restocks);
   const invoiceRef = useRef({ invoiceName, expression, pastLogs, printLogs, getSavedInvoices });
+  const onInvoiceHydratedRef = useRef(onInvoiceHydrated);
+  onInvoiceHydratedRef.current = onInvoiceHydrated;
 
   historyRef.current = history;
   inventoryRef.current = inventory;
@@ -105,6 +107,7 @@ export const useSupabaseDataSync = ({
 
   useEffect(() => {
     if (!authReady || !userId || !isCloudBackendEnabled()) return;
+    if (hydratedRef.current || hydratingRef.current) return;
 
     let cancelled = false;
 
@@ -176,9 +179,9 @@ export const useSupabaseDataSync = ({
         }
 
         if (remoteInvoice) {
-          onInvoiceHydrated(remoteInvoice);
+          onInvoiceHydratedRef.current(remoteInvoice);
         } else if (!cancelled) {
-          onInvoiceHydrated({
+          onInvoiceHydratedRef.current({
             invoiceName: FRESH_INVOICE_NAME,
             expression: '0',
             pastLogs: [],
@@ -199,17 +202,7 @@ export const useSupabaseDataSync = ({
     return () => {
       cancelled = true;
     };
-  }, [
-    authReady,
-    userId,
-    onInvoiceHydrated,
-    setHistory,
-    setInventory,
-    setPurchases,
-    setSuppliers,
-    setRequests,
-    setRestocks,
-  ]);
+  }, [authReady, userId, setHistory, setInventory, setPurchases, setSuppliers, setRequests, setRestocks]);
 
   useEffect(() => {
     if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
