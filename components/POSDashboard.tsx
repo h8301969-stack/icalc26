@@ -22,7 +22,7 @@ import {
   buildNotepadPrintBodyFromNotes,
   parseNotepadSnapshot,
 } from '../utils/notepadSnapshot';
-import { WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
+import { DEFAULT_INVENTORY_IMAGE, resolveInventoryImage, WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
 import { formInputClass } from '../utils/formFields';
 
 interface POSDashboardProps {
@@ -276,8 +276,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('0');
-  const [newItemCategory, setNewItemCategory] = useState('Hardware');
-  const [newItemImageUrl, setNewItemImageUrl] = useState('');
+  const [newItemTag, setNewItemTag] = useState('');
   // Requests feature states
   const [requestTab, setRequestTab] = useState<'pending' | 'delivered' | 'outofstock'>('pending');
   const [showAddRequestPopup, setShowAddRequestPopup] = useState(false);
@@ -1448,11 +1447,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       stock: 50,
       price: parseFloat(newItemPrice) || 0,
       threshold: 20,
-      category: newItemCategory,
+      category: newItemTag.trim(),
       dateAdded: now.toLocaleDateString(),
       supplier: 'Generic Systems',
       lastStocked: now.toISOString(),
-      image: newItemImageUrl || '/assets/autoswipe/pos3.png',
+      image: DEFAULT_INVENTORY_IMAGE,
       activities: [{
         id: Math.random().toString(),
         type: 'restock',
@@ -1465,7 +1464,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     setItems(prev => [newItem, ...prev]);
     setNewItemName('');
     setNewItemPrice('0');
-    setNewItemImageUrl('');
+    setNewItemTag('');
     setIsAddingItem(false);
   };
 
@@ -1488,8 +1487,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     setNamingUnidentified({ price: log.price, quantity: log.quantity ?? 1 });
     setNewItemName('');
     setNewItemPrice(String(log.price));
-    setNewItemCategory('Hardware');
-    setNewItemImageUrl('');
+    setNewItemTag('');
   }, []);
 
   const handleSaveUnidentifiedItem = useCallback(() => {
@@ -1503,11 +1501,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       stock: 50,
       price,
       threshold: 20,
-      category: newItemCategory,
+      category: newItemTag.trim(),
       dateAdded: new Date(now).toLocaleDateString(),
       supplier: 'Generic Systems',
       lastStocked: new Date(now).toISOString(),
-      image: newItemImageUrl || '/assets/autoswipe/pos3.png',
+      image: DEFAULT_INVENTORY_IMAGE,
       activities: [{
         id: `${now}-identified`,
         type: 'restock',
@@ -1522,8 +1520,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     setNamingUnidentified(null);
     setNewItemName('');
     setNewItemPrice('0');
-    setNewItemImageUrl('');
-  }, [namingUnidentified, newItemName, newItemCategory, newItemImageUrl, setItems, onResolveUnidentifiedPrice, activeProfileName]);
+    setNewItemTag('');
+  }, [namingUnidentified, newItemName, newItemTag, setItems, onResolveUnidentifiedPrice, activeProfileName]);
 
   const levitateClass = isLight
     ? 'bg-white/90 shadow-[0_16px_36px_rgba(0,0,0,0.12)] hover:shadow-[0_24px_48px_rgba(0,0,0,0.16)] pos-dashboard-card-motion'
@@ -1769,22 +1767,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             className={formInputClass(isLight, { size: 'lg', className: 'opacity-70' })}
             aria-label="Price from invoice"
           />
-          <select
-            value={newItemCategory}
-            onChange={(e) => setNewItemCategory(e.target.value)}
-            className={`${formInputClass(isLight, { size: 'lg' })} appearance-none`}
-          >
-            <option value="Hardware">Hardware</option>
-            <option value="Optics">Optics</option>
-          </select>
+          <input
+            type="text"
+            value={newItemTag}
+            onChange={(e) => setNewItemTag(e.target.value)}
+            placeholder="Tag (optional)"
+            aria-label="Item tag for identification"
+            className={formInputClass(isLight, { size: 'lg' })}
+          />
         </div>
-        <input
-          type="text"
-          value={newItemImageUrl}
-          onChange={(e) => setNewItemImageUrl(e.target.value)}
-          placeholder="Image URL (optional)"
-          className={formInputClass(isLight, { size: 'lg' })}
-        />
         <button
           type="button"
           onClick={handleSaveUnidentifiedItem}
@@ -1819,13 +1810,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           className={`group rounded-xl overflow-hidden cursor-pointer ${levitateClass} relative focus:outline-none focus:ring-2 focus:ring-white/40`}
         >
           <div className="relative aspect-square overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-            <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+            <img src={resolveInventoryImage(item.image)} alt={item.name} className="w-full h-full object-cover" />
             <div className="absolute inset-x-0 bottom-0 h-[42%] bg-linear-to-t from-black/95 via-black/40 to-transparent pointer-events-none" aria-hidden="true" />
             <div className="absolute bottom-3 left-3 right-3 flex flex-col pointer-events-none" aria-hidden="true">
               <div className="flex flex-col items-start gap-0.5">
                 <div className="flex-1 min-w-0">
                   <h4 className="text-[11px] font-black tracking-tight leading-tight truncate text-white">{item.name}</h4>
-                  <p className={`pos-subtext text-[8px] font-black truncate ${heroSubtextClass}`}>{item.category}</p>
+                  {item.category ? (
+                    <p className={`pos-subtext text-[8px] font-black truncate ${heroSubtextClass}`}>{item.category}</p>
+                  ) : null}
                 </div>
                 <span className="text-[10px] font-black text-white whitespace-nowrap">¢{item.price}</span>
               </div>
@@ -1868,13 +1861,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
         <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
           <div className="relative h-56 sm:h-72">
-            <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+            <img src={resolveInventoryImage(item.image)} alt={item.name} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent" aria-hidden="true" />
           </div>
           <div className={`p-8 space-y-8 ${textColorClass}`}>
             <div className="flex justify-between items-start gap-4">
               <h3 className="text-4xl font-black tracking-tighter leading-tight">{item.name}</h3>
-              <span className={`px-5 py-2 rounded-2xl pos-subtext text-[10px] font-black shrink-0 ${cardSubtextClass} ${isLight ? 'bg-zinc-100' : 'bg-white/10'}`}>{item.category}</span>
+              {item.category ? (
+                <span className={`px-5 py-2 rounded-2xl pos-subtext text-[10px] font-black shrink-0 ${cardSubtextClass} ${isLight ? 'bg-zinc-100' : 'bg-white/10'}`}>{item.category}</span>
+              ) : null}
             </div>
             <div className="grid grid-cols-2 gap-8">
               <div>
@@ -2441,13 +2436,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     className={`group rounded-xl overflow-hidden cursor-pointer ${levitateClass} relative focus:outline-none focus:ring-2 focus:ring-white/40`}
                   >
                     <div className="relative aspect-square overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-                      <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                      <img src={resolveInventoryImage(item.image)} alt={item.name} className="w-full h-full object-cover" />
                       <div className="absolute inset-x-0 bottom-0 h-[42%] bg-linear-to-t from-black/95 via-black/40 to-transparent pointer-events-none" aria-hidden="true" />
                       <div className="absolute bottom-3 left-3 right-3 flex flex-col pointer-events-none" aria-hidden="true">
                          <div className="flex flex-col items-start gap-0.5">
                            <div className="flex-1 min-w-0">
                              <h4 className="text-[11px] font-black tracking-tight leading-tight truncate text-white">{item.name}</h4>
-                             <p className={`pos-subtext text-[8px] font-black truncate ${heroSubtextClass}`}>{item.category}</p>
+                             {item.category ? (
+                    <p className={`pos-subtext text-[8px] font-black truncate ${heroSubtextClass}`}>{item.category}</p>
+                  ) : null}
                            </div>
                            <span className="text-[10px] font-black text-white whitespace-nowrap">¢{item.price}</span>
                          </div>
@@ -2956,12 +2953,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                <div className={`space-y-10 ${textColorClass}`}>
                  <h3 id="add-item-title" className="text-5xl font-black tracking-tighter">New Asset</h3>
                  <div className="space-y-6">
-                   <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="Neural ID" aria-label="New asset name" className={formInputClass(isLight, { size: 'lg' })} />
+                   <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="Item name" aria-label="Item name" className={formInputClass(isLight, { size: 'lg' })} />
                    <div className="grid grid-cols-2 gap-5">
-                     <input type="number" value={newItemPrice} onChange={(e) => setNewItemPrice(e.target.value)} placeholder="Rate" aria-label="New asset price" className={formInputClass(isLight, { size: 'lg' })} />
-                     <select value={newItemCategory} onChange={(e) => setNewItemCategory(e.target.value)} aria-label="New asset category" className={`${formInputClass(isLight, { size: 'lg' })} appearance-none`}><option value="Hardware">Hardware</option><option value="Optics">Optics</option></select>
+                     <input type="number" value={newItemPrice} onChange={(e) => setNewItemPrice(e.target.value)} placeholder="Price" aria-label="Item price" className={formInputClass(isLight, { size: 'lg' })} />
+                     <input type="text" value={newItemTag} onChange={(e) => setNewItemTag(e.target.value)} placeholder="Tag (optional)" aria-label="Item tag for identification" className={formInputClass(isLight, { size: 'lg' })} />
                    </div>
-                   <input type="text" value={newItemImageUrl} onChange={(e) => setNewItemImageUrl(e.target.value)} placeholder="Visual Feed URL" aria-label="New asset image URL" className={formInputClass(isLight, { size: 'lg' })} />
                  </div>
                  <button onClick={handleAddItem} aria-label="Manifest new asset" className="w-full py-8 rounded-[26px] text-black font-black uppercase tracking-[0.5em] text-[12px] active:scale-95 shadow-2xl transition-all" style={{ backgroundColor: accentColor }}>Create Asset</button>
                </div>

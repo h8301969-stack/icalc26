@@ -43,6 +43,17 @@ export const WALLPAPER_SLIDES: WallpaperSlide[] = [
 export const resolveWallpaperImage = (image: string): string =>
   LEGACY_WALLPAPER_MAP[image] ?? image;
 
+/** Bundled placeholder for inventory tiles — custom image URLs are not used. */
+export const DEFAULT_INVENTORY_IMAGE = pos3;
+
+export const resolveInventoryImage = (image: string | null | undefined): string => {
+  if (!image) return DEFAULT_INVENTORY_IMAGE;
+  if (/^https?:\/\//i.test(image) || /^data:image\//i.test(image)) {
+    return DEFAULT_INVENTORY_IMAGE;
+  }
+  return LEGACY_WALLPAPER_MAP[image] ?? image;
+};
+
 export const migrateWallpaperSlides = (
   slides: WallpaperSlide[] | undefined
 ): WallpaperSlide[] => {
