@@ -1698,31 +1698,45 @@ select.app-input--dark {
   flex-direction: column;
   gap: 0.35rem;
 }
-.invoice-switcher-card__line {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
+.invoice-switcher-card__line,
+.invoice-switcher-card__total {
+  display: grid;
+  grid-template-columns: 1.65rem minmax(0, 1fr) 3.35rem;
+  align-items: center;
+  column-gap: 0.35rem;
   font-size: 0.72rem;
   color: #0a0a0a;
 }
-.invoice-switcher-card__line-total {
+.invoice-switcher-card__line-qty {
+  text-align: left;
+  font-weight: 800;
+  font-size: 0.68rem;
+  opacity: 0.52;
+}
+.invoice-switcher-card__line-name {
+  text-align: center;
+  color: #2563eb;
+  font-weight: 800;
+  min-width: 0;
+  letter-spacing: -0.02em;
+}
+.invoice-switcher-card__line-sum {
+  text-align: right;
+  font-weight: 700;
   color: #0a0a0a;
-  font-weight: 600;
 }
 .invoice-switcher-card__total {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  margin-top: 0.1rem;
   font-size: 0.82rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: #0a0a0a;
 }
 .invoice-switcher-card__total-value {
+  grid-column: 2;
+  justify-self: center;
+  text-align: center;
   color: #16a34a;
   font-weight: 900;
   font-size: 1rem;
+  letter-spacing: -0.02em;
 }
 .invoice-switcher-card__footer {
   flex-shrink: 0;

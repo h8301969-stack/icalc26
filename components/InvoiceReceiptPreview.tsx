@@ -1,16 +1,8 @@
 import React from 'react';
 import { CartLineItem } from '../types';
-import { formatReceiptItemLine, getReceiptSpec } from '../utils/receiptLayout';
-
-const SWITCHER_RECEIPT_SPEC = getReceiptSpec('58mm');
+import { InvoiceSwitcherProductLine, InvoiceSwitcherTotalRow } from './InvoiceSwitcherLine';
 
 export type InvoiceReceiptStatus = 'Current' | 'Paid' | 'Open' | 'Saved';
-
-const formatLineAmount = (value: number): string => {
-  if (!Number.isFinite(value)) return '0';
-  const rounded = Math.round(value * 100) / 100;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
-};
 
 export interface InvoiceReceiptPreviewProps {
   brandLabel?: string;
@@ -23,7 +15,6 @@ export interface InvoiceReceiptPreviewProps {
   maxItemLines?: number;
   meta?: string;
   className?: string;
-  usePrintLayout?: boolean;
 }
 
 const InvoiceReceiptPreview: React.FC<InvoiceReceiptPreviewProps> = ({
@@ -37,7 +28,6 @@ const InvoiceReceiptPreview: React.FC<InvoiceReceiptPreviewProps> = ({
   maxItemLines,
   meta,
   className = '',
-  usePrintLayout = false,
 }) => {
   const isPaid = status === 'Paid';
   const visibleItems = maxItemLines != null ? items.slice(0, maxItemLines) : items;
@@ -75,54 +65,15 @@ const InvoiceReceiptPreview: React.FC<InvoiceReceiptPreviewProps> = ({
             <div className="invoice-receipt-preview__empty">No items yet</div>
           ) : (
             <>
-              {visibleItems.map((item, index) => {
-                const name = item.name || `Item ${index + 1}`;
-                const lineTotal = formatLineAmount(item.price * item.quantity);
-
-                if (usePrintLayout) {
-                  const { displayName, priceText } = formatReceiptItemLine(
-                    name,
-                    item.quantity,
-                    item.price,
-                    currency,
-                    SWITCHER_RECEIPT_SPEC
-                  );
-
-                  return (
-                    <div
-                      key={`${name}-${index}`}
-                      className="invoice-switcher-card__line invoice-switcher-card__line--compact"
-                      title={`${name} ${item.quantity}x ${currency}${item.price.toFixed(2)} = ${currency}${lineTotal}`}
-                    >
-                      <span className="min-w-0 truncate">{displayName}</span>
-                      <span className="invoice-switcher-card__line-total shrink-0 tabular-nums font-semibold">
-                        {priceText}
-                      </span>
-                    </div>
-                  );
-                }
-
-                const priceLabel = formatLineAmount(item.price);
-
-                return (
-                  <div
-                    key={`${name}-${index}`}
-                    className="invoice-switcher-card__line invoice-switcher-card__line--compact"
-                    title={`${name} ${priceLabel} * ${item.quantity} = ${currency}${lineTotal}`}
-                  >
-                    <span className="min-w-0 truncate">
-                      {name}{' '}
-                      <span className="font-semibold">{priceLabel}</span>
-                      {' * '}
-                      {item.quantity}
-                    </span>
-                    <span className="invoice-switcher-card__line-total shrink-0 tabular-nums font-semibold">
-                      {currency}
-                      {lineTotal}
-                    </span>
-                  </div>
-                );
-              })}
+              {visibleItems.map((item, index) => (
+                <InvoiceSwitcherProductLine
+                  key={`${item.name || 'item'}-${index}`}
+                  item={item}
+                  index={index}
+                  currency={currency}
+                  compact
+                />
+              ))}
               {overflowCount > 0 && (
                 <div className="invoice-receipt-preview__more">+{overflowCount} more</div>
               )}
@@ -131,13 +82,7 @@ const InvoiceReceiptPreview: React.FC<InvoiceReceiptPreviewProps> = ({
         </div>
 
         <div className="invoice-switcher-card__rule" aria-hidden="true" />
-        <div className="invoice-switcher-card__total">
-          <span className="invoice-switcher-card__total-label">Total</span>
-          <span className="invoice-switcher-card__total-value tabular-nums">
-            {currency}
-            {total}
-          </span>
-        </div>
+        <InvoiceSwitcherTotalRow total={total} currency={currency} />
       </div>
     </div>
   );

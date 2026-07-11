@@ -3,13 +3,13 @@ import { Icons } from '../constants';
 import { CartLineItem, InvoiceActionLog, InvoicePrintLog, UserProfile } from '../types';
 import { printerInstance } from '../utils/bluetoothPrinter';
 import {
-  formatReceiptItemLine,
   getReceiptSpec,
   logReceiptPrint,
   truncateReceiptText,
   validateReceiptPrint,
   type PaperWidth,
 } from '../utils/receiptLayout';
+import { InvoiceSwitcherProductLine, InvoiceSwitcherTotalRow } from './InvoiceSwitcherLine';
 import { storage } from '../hooks/storage';
 import { resolveWallpaperImage } from '../utils/wallpapers';
 import InvoiceAttendantPicker from './InvoiceAttendantPicker';
@@ -842,55 +842,16 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const renderSwitcherProductLine = (
     item: CartLineItem,
     index: number,
-    options?: { compact?: boolean; usePrintLayout?: boolean }
-  ) => {
-    const name = item.name || `Item ${index + 1}`;
-    const lineTotal = item.price * item.quantity;
-    const totalLabel = formatSwitcherAmount(lineTotal);
-
-    if (options?.usePrintLayout) {
-      const { displayName, priceText } = formatReceiptItemLine(
-        name,
-        item.quantity,
-        item.price,
-        currency,
-        switcherReceiptSpec
-      );
-
-      return (
-        <div
-          key={`${name}-${index}`}
-          className={`invoice-switcher-card__line ${options?.compact ? 'invoice-switcher-card__line--compact' : ''}`}
-          title={`${name} ${item.quantity}x ${currency}${item.price.toFixed(2)} = ${currency}${totalLabel}`}
-        >
-          <span className="min-w-0 truncate">{displayName}</span>
-          <span className="invoice-switcher-card__line-total shrink-0 tabular-nums font-semibold">
-            {priceText}
-          </span>
-        </div>
-      );
-    }
-
-    const priceLabel = formatSwitcherAmount(item.price);
-
-    return (
-      <div
-        key={`${name}-${index}`}
-        className={`invoice-switcher-card__line ${options?.compact ? 'invoice-switcher-card__line--compact' : ''}`}
-        title={`${name} ${priceLabel} * ${item.quantity} = ${currency}${totalLabel}`}
-      >
-        <span className="min-w-0 truncate">
-          {name}{' '}
-          <span className="font-semibold">{priceLabel}</span>
-          {' * '}
-          {item.quantity}
-        </span>
-        <span className="invoice-switcher-card__line-total shrink-0 tabular-nums font-semibold">
-          {currency}{totalLabel}
-        </span>
-      </div>
-    );
-  };
+    options?: { compact?: boolean }
+  ) => (
+    <InvoiceSwitcherProductLine
+      key={`${item.name || 'item'}-${index}`}
+      item={item}
+      index={index}
+      currency={currency}
+      compact={options?.compact}
+    />
+  );
 
   const getReceiptStatus = (card: InvoiceCard): 'Current' | 'Paid' | 'Open' | 'Saved' => {
     if (card.isCurrent) return 'Current';
@@ -934,7 +895,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             variant="tile"
             maxItemLines={4}
             meta={`58mm · ${card.items.length} items`}
-            usePrintLayout
           />
         ) : (
           <>
@@ -1012,7 +972,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             variant="list"
             maxItemLines={3}
             meta={`58mm · ${card.items.length} items`}
-            usePrintLayout
           />
         ) : (
           <>
@@ -1082,8 +1041,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   const renderCardContent = (card: InvoiceCard, isActive: boolean) => {
     const attendant = getAttendantForInvoice(card.name);
-    const showFullPrintLayout = isActive || isBrowseMode;
-
     return (
       <div className="invoice-switcher-card__body invoice-receipt-line">
         <div className="invoice-switcher-card__rule" aria-hidden="true" />
@@ -1097,17 +1054,12 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
               No items yet
             </div>
           ) : (
-            card.items.map((item, i) =>
-              renderSwitcherProductLine(item, i, { usePrintLayout: showFullPrintLayout })
-            )
+            card.items.map((item, i) => renderSwitcherProductLine(item, i))
           )}
         </div>
 
         <div className="invoice-switcher-card__rule" aria-hidden="true" />
-        <div className="invoice-switcher-card__total">
-          <span className="invoice-switcher-card__total-label">Total</span>
-          <span className="invoice-switcher-card__total-value tabular-nums">{currency}{card.total}</span>
-        </div>
+        <InvoiceSwitcherTotalRow total={card.total} currency={currency} />
 
         {isActive && (
           <p className="invoice-switcher-card__served-by truncate">
