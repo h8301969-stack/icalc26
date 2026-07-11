@@ -260,6 +260,12 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     });
   }, []);
 
+  const closeDetailModal = useCallback(() => {
+    setDetailRow(null);
+    setPasswordHistory([]);
+    setRevealedPasswordIds(new Set());
+  }, []);
+
   const openDetail = (row: AccessCodeRow) => {
     setDetailRow(row);
     setDetailMemo(row.admin_memo ?? '');
@@ -521,12 +527,26 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       </div>
 
       {approveTarget && (
-        <div className="admin-modal-backdrop fixed inset-0 z-[1110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className={`admin-modal-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl ${modalClass}`} role="dialog" aria-modal="true">
+        <div
+          className="admin-modal-backdrop fixed inset-0 z-[1110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={() => setApproveTarget(null)}
+          role="presentation"
+        >
+          <div
+            className={`admin-modal-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl ${modalClass}`}
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-3">
               <h3 className={FORM_SECTION_TITLE}>Approve access</h3>
-              <button type="button" onClick={() => setApproveTarget(null)} aria-label="Close">
-                <Icons.X size={16} />
+              <button
+                type="button"
+                onClick={() => setApproveTarget(null)}
+                aria-label="Close approve modal"
+                className={`admin-interactive p-2 rounded-full ${isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+              >
+                <Icons.X size={20} />
               </button>
             </div>
             <div className="mb-1">{renderCopyableCode(approveTarget.code, 'text-xl')}</div>
@@ -566,12 +586,27 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       )}
 
       {detailRow && (
-        <div className="admin-modal-backdrop fixed inset-0 z-[1110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className={`admin-modal-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl max-h-[85dvh] overflow-y-auto ${modalClass}`} role="dialog" aria-modal="true">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className={FORM_SECTION_TITLE}>Code details</h3>
-              <button type="button" onClick={() => setDetailRow(null)} aria-label="Close">
-                <Icons.X size={16} />
+        <div
+          className="admin-modal-backdrop fixed inset-0 z-[1110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={closeDetailModal}
+          role="presentation"
+        >
+          <div
+            className={`admin-modal-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl max-h-[85dvh] overflow-y-auto custom-scrollbar ${modalClass}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="code-detail-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3 sticky top-0 z-10 pb-2 -mt-1 pt-1 backdrop-blur-sm">
+              <h3 id="code-detail-title" className={FORM_SECTION_TITLE}>Code details</h3>
+              <button
+                type="button"
+                onClick={closeDetailModal}
+                aria-label="Close code details"
+                className={`admin-interactive p-2 rounded-full shrink-0 ${isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+              >
+                <Icons.X size={20} />
               </button>
             </div>
 
@@ -743,6 +778,16 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 Grant access
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={closeDetailModal}
+              className={`admin-interactive w-full mt-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border ${
+                isLight ? 'border-black/15 hover:bg-black/5' : 'border-white/15 hover:bg-white/5'
+              }`}
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
