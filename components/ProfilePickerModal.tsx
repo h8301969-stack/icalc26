@@ -3,6 +3,7 @@ import { Icons } from '../constants';
 import { NewProfileInput, ProfileSellerType, UserProfile } from '../types';
 import ProfileAvatar from './ProfileAvatar';
 import { ADMIN_PROFILE_NAME, isAdminProfile } from '../utils/auth';
+import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
 
 interface ProfilePickerModalProps {
   isOpen: boolean;
@@ -64,8 +65,6 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
 
   const panelBg = isLight ? 'bg-[#f2f2f7] text-zinc-900' : 'bg-[#1c1c1e] text-white';
   const rowBg = isLight ? 'bg-white border-zinc-200' : 'bg-zinc-800/60 border-white/5';
-  const inputClass = isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-white';
-
   const openGallery = (profileId: string | 'new') => {
     setAvatarTargetId(profileId);
     fileInputRef.current?.click();
@@ -244,7 +243,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
               placeholder="Admin password"
               autoFocus
               autoComplete="current-password"
-              className={`w-full p-4 rounded-2xl outline-none font-black text-base ${inputClass}`}
+              className={formInputClass(isLight)}
             />
             {adminPasswordError && (
               <p className="text-red-500 text-[11px] font-bold" role="alert">{adminPasswordError}</p>
@@ -312,7 +311,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                   </span>
                 </div>
                 <label className="block">
-                  <span className="app-subtext text-[10px] font-black opacity-60 block mb-1.5">
+                  <span className={FORM_FIELD_LABEL}>
                     Profile name <span className="text-red-500">*</span>
                   </span>
                   <input
@@ -322,11 +321,11 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                     placeholder="Profile name"
                     autoFocus
                     disabled={isCreatingProfile}
-                    className={`w-full p-4 rounded-2xl outline-none font-black text-base disabled:opacity-50 ${inputClass}`}
+                    className={formInputClass(isLight)}
                   />
                 </label>
                 <label className="block">
-                  <span className="app-subtext text-[10px] font-black opacity-60 block mb-1.5">
+                  <span className={FORM_FIELD_LABEL}>
                     Email <span className="text-red-500">*</span>
                   </span>
                   <input
@@ -336,11 +335,11 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                     placeholder="you@example.com"
                     autoComplete="email"
                     disabled={isCreatingProfile}
-                    className={`w-full p-4 rounded-2xl outline-none font-black text-base disabled:opacity-50 ${inputClass}`}
+                    className={formInputClass(isLight)}
                   />
                 </label>
                 <label className="block">
-                  <span className="app-subtext text-[10px] font-black opacity-60 block mb-1.5">
+                  <span className={FORM_FIELD_LABEL}>
                     Number <span className="text-red-500">*</span>
                   </span>
                   <input
@@ -350,11 +349,11 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                     placeholder="+233 …"
                     autoComplete="tel"
                     disabled={isCreatingProfile}
-                    className={`w-full p-4 rounded-2xl outline-none font-black text-base disabled:opacity-50 ${inputClass}`}
+                    className={formInputClass(isLight)}
                   />
                 </label>
                 <div>
-                  <span className="app-subtext text-[10px] font-black opacity-60 block mb-2">
+                  <span className={`${FORM_FIELD_LABEL} mb-2`}>
                     Type <span className="text-red-500">*</span>
                   </span>
                   <div className={`flex rounded-full overflow-hidden border ${isLight ? 'border-zinc-200' : 'border-white/10'}`}>

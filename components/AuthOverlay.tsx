@@ -6,6 +6,7 @@ import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
 import { AppAccount } from '../utils/auth';
 import { checkAccessCodeStatus, submitAccessBusinessInfo, subscribeAccessStatus } from '../utils/accessControl';
 import { supabase } from '../utils/supabase';
+import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
 
 type AuthMode = 'signup' | 'login';
 type AuthPane = 'idle' | 'auth' | 'settings';
@@ -167,10 +168,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const panelClass = isLight
     ? 'bg-white/80 border-black/10 text-black'
     : 'pos-dashboard-card-glass border border-white/12 text-white';
-
-  const inputClass = isLight
-    ? 'bg-white/90 border-black/10 text-black placeholder:text-black/35'
-    : 'bg-white/8 border-white/12 text-white placeholder:text-white/35';
 
   const settingsCardClass = isLight
     ? 'bg-white/85 border-black/10 text-black'
@@ -714,7 +711,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
             <form onSubmit={handleSubmit} className="space-y-3">
               <label className="block">
-                <span className="app-subtext opacity-60 text-[10px] font-black block mb-1.5">
+                <span className={FORM_FIELD_LABEL}>
                   {mode === 'signup' ? 'Username' : 'Username or email'}
                 </span>
                 <input
@@ -724,16 +721,14 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   onKeyDown={(e) => e.stopPropagation()}
                   autoComplete="username"
                   disabled={isLoading || showSignupInsight || showBusinessSetup}
-                  className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm disabled:opacity-50 ${inputClass}`}
+                  className={formInputClass(isLight)}
                   placeholder={mode === 'signup' ? 'Choose a username' : 'Username or email'}
                 />
               </label>
 
               {mode === 'signup' && (
                 <label className="block">
-                  <span className="app-subtext opacity-60 text-[10px] font-black block mb-1.5">
-                    Email
-                  </span>
+                  <span className={FORM_FIELD_LABEL}>Email</span>
                   <input
                     type="email"
                     value={email}
@@ -741,14 +736,14 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                     onKeyDown={(e) => e.stopPropagation()}
                     autoComplete="email"
                     disabled={isLoading || showSignupInsight}
-                    className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm disabled:opacity-50 ${inputClass}`}
+                    className={formInputClass(isLight)}
                     placeholder="you@example.com"
                   />
                 </label>
               )}
 
               <label className="block">
-                <span className="app-subtext opacity-60 text-[10px] font-black block mb-1.5">
+                <span className={FORM_FIELD_LABEL}>
                   {mode === 'signup' ? 'Signup code' : 'Password'}
                 </span>
                 <input
@@ -762,7 +757,10 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   spellCheck={false}
                   maxLength={mode === 'signup' ? 7 : 64}
                   disabled={isLoading || showSignupInsight}
-                  className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm ${mode === 'signup' ? 'tracking-widest' : ''} disabled:opacity-50 ${inputClass}`}
+                  className={formInputClass(isLight, {
+                    mono: mode === 'signup',
+                    className: mode === 'signup' ? 'tracking-widest' : '',
+                  })}
                   placeholder={mode === 'signup' ? '7-character code' : 'Your password'}
                 />
               </label>
@@ -833,36 +831,36 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                     }}
                   >
                     <label className="block">
-                      <span className="app-subtext opacity-60 text-[10px] font-black block mb-1.5">Business name</span>
+                      <span className={FORM_FIELD_LABEL}>Business name</span>
                       <input
                         type="text"
                         value={businessName}
                         onChange={(e) => setBusinessName(e.target.value)}
                         autoFocus
                         required
-                        className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm ${inputClass}`}
+                        className={formInputClass(isLight)}
                         placeholder="Your shop or business"
                       />
                     </label>
                     <label className="block">
-                      <span className="app-subtext opacity-60 text-[10px] font-black block mb-1.5">Phone number</span>
+                      <span className={FORM_FIELD_LABEL}>Phone number</span>
                       <input
                         type="tel"
                         value={businessPhone}
                         onChange={(e) => setBusinessPhone(e.target.value)}
-                        className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm ${inputClass}`}
+                        className={formInputClass(isLight)}
                         placeholder="+233 …"
                       />
                     </label>
                     <label className="block">
-                      <span className="app-subtext opacity-60 text-[10px] font-black block mb-1.5">
+                      <span className={FORM_FIELD_LABEL}>
                         Address <span className="opacity-50">optional</span>
                       </span>
                       <input
                         type="text"
                         value={businessAddress}
                         onChange={(e) => setBusinessAddress(e.target.value)}
-                        className={`w-full px-4 py-3 rounded-xl border outline-none font-bold text-sm ${inputClass}`}
+                        className={formInputClass(isLight)}
                         placeholder="Street, city"
                       />
                     </label>

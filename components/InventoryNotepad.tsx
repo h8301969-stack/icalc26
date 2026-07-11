@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import { RestockLineItem } from '../types';
 import { InventoryItem } from '../hooks/usePOS';
+import { formInputClass, formTextareaClass } from '../utils/formFields';
 
 const QTY_COL_WIDTH = '4.5rem';
 
@@ -140,10 +141,6 @@ const InventoryNotepad: React.FC<InventoryNotepadProps> = ({
 
   const textMain = isLight ? 'text-zinc-800' : 'text-zinc-200';
   const textMuted = isLight ? 'text-zinc-600' : 'text-zinc-400';
-  const composeFieldClass = isLight
-    ? 'bg-white/75 text-white placeholder:text-white/55'
-    : 'bg-white/12 text-white placeholder:text-white/45';
-
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {timestampLabel && (
@@ -189,7 +186,7 @@ const InventoryNotepad: React.FC<InventoryNotepadProps> = ({
             onChange={(e) => onFreeNotesChange(e.target.value)}
             placeholder={freeNotesPlaceholder}
             rows={2}
-            className={`w-full resize-none bg-transparent outline-none text-sm leading-6 font-medium placeholder:opacity-30 ${isLight ? 'text-zinc-700' : 'text-zinc-300'}`}
+            className={formTextareaClass(isLight, 'leading-6')}
           />
         </div>
       )}
@@ -212,11 +209,8 @@ const InventoryNotepad: React.FC<InventoryNotepadProps> = ({
               onChange={(e) => onComposeQueryChange(e.target.value)}
               onKeyDown={handleComposeKeyDown}
               placeholder="Type product name…"
-              className={`w-full rounded-xl px-3 py-2.5 outline-none text-sm font-bold leading-7 ${composeFieldClass}`}
-              style={{
-                lineHeight: '28px',
-                textShadow: isLight ? '0 1px 2px rgba(0,0,0,0.35)' : undefined,
-              }}
+              className={formInputClass(isLight, { className: 'leading-7' })}
+              style={{ lineHeight: '28px' }}
               aria-label="Add product"
               aria-autocomplete="list"
               aria-expanded={suggestions.length > 0}

@@ -1204,6 +1204,44 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   line-height: 1.35;
 }
 
+/* Form fields — admin portal uniformity (Candara UI, shared borders/sizing) */
+.app-input,
+.app-textarea,
+input.app-input,
+textarea.app-textarea,
+select.app-input {
+  font-family: var(--font-text);
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.app-input--light,
+.app-textarea--light,
+input.app-input--light,
+textarea.app-textarea--light,
+select.app-input--light {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #000;
+}
+.app-input--light::placeholder,
+.app-textarea--light::placeholder {
+  color: rgba(0, 0, 0, 0.35);
+}
+.app-input--dark,
+.app-textarea--dark,
+input.app-input--dark,
+textarea.app-textarea--dark,
+select.app-input--dark {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.app-input--dark::placeholder,
+.app-textarea--dark::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
 /* Codes / mono-style UI — Montserrat tabular */
 .font-mono {
   font-family: var(--font-mono) !important;

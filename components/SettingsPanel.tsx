@@ -15,6 +15,7 @@ import { EXPRESSION_VIEW_OPTIONS } from '../utils/expressionDisplay';
 import { PAPER_WIDTH_OPTIONS, RECEIPT_LAYOUT_OPTIONS, type PaperWidth } from '../utils/receiptLayout';
 import FluidSegmentControl from './FluidSegmentControl';
 import FluidToggle from './FluidToggle';
+import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
 
 interface SettingsSlice {
   themeMode: 'light' | 'dark' | 'system';
@@ -791,9 +792,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           {showPasswordPanel && (
             <div className={`px-4 pt-4 pb-2 space-y-2 border-b ${isLight ? 'border-zinc-200' : 'border-white/8'}`}>
               <div className="flex items-center justify-between">
-                <span className={`app-subtext text-[10px] font-black uppercase tracking-widest ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                  Change password
-                </span>
+                <span className={FORM_FIELD_LABEL}>Change password</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -815,7 +814,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 placeholder="Current password"
                 autoComplete="current-password"
-                className={`w-full p-3 rounded-xl outline-none font-black text-sm ${isLight ? 'bg-white border border-zinc-200 text-zinc-900' : 'bg-white/5 text-white'}`}
+                className={formInputClass(isLight)}
               />
               <input
                 type="password"
@@ -823,7 +822,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="New password"
                 autoComplete="new-password"
-                className={`w-full p-3 rounded-xl outline-none font-black text-sm ${isLight ? 'bg-white border border-zinc-200 text-zinc-900' : 'bg-white/5 text-white'}`}
+                className={formInputClass(isLight)}
               />
               <input
                 type="password"
@@ -831,7 +830,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Confirm new password"
                 autoComplete="new-password"
-                className={`w-full p-3 rounded-xl outline-none font-black text-sm ${isLight ? 'bg-white border border-zinc-200 text-zinc-900' : 'bg-white/5 text-white'}`}
+                className={formInputClass(isLight)}
               />
               {passwordError && (
                 <p className="text-red-500 text-[11px] font-bold">{passwordError}</p>

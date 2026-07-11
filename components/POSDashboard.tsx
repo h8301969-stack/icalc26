@@ -23,6 +23,7 @@ import {
   parseNotepadSnapshot,
 } from '../utils/notepadSnapshot';
 import { WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
+import { formInputClass } from '../utils/formFields';
 
 interface POSDashboardProps {
   history: HistoryItem[];
@@ -1757,7 +1758,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           value={newItemName}
           onChange={(e) => setNewItemName(e.target.value)}
           placeholder="Item name"
-          className={`w-full p-6 rounded-2xl outline-none font-black text-lg ${isLight ? 'bg-zinc-50 text-zinc-900' : 'bg-black/40 text-white'}`}
+          className={formInputClass(isLight, { size: 'lg' })}
           autoFocus
         />
         <div className="grid grid-cols-2 gap-4">
@@ -1765,13 +1766,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             type="number"
             value={newItemPrice}
             readOnly
-            className={`p-6 rounded-2xl outline-none font-black opacity-70 ${isLight ? 'bg-zinc-50 text-zinc-900' : 'bg-black/40 text-white'}`}
+            className={formInputClass(isLight, { size: 'lg', className: 'opacity-70' })}
             aria-label="Price from invoice"
           />
           <select
             value={newItemCategory}
             onChange={(e) => setNewItemCategory(e.target.value)}
-            className={`p-6 rounded-2xl outline-none font-black appearance-none ${isLight ? 'bg-zinc-50 text-zinc-900' : 'bg-black/40 text-white'}`}
+            className={`${formInputClass(isLight, { size: 'lg' })} appearance-none`}
           >
             <option value="Hardware">Hardware</option>
             <option value="Optics">Optics</option>
@@ -1782,7 +1783,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           value={newItemImageUrl}
           onChange={(e) => setNewItemImageUrl(e.target.value)}
           placeholder="Image URL (optional)"
-          className={`w-full p-6 rounded-2xl outline-none font-black ${isLight ? 'bg-zinc-50 text-zinc-900' : 'bg-black/40 text-white'}`}
+          className={formInputClass(isLight, { size: 'lg' })}
         />
         <button
           type="button"
@@ -2955,12 +2956,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                <div className={`space-y-10 ${textColorClass}`}>
                  <h3 id="add-item-title" className="text-5xl font-black tracking-tighter">New Asset</h3>
                  <div className="space-y-6">
-                   <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="Neural ID" aria-label="New asset name" className={`w-full p-8 rounded-[26px] outline-none font-black text-lg ${isLight ? 'bg-zinc-50 text-zinc-900' : 'bg-black/40 text-white'}`} />
+                   <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="Neural ID" aria-label="New asset name" className={formInputClass(isLight, { size: 'lg' })} />
                    <div className="grid grid-cols-2 gap-5">
-                     <input type="number" value={newItemPrice} onChange={(e) => setNewItemPrice(e.target.value)} placeholder="Rate" aria-label="New asset price" className={`p-8 rounded-[26px] outline-none font-black ${isLight ? 'bg-zinc-50 text-zinc-900' : 'bg-black/40 text-white'}`} />
-                     <select value={newItemCategory} onChange={(e) => setNewItemCategory(e.target.value)} aria-label="New asset category" className={`p-8 rounded-[26px] outline-none font-black appearance-none ${isLight ? 'bg-zinc-50 text-zinc-900' : 'bg-black/40 text-white'}`}><option value="Hardware">Hardware</option><option value="Optics">Optics</option></select>
+                     <input type="number" value={newItemPrice} onChange={(e) => setNewItemPrice(e.target.value)} placeholder="Rate" aria-label="New asset price" className={formInputClass(isLight, { size: 'lg' })} />
+                     <select value={newItemCategory} onChange={(e) => setNewItemCategory(e.target.value)} aria-label="New asset category" className={`${formInputClass(isLight, { size: 'lg' })} appearance-none`}><option value="Hardware">Hardware</option><option value="Optics">Optics</option></select>
                    </div>
-                   <input type="text" value={newItemImageUrl} onChange={(e) => setNewItemImageUrl(e.target.value)} placeholder="Visual Feed URL" aria-label="New asset image URL" className={`w-full p-8 rounded-[26px] outline-none font-black ${isLight ? 'bg-zinc-50 text-zinc-900' : 'bg-black/40 text-white'}`} />
+                   <input type="text" value={newItemImageUrl} onChange={(e) => setNewItemImageUrl(e.target.value)} placeholder="Visual Feed URL" aria-label="New asset image URL" className={formInputClass(isLight, { size: 'lg' })} />
                  </div>
                  <button onClick={handleAddItem} aria-label="Manifest new asset" className="w-full py-8 rounded-[26px] text-black font-black uppercase tracking-[0.5em] text-[12px] active:scale-95 shadow-2xl transition-all" style={{ backgroundColor: accentColor }}>Create Asset</button>
                </div>

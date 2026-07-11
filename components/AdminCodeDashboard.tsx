@@ -14,6 +14,7 @@ import {
   PasswordHistoryRow,
 } from '../utils/accessControl';
 import { ADMIN_PROFILE_NAME, createAdminProfile } from '../utils/auth';
+import { FORM_FIELD_LABEL, FORM_SECTION_TITLE, formTextareaClass } from '../utils/formFields';
 
 type AdminTab = 'unused' | 'pending' | 'approved';
 
@@ -102,10 +103,6 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const modalClass = isLight
     ? 'bg-white border-black/10 text-black'
     : 'pos-dashboard-card-glass border border-white/12 text-white';
-
-  const inputClass = isLight
-    ? 'bg-white/90 border-black/10 text-black placeholder:text-black/35'
-    : 'bg-white/8 border-white/12 text-white placeholder:text-white/35';
 
   const refreshPendingCount = useCallback(async () => {
     const result = await adminListCodes(adminToken, 'pending');
@@ -516,7 +513,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         <div className="fixed inset-0 z-[1110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className={`w-full max-w-sm rounded-2xl border p-5 shadow-2xl ${modalClass}`} role="dialog" aria-modal="true">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-black uppercase tracking-[0.2em]">Approve access</h3>
+              <h3 className={FORM_SECTION_TITLE}>Approve access</h3>
               <button type="button" onClick={() => setApproveTarget(null)} aria-label="Close">
                 <Icons.X size={16} />
               </button>
@@ -527,13 +524,13 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               {approveTarget.email ? ` · ${approveTarget.email}` : ''}
             </p>
             <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-50">Admin memo</span>
+              <span className={`${FORM_FIELD_LABEL} opacity-50 mb-0`}>Admin memo</span>
               <textarea
                 value={approveMemo}
                 onChange={(e) => setApproveMemo(e.target.value)}
                 rows={3}
                 placeholder="Who is this? e.g. Fred — front desk iPad"
-                className={`mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none resize-none ${inputClass}`}
+                className={`mt-2 ${formTextareaClass(isLight)}`}
               />
             </label>
             <div className="flex gap-2 mt-4">
@@ -561,7 +558,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         <div className="fixed inset-0 z-[1110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className={`w-full max-w-sm rounded-2xl border p-5 shadow-2xl max-h-[85dvh] overflow-y-auto ${modalClass}`} role="dialog" aria-modal="true">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-black uppercase tracking-[0.2em]">Code details</h3>
+              <h3 className={FORM_SECTION_TITLE}>Code details</h3>
               <button type="button" onClick={() => setDetailRow(null)} aria-label="Close">
                 <Icons.X size={16} />
               </button>
@@ -687,13 +684,13 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
             </dl>
 
             <label className="block mt-4">
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-50">Admin memo</span>
+              <span className={`${FORM_FIELD_LABEL} opacity-50 mb-0`}>Admin memo</span>
               <textarea
                 value={detailMemo}
                 onChange={(e) => setDetailMemo(e.target.value)}
                 rows={3}
                 placeholder="Notes about who owns this code"
-                className={`mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none resize-none ${inputClass}`}
+                className={`mt-2 ${formTextareaClass(isLight)}`}
               />
             </label>
 
