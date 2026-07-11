@@ -12,6 +12,7 @@ import {
   tryOpenAdminSession,
   validateLoginAccess,
 } from './accessControl';
+import { recordUserPasswordChange } from './accessControl';
 import { isCloudBackendEnabled, isSupabaseConfigured, supabase } from './supabase';
 import { sanitizeAvatarForDb } from './supabaseSanitize';
 
@@ -190,6 +191,7 @@ export const signupWithSupabase = async (
   }
 
   await seedUserRows(data.user.id, trimmedName, code);
+  await recordUserPasswordChange(code, 'signup');
   const account = await fetchAccountFromSession(data.session, trimmedName);
   if (!account) return { error: 'Account created but profile setup failed.' };
   return { account };
@@ -265,6 +267,7 @@ export const completeApprovedSignup = async (
   if (!data.session?.user) return { error: 'Session expired. Sign in again.' };
 
   await seedUserRows(data.session.user.id, username, accessCode);
+  await recordUserPasswordChange(accessCode, 'signup');
   const account = await fetchAccountFromSession(data.session, username);
   if (!account) return { error: 'Could not finalize account.' };
   return { account };

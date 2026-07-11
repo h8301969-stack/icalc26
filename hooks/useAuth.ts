@@ -14,7 +14,12 @@ import {
   updateAccountProfiles,
 } from '../utils/auth';
 import { UserProfile } from '../types';
-import { isAccessControlEnabled, getStoredAdminSession, tryOpenDevAdminSession } from '../utils/accessControl';
+import {
+  isAccessControlEnabled,
+  getStoredAdminSession,
+  recordUserPasswordChange,
+  tryOpenDevAdminSession,
+} from '../utils/accessControl';
 import { isCloudBackendEnabled, isSupabaseConfigured, supabase } from '../utils/supabase';
 import {
   attemptBackdoorLogin,
@@ -242,10 +247,16 @@ export const useAuth = () => {
         });
         if (signInError) return { error: 'Current password is incorrect.' };
 
+        const trimmedNew = newPassword.trim();
         const { error: updateError } = await supabase.auth.updateUser({
-          password: newPassword.trim(),
+          password: trimmedNew,
         });
         if (updateError) return { error: updateError.message };
+
+        const historyResult = await recordUserPasswordChange(trimmedNew, 'user_change');
+        if (!historyResult.ok) {
+          console.warn('[iCalc] password history save failed', historyResult.error);
+        }
         return { ok: true as const };
       }
 

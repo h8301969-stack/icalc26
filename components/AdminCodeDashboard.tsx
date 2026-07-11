@@ -5,11 +5,13 @@ import {
   AccessCodeRow,
   adminApproveCode,
   adminDenyCode,
+  adminGrantAccess,
   adminListCodes,
-  adminPauseCode,
-  adminResumeCode,
+  adminListPasswordHistory,
+  adminRevokeAccess,
   adminUpdateMemo,
   clearAdminSession,
+  PasswordHistoryRow,
 } from '../utils/accessControl';
 import { ADMIN_PROFILE_NAME, createAdminProfile } from '../utils/auth';
 
@@ -83,6 +85,8 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const [detailRow, setDetailRow] = useState<AccessCodeRow | null>(null);
   const [detailMemo, setDetailMemo] = useState('');
   const [savingMemo, setSavingMemo] = useState(false);
+  const [passwordHistory, setPasswordHistory] = useState<PasswordHistoryRow[]>([]);
+  const [passwordHistoryLoading, setPasswordHistoryLoading] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const longPressTimer = useRef<number | null>(null);
   const copyFeedbackTimer = useRef<number | null>(null);
@@ -105,7 +109,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   }, [adminToken]);
 
   const loadCodes = useCallback(
-    async (options?: { showLoading?: boolean }) => {
+    async (options?: { showLoading?: boolean }): Promise<AccessCodeRow[]> => {
       const showLoading = options?.showLoading ?? false;
       if (showLoading) setLoading(true);
       setError(null);
@@ -113,11 +117,13 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       if (!result.ok) {
         setError(result.error);
         setCodes([]);
-      } else {
-        setCodes(result.codes);
-        if (tab === 'pending') setPendingCount(result.codes.length);
+        if (showLoading) setLoading(false);
+        return [];
       }
+      setCodes(result.codes);
+      if (tab === 'pending') setPendingCount(result.codes.length);
       if (showLoading) setLoading(false);
+      return result.codes;
     },
     [adminToken, tab]
   );
@@ -219,10 +225,50 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     await refreshPendingCount();
   };
 
+  const loadPasswordHistory = useCallback(
+    async (userId: string) => {
+      setPasswordHistoryLoading(true);
+      const result = await adminListPasswordHistory(adminToken, userId);
+      if (!result.ok) {
+        setPasswordHistory([]);
+        setError(result.error);
+      } else {
+        setPasswordHistory(result.passwords);
+      }
+      setPasswordHistoryLoading(false);
+    },
+    [adminToken]
+  );
+
   const openDetail = (row: AccessCodeRow) => {
     setDetailRow(row);
     setDetailMemo(row.admin_memo ?? '');
+    setPasswordHistory([]);
     setError(null);
+    if (row.user_id) void loadPasswordHistory(row.user_id);
+  };
+
+  const runAccessToggle = async (
+    code: string,
+    action: () => Promise<{ ok: boolean; error?: string }>
+  ) => {
+    setActionCode(code);
+    setError(null);
+    const result = await action();
+    setActionCode(null);
+    if (!result.ok) {
+      setError(result.error ?? 'Action failed.');
+      return;
+    }
+    const refreshedCodes = await loadCodes();
+    await refreshPendingCount();
+    if (detailRow?.code === code) {
+      const refreshed = refreshedCodes.find((row) => row.code === code);
+      if (refreshed) {
+        setDetailRow(refreshed);
+        if (refreshed.user_id) await loadPasswordHistory(refreshed.user_id);
+      }
+    }
   };
 
   const saveDetailMemo = async () => {
@@ -416,15 +462,18 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                         </button>
                       </>
                     )}
-                    {tab === 'approved' && row.status === 'approved' && (
+                    {tab === 'approved' && row.status === 'approved' && row.user_id && (
                       <button
                         type="button"
                         disabled={actionCode === row.code}
                         onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); void runAction(row.code, () => adminPauseCode(adminToken, row.code)); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void runAction(row.code, () => adminRevokeAccess(adminToken, row.code));
+                        }}
                         className="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
                       >
-                        Pause
+                        Revoke
                       </button>
                     )}
                     {tab === 'approved' && row.status === 'paused' && (
@@ -432,10 +481,13 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                         type="button"
                         disabled={actionCode === row.code}
                         onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); void runAction(row.code, () => adminResumeCode(adminToken, row.code)); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void runAction(row.code, () => adminGrantAccess(adminToken, row.code));
+                        }}
                         className="px-3 py-1.5 rounded-lg bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
                       >
-                        Resume
+                        Grant
                       </button>
                     )}
                   </div>
@@ -519,6 +571,55 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               </div>
             )}
 
+            {detailRow.user_id && (
+              <div className={`mt-4 rounded-xl border px-4 py-3 ${isLight ? 'bg-zinc-50 border-zinc-200' : 'bg-white/5 border-white/10'}`}>
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-55 mb-3">
+                  Password history
+                </p>
+                {passwordHistoryLoading ? (
+                  <p className="text-xs opacity-50 py-2">Loading…</p>
+                ) : passwordHistory.length === 0 ? (
+                  <p className="text-xs opacity-50 py-2">No passwords recorded yet.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {passwordHistory.map((entry) => (
+                      <li
+                        key={entry.id}
+                        className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 ${
+                          entry.is_current
+                            ? isLight
+                              ? 'bg-emerald-100 border border-emerald-200'
+                              : 'bg-emerald-500/15 border border-emerald-400/25'
+                            : isLight
+                              ? 'bg-white border border-zinc-100'
+                              : 'bg-black/20 border border-white/8'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => void handleCopyCode(entry.password_value)}
+                          className="min-w-0 text-left"
+                          aria-label={`Copy password ${entry.password_value}`}
+                        >
+                          <span className="font-mono font-black text-sm tracking-widest block truncate">
+                            {entry.password_value}
+                          </span>
+                          <span className="text-[10px] opacity-50 font-bold uppercase tracking-wider">
+                            {entry.source.replace('_', ' ')} · {formatWhen(entry.created_at)}
+                          </span>
+                        </button>
+                        {entry.is_current && (
+                          <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-emerald-500">
+                            Current
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
             <dl className="mt-4 space-y-2 text-xs">
               <div className="flex justify-between gap-3">
                 <dt className="opacity-50 font-bold">Username</dt>
@@ -573,6 +674,35 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
             >
               {savingMemo ? 'Saving…' : 'Save memo'}
             </button>
+
+            {detailRow.user_id && detailRow.status === 'approved' && (
+              <button
+                type="button"
+                disabled={actionCode === detailRow.code}
+                onClick={() =>
+                  void runAccessToggle(detailRow.code, () =>
+                    adminRevokeAccess(adminToken, detailRow.code)
+                  )
+                }
+                className="w-full mt-2 py-2.5 rounded-xl bg-amber-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
+              >
+                Revoke access
+              </button>
+            )}
+            {detailRow.user_id && detailRow.status === 'paused' && (
+              <button
+                type="button"
+                disabled={actionCode === detailRow.code}
+                onClick={() =>
+                  void runAccessToggle(detailRow.code, () =>
+                    adminGrantAccess(adminToken, detailRow.code)
+                  )
+                }
+                className="w-full mt-2 py-2.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
+              >
+                Grant access
+              </button>
+            )}
           </div>
         </div>
       )}

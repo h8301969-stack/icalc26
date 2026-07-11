@@ -27,6 +27,17 @@ export interface BusinessInfoInput {
   businessAddress?: string;
 }
 
+export type PasswordHistorySource = 'signup' | 'user_change' | 'admin_resume' | 'admin_reset';
+
+export interface PasswordHistoryRow {
+  id: string;
+  password_value: string;
+  access_code: string | null;
+  is_current: boolean;
+  source: PasswordHistorySource;
+  created_at: string;
+}
+
 export interface AdminSession {
   token: string;
   expiresAt: number;
@@ -319,6 +330,72 @@ export const adminPauseCode = async (token: string, code: string) => {
   });
   if (error) return { ok: false as const, error: error.message };
   if (!data?.ok) return { ok: false as const, error: (data?.error as string) ?? 'Failed.' };
+  return { ok: true as const };
+};
+
+export const recordUserPasswordChange = async (
+  newPassword: string,
+  source: PasswordHistorySource = 'user_change'
+): Promise<{ ok: true } | { ok: false; error: string }> => {
+  if (!isAccessControlEnabled()) return { ok: true };
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) return { ok: true };
+
+  const { data, error } = await supabase.rpc('record_user_password_change', {
+    p_new_password: newPassword.trim(),
+    p_source: source,
+  });
+
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) return { ok: false, error: (data?.error as string) ?? 'Could not save password history.' };
+  return { ok: true };
+};
+
+export const adminListPasswordHistory = async (
+  token: string,
+  userId: string
+): Promise<{ ok: true; passwords: PasswordHistoryRow[] } | { ok: false; error: string }> => {
+  const { data, error } = await supabase.rpc('admin_list_password_history', {
+    p_token: token,
+    p_user_id: userId,
+  });
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) return { ok: false, error: (data?.error as string) ?? 'Unauthorized.' };
+  return { ok: true, passwords: (data.passwords as PasswordHistoryRow[]) ?? [] };
+};
+
+export const adminRevokeAccess = async (token: string, code: string) => {
+  const { data, error } = await supabase.rpc('admin_revoke_access', {
+    p_token: token,
+    p_code: code.trim().toUpperCase(),
+  });
+  if (error) return { ok: false as const, error: error.message };
+  if (!data?.ok) return { ok: false as const, error: (data?.error as string) ?? 'Failed.' };
+  return { ok: true as const };
+};
+
+export const adminGrantAccess = async (token: string, code: string) => {
+  if (!isAccessControlEnabled()) return { ok: false as const, error: 'Not configured.' };
+
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/admin-resume-user`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${anonKey}`,
+    },
+    body: JSON.stringify({
+      admin_token: token,
+      code: code.trim().toUpperCase(),
+    }),
+  });
+
+  const payload = (await response.json()) as { ok?: boolean; error?: string };
+  if (!response.ok || !payload.ok) {
+    return { ok: false as const, error: payload.error ?? 'Grant access failed.' };
+  }
   return { ok: true as const };
 };
 
