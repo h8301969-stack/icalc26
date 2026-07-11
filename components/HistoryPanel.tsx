@@ -12,6 +12,7 @@ import {
 import { storage } from '../hooks/storage';
 import { resolveWallpaperImage } from '../utils/wallpapers';
 import InvoiceAttendantPicker from './InvoiceAttendantPicker';
+import InvoiceReceiptPreview from './InvoiceReceiptPreview';
 import PrinterConnectModal from './PrinterConnectModal';
 import { shareInvoiceAsImage, type ShareReceiptSettings } from '../utils/invoiceShareImage';
 
@@ -863,9 +864,14 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     );
   };
 
+  const getReceiptStatus = (card: InvoiceCard): 'Current' | 'Paid' | 'Open' | 'Saved' => {
+    if (card.isCurrent) return 'Current';
+    if (printedNames.has(card.name)) return 'Paid';
+    return 'Saved';
+  };
+
   const renderGridTile = (card: InvoiceCard, idx: number) => {
     const isSelected = idx === activeIdx;
-    const isPaid = printedNames.has(card.name);
     const isHiddenSelected = focusZoomed && isSelected;
 
     return (
@@ -874,12 +880,14 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         type="button"
         onClick={() => beginInvoiceLoad(idx)}
         disabled={loadingInvoiceIdx !== null}
-        className={`relative text-left rounded-2xl w-full aspect-[6/13] flex flex-col transition-all duration-300 active:scale-[0.97] border p-3.5 sm:p-4 gap-2 ${
+        className={`relative text-left rounded-2xl w-full aspect-[6/13] flex flex-col transition-all duration-300 active:scale-[0.97] ${
           isSelected && !focusZoomed
-            ? 'bg-black text-white border-black shadow-lg ring-2 ring-white/20'
-            : isLight
-              ? 'bg-white/95 border-black/8 hover:bg-white text-black shadow-sm'
-              : 'bg-white/12 border-white/12 hover:bg-white/18 text-white'
+            ? 'p-0 border-0 bg-transparent shadow-lg ring-2 ring-blue-400/35 overflow-hidden'
+            : `border p-3.5 sm:p-4 gap-2 ${
+                isLight
+                  ? 'bg-white/95 border-black/8 hover:bg-white text-black shadow-sm'
+                  : 'bg-white/12 border-white/12 hover:bg-white/18 text-white'
+              }`
         } ${isHiddenSelected ? 'opacity-0 pointer-events-none' : ''} ${focusZoomed && !isHiddenSelected ? 'pointer-events-none' : ''}`}
         style={{
           transform: focusZoomed ? undefined : `rotate(${scatterRotate(idx)}deg)`,
@@ -887,34 +895,49 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         aria-hidden={isHiddenSelected}
         tabIndex={isHiddenSelected ? -1 : 0}
       >
-        <div className="flex items-start justify-between gap-1">
-          <span className={`app-subtext text-[9px] font-black ${isSelected ? 'opacity-70' : 'opacity-45'}`}>
-            {card.isCurrent ? 'Current' : isPaid ? 'Paid' : 'Saved'}
-          </span>
-          <span className={`app-subtext text-[10px] font-black shrink-0 ${isSelected ? 'opacity-80' : 'opacity-55'}`}>
-            {card.items.length}
-          </span>
-        </div>
-        <div className="text-[12px] sm:text-[13px] font-black tracking-tight leading-tight line-clamp-2 min-h-[1.6em]">
-          {card.name}
-        </div>
-        <div className={`mt-1 space-y-0.5 min-h-0 flex-1 overflow-hidden ${isSelected ? 'opacity-90' : 'opacity-70'}`}>
-          {card.items.length === 0 ? (
-            <div className="app-subtext text-[10px] opacity-45">No items yet</div>
-          ) : (
-            card.items.slice(0, 4).map((item, i) =>
-              renderSwitcherProductLine(item, i, { compact: true, inverted: isSelected })
-            )
-          )}
-          {card.items.length > 4 && (
-            <div className={`app-subtext text-[8px] ${isSelected ? 'opacity-60' : 'opacity-45'}`}>
-              +{card.items.length - 4} more
+        {isSelected && !focusZoomed ? (
+          <InvoiceReceiptPreview
+            brandLabel={invoiceBrandLabel}
+            title={card.name}
+            status={getReceiptStatus(card)}
+            items={card.items}
+            total={card.total}
+            currency={currency}
+            variant="tile"
+            maxItemLines={4}
+          />
+        ) : (
+          <>
+            <div className="flex items-start justify-between gap-1">
+              <span className="app-subtext text-[9px] font-black opacity-45">
+                {card.isCurrent ? 'Current' : printedNames.has(card.name) ? 'Paid' : 'Saved'}
+              </span>
+              <span className="app-subtext text-[10px] font-black shrink-0 opacity-55">
+                {card.items.length}
+              </span>
             </div>
-          )}
-        </div>
-        <div className={`app-subtext text-[11px] font-semibold mt-auto shrink-0 ${isSelected ? 'text-emerald-300' : 'text-emerald-600'}`}>
-          Total {currency}{card.total}
-        </div>
+            <div className="text-[12px] sm:text-[13px] font-black tracking-tight leading-tight line-clamp-2 min-h-[1.6em]">
+              {card.name}
+            </div>
+            <div className="mt-1 space-y-0.5 min-h-0 flex-1 overflow-hidden opacity-70">
+              {card.items.length === 0 ? (
+                <div className="app-subtext text-[10px] opacity-45">No items yet</div>
+              ) : (
+                card.items.slice(0, 4).map((item, i) =>
+                  renderSwitcherProductLine(item, i, { compact: true })
+                )
+              )}
+              {card.items.length > 4 && (
+                <div className="app-subtext text-[8px] opacity-45">
+                  +{card.items.length - 4} more
+                </div>
+              )}
+            </div>
+            <div className="app-subtext text-[11px] font-semibold mt-auto shrink-0 text-emerald-600">
+              Total {currency}{card.total}
+            </div>
+          </>
+        )}
         {renderInvoiceLoadingOverlay(idx, 'rounded-2xl')}
       </button>
     );
@@ -922,7 +945,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   const renderListRow = (card: InvoiceCard, idx: number) => {
     const isSelected = idx === activeIdx;
-    const isPaid = printedNames.has(card.name);
 
     return (
       <button
@@ -939,37 +961,52 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           beginInvoiceLoad(idx);
         }}
         disabled={loadingInvoiceIdx !== null}
-        className={`relative w-full text-left rounded-2xl px-4 py-3.5 border flex items-center gap-3 transition-all duration-200 active:scale-[0.99] ${
+        className={`relative w-full text-left rounded-2xl transition-all duration-200 active:scale-[0.99] ${
           isSelected
-            ? isLight
-              ? 'bg-black text-white border-black shadow-md'
-              : 'bg-white text-black border-white shadow-md'
-            : isLight
-              ? 'bg-white/95 border-black/8 text-black hover:bg-white'
-              : 'bg-white/10 border-white/12 text-white hover:bg-white/16'
+            ? 'p-0 border-0 bg-transparent shadow-md ring-2 ring-blue-400/35 overflow-hidden'
+            : `px-4 py-3.5 border flex items-center gap-3 ${
+                isLight
+                  ? 'bg-white/95 border-black/8 text-black hover:bg-white'
+                  : 'bg-white/10 border-white/12 text-white hover:bg-white/16'
+              }`
         } ${focusZoomed ? 'pointer-events-none' : ''}`}
       >
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className={`app-subtext text-[9px] font-black ${isSelected ? 'opacity-70' : 'opacity-45'}`}>
-              {card.isCurrent ? 'Current' : isPaid ? 'Paid' : 'Saved'}
-            </span>
-            <span className={`app-subtext text-[9px] font-black ${isSelected ? 'opacity-60' : 'opacity-40'}`}>
-              {card.items.length} items
-            </span>
-          </div>
-          <div className="text-sm font-black tracking-tight truncate">{card.name}</div>
-          {card.items.length > 0 && (
-            <div className="mt-1.5 space-y-0.5 max-h-[4.5rem] overflow-hidden">
-              {card.items.slice(0, 3).map((item, i) =>
-                renderSwitcherProductLine(item, i, { compact: true, inverted: isSelected })
+        {isSelected ? (
+          <InvoiceReceiptPreview
+            brandLabel={invoiceBrandLabel}
+            title={card.name}
+            status={getReceiptStatus(card)}
+            items={card.items}
+            total={card.total}
+            currency={currency}
+            variant="list"
+            maxItemLines={3}
+          />
+        ) : (
+          <>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="app-subtext text-[9px] font-black opacity-45">
+                  {card.isCurrent ? 'Current' : printedNames.has(card.name) ? 'Paid' : 'Saved'}
+                </span>
+                <span className="app-subtext text-[9px] font-black opacity-40">
+                  {card.items.length} items
+                </span>
+              </div>
+              <div className="text-sm font-black tracking-tight truncate">{card.name}</div>
+              {card.items.length > 0 && (
+                <div className="mt-1.5 space-y-0.5 max-h-[4.5rem] overflow-hidden">
+                  {card.items.slice(0, 3).map((item, i) =>
+                    renderSwitcherProductLine(item, i, { compact: true })
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
-        <div className={`app-subtext text-xs font-semibold shrink-0 ${isSelected ? 'text-emerald-300' : 'text-emerald-600'}`}>
-          {currency}{card.total}
-        </div>
+            <div className="app-subtext text-xs font-semibold shrink-0 text-emerald-600">
+              {currency}{card.total}
+            </div>
+          </>
+        )}
         {renderInvoiceLoadingOverlay(idx, 'rounded-2xl')}
       </button>
     );

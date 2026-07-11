@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icons } from '../constants';
 import { CartLineItem } from '../types';
 import { printerInstance } from '../utils/bluetoothPrinter';
+import InvoiceReceiptPreview from './InvoiceReceiptPreview';
 import PrinterConnectModal from './PrinterConnectModal';
 
 export interface HubInvoice {
@@ -45,6 +46,7 @@ interface VisionHubPrintPanelProps {
   onThemeAnimationEnd: () => void;
   onSettingsAnimationEnd: () => void;
   onCloseAnimationEnd: () => void;
+  businessName?: string;
 }
 
 const OPEN_THRESHOLD = 68;
@@ -79,7 +81,9 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
   onThemeAnimationEnd,
   onSettingsAnimationEnd,
   onCloseAnimationEnd,
+  businessName = '',
 }) => {
+  const invoiceBrandLabel = businessName.trim() || 'iCalc POS';
   const [expanded, setExpanded] = useState(false);
   const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -432,19 +436,19 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
 
         {focusedInvoice ? (
           <div className="vision-hub-click-focus" onClick={(e) => e.stopPropagation()}>
-            <div
-              className={`vision-hub-invoice-row vision-hub-invoice-row--focused vision-hub-invoice-row--click ${
-                printFlash === focusedInvoice.id ? 'vision-hub-invoice-row--flash' : ''
-              } ${focusedInvoice.isPaid ? 'vision-hub-invoice-row--paid' : ''}`}
-            >
-              <div className="vision-hub-invoice-row__head">
-                <p className="vision-hub-invoice-name">{focusedInvoice.name}</p>
-                {focusedInvoice.isPaid && (
-                  <span className="vision-hub-invoice-paid-badge">Paid</span>
-                )}
-              </div>
-              <span className="vision-hub-invoice-total">{formatCurrency(focusedInvoice.total)}</span>
-            </div>
+            <InvoiceReceiptPreview
+              brandLabel={invoiceBrandLabel}
+              title={focusedInvoice.name}
+              status={
+                focusedInvoice.isCurrent ? 'Current' : focusedInvoice.isPaid ? 'Paid' : 'Open'
+              }
+              items={focusedInvoice.items}
+              total={focusedInvoice.total}
+              currency={currency}
+              variant="drawer"
+              maxItemLines={6}
+              className={printFlash === focusedInvoice.id ? 'invoice-receipt-preview-wrap--flash' : ''}
+            />
             <button
               type="button"
               className="vision-hub-click-print-btn"
@@ -576,23 +580,40 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
       ? `translateX(${offsetX}px) translateY(${carryLift}px) scale(${carryScale})`
       : undefined;
 
-    const rowClass = `vision-hub-invoice-row vision-hub-invoice-row--${mode} ${
-      isFlashing ? 'vision-hub-invoice-row--flash' : ''
-    } ${isFocused ? 'vision-hub-invoice-row--focused' : ''} ${
-      isCarried ? 'vision-hub-invoice-row--swiping vision-hub-invoice-row--carried' : ''
-    } ${invoice.isPaid ? 'vision-hub-invoice-row--paid' : ''}`;
+    const rowClass =
+      mode === 'focused'
+        ? `invoice-receipt-preview-wrap ${
+            isFlashing ? 'invoice-receipt-preview-wrap--flash' : ''
+          } ${isCarried ? 'invoice-receipt-preview-wrap--swiping invoice-receipt-preview-wrap--carried' : ''}`
+        : `vision-hub-invoice-row vision-hub-invoice-row--${mode} ${
+            isFlashing ? 'vision-hub-invoice-row--flash' : ''
+          } ${isFocused ? 'vision-hub-invoice-row--focused' : ''} ${
+            isCarried ? 'vision-hub-invoice-row--swiping vision-hub-invoice-row--carried' : ''
+          } ${invoice.isPaid ? 'vision-hub-invoice-row--paid' : ''}`;
 
-    const rowContent = (
-      <>
-        <div className="vision-hub-invoice-row__head">
-          <p className="vision-hub-invoice-name">{invoice.name}</p>
-          {invoice.isPaid && (
-            <span className="vision-hub-invoice-paid-badge">Paid</span>
-          )}
-        </div>
-        <span className="vision-hub-invoice-total">{formatCurrency(invoice.total)}</span>
-      </>
-    );
+    const rowContent =
+      mode === 'focused' ? (
+        <InvoiceReceiptPreview
+          brandLabel={invoiceBrandLabel}
+          title={invoice.name}
+          status={invoice.isCurrent ? 'Current' : invoice.isPaid ? 'Paid' : 'Open'}
+          items={invoice.items}
+          total={invoice.total}
+          currency={currency}
+          variant="drawer"
+          maxItemLines={5}
+        />
+      ) : (
+        <>
+          <div className="vision-hub-invoice-row__head">
+            <p className="vision-hub-invoice-name">{invoice.name}</p>
+            {invoice.isPaid && (
+              <span className="vision-hub-invoice-paid-badge">Paid</span>
+            )}
+          </div>
+          <span className="vision-hub-invoice-total">{formatCurrency(invoice.total)}</span>
+        </>
+      );
 
     return (
       <div
@@ -600,7 +621,14 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
         className={`vision-hub-invoice-slot vision-hub-invoice-slot--${mode}`}
       >
         {isCarried && (
-          <div className={`${rowClass} vision-hub-invoice-row--ghost`} aria-hidden="true">
+          <div
+            className={`${rowClass} ${
+              mode === 'focused'
+                ? 'invoice-receipt-preview-wrap--ghost'
+                : 'vision-hub-invoice-row--ghost'
+            }`}
+            aria-hidden="true"
+          >
             {rowContent}
           </div>
         )}
