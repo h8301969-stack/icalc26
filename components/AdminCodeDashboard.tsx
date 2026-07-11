@@ -103,6 +103,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const [passwordHistoryLoading, setPasswordHistoryLoading] = useState(false);
   const [revealedPasswordIds, setRevealedPasswordIds] = useState<Set<string>>(() => new Set());
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const longPressTimer = useRef<number | null>(null);
   const copyFeedbackTimer = useRef<number | null>(null);
 
@@ -205,6 +206,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const runAction = async (code: string, action: () => Promise<{ ok: boolean; error?: string }>) => {
     setActionCode(code);
     setError(null);
+    setSuccessNotice(null);
     const result = await action();
     setActionCode(null);
     if (!result.ok) {
@@ -213,6 +215,25 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     }
     await loadCodes();
     await refreshPendingCount();
+  };
+
+  const runGrantAccess = async (code: string) => {
+    setActionCode(code);
+    setError(null);
+    setSuccessNotice(null);
+    const result = await adminGrantAccess(adminToken, code);
+    setActionCode(null);
+    if (!result.ok) {
+      setError(result.error ?? 'Grant access failed.');
+      return;
+    }
+    setSuccessNotice(result.hint);
+    const refreshedCodes = await loadCodes();
+    await refreshPendingCount();
+    if (detailRow?.code === code) {
+      const refreshed = refreshedCodes.find((row) => row.code === code);
+      if (refreshed) setDetailRow(refreshed);
+    }
   };
 
   const openApproveModal = (row: AccessCodeRow) => {
@@ -404,7 +425,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         </div>
       </div>
 
-      <p className={`app-subtext text-center text-[10px] opacity-45 px-4 pb-2 ${isLight ? 'text-white' : 'text-white'}`}>
+      <p className="app-subtext text-center opacity-45 px-4 pb-2 text-white">
         Tap code to copy · tap card for details · hold for quick open
       </p>
 
@@ -412,6 +433,11 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         {error && (
           <p className="admin-error-enter text-center text-sm font-bold text-red-500 mb-3" role="alert">
             {error}
+          </p>
+        )}
+        {successNotice && (
+          <p className="admin-section-enter text-center app-hint font-bold text-emerald-500 mb-3 px-2" role="status">
+            {successNotice}
           </p>
         )}
 
@@ -511,7 +537,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation();
-                          void runAction(row.code, () => adminGrantAccess(adminToken, row.code));
+                          void runGrantAccess(row.code);
                         }}
                         className="admin-interactive px-3 py-1.5 rounded-lg bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
                       >
@@ -768,11 +794,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               <button
                 type="button"
                 disabled={actionCode === detailRow.code}
-                onClick={() =>
-                  void runAccessToggle(detailRow.code, () =>
-                    adminGrantAccess(adminToken, detailRow.code)
-                  )
-                }
+                onClick={() => void runGrantAccess(detailRow.code)}
                 className="admin-interactive w-full mt-2 py-2.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
               >
                 Grant access
@@ -793,7 +815,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       )}
 
       <div className="px-4 pb-4 text-center">
-        <p className="text-[10px] opacity-40 text-white">
+        <p className="app-hint opacity-40 text-white">
           {adminProfile.name} · secure code management
         </p>
       </div>

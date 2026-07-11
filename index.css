@@ -1302,13 +1302,45 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   font-weight: 900;
 }
 
-/* App-wide hint / helper subtext — Candara (matches admin “tap code to copy” at 10px) */
+/* App-wide hint / helper subtext — uniform 10px mobile, 11px desktop (matches admin portal footer) */
 .app-subtext,
-.pos-subtext {
+.pos-subtext,
+.app-hint {
   font-family: var(--font-text);
   font-size: 10px;
-  font-weight: 800;
-  line-height: 1.35;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+}
+
+@media (min-width: 768px) {
+  .app-subtext,
+  .pos-subtext,
+  .app-hint {
+    font-size: 11px;
+  }
+}
+
+/* When subtext also sets text-xs / text-sm, keep helper scale consistent */
+.app-subtext.text-xs,
+.pos-subtext.text-xs,
+.app-subtext.text-\[11px\],
+.pos-subtext.text-\[11px\] {
+  font-size: 10px;
+}
+
+@media (min-width: 768px) {
+  .app-subtext.text-xs,
+  .pos-subtext.text-xs,
+  .app-subtext.text-\[11px\],
+  .pos-subtext.text-\[11px\] {
+    font-size: 11px;
+  }
+}
+
+.app-hint {
+  text-transform: none;
+  letter-spacing: 0.01em;
 }
 
 /* Form fields — admin portal uniformity (Candara UI, shared borders/sizing) */

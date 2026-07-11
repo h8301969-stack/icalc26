@@ -374,29 +374,46 @@ export const adminRevokeAccess = async (token: string, code: string) => {
   return { ok: true as const };
 };
 
-export const adminGrantAccess = async (token: string, code: string) => {
-  if (!isAccessControlEnabled()) return { ok: false as const, error: 'Not configured.' };
+export const adminGrantAccess = async (
+  token: string,
+  code: string
+): Promise<{ ok: true; hint: string } | { ok: false; error: string }> => {
+  if (!isAccessControlEnabled()) return { ok: false, error: 'Not configured.' };
 
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-  const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
-
-  const response = await fetch(`${supabaseUrl}/functions/v1/admin-resume-user`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${anonKey}`,
-    },
-    body: JSON.stringify({
-      admin_token: token,
-      code: code.trim().toUpperCase(),
-    }),
+  const normalized = code.trim().toUpperCase();
+  const { data, error } = await supabase.rpc('admin_grant_access', {
+    p_token: token,
+    p_code: normalized,
   });
-
-  const payload = (await response.json()) as { ok?: boolean; error?: string };
-  if (!response.ok || !payload.ok) {
-    return { ok: false as const, error: payload.error ?? 'Grant access failed.' };
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) {
+    return { ok: false, error: (data?.error as string) ?? 'Grant access failed.' };
   }
-  return { ok: true as const };
+
+  // Best-effort: sync Supabase Auth password to the access code (requires deployed edge function).
+  let passwordSynced = false;
+  try {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+    const response = await fetch(`${supabaseUrl}/functions/v1/admin-resume-user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({ admin_token: token, code: normalized }),
+    });
+    const payload = (await response.json()) as { ok?: boolean };
+    passwordSynced = response.ok && !!payload.ok;
+  } catch {
+    passwordSynced = false;
+  }
+
+  const hint = passwordSynced
+    ? `Access granted. User signs in with code ${normalized} as password.`
+    : 'Access granted. User can sign in again — stay on the login screen to auto-connect.';
+
+  return { ok: true, hint };
 };
 
 export const adminResumeCode = async (token: string, code: string) => {

@@ -104,6 +104,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [loadingPhase, setLoadingPhase] = useState<AuthLoadingPhase>('default');
   const pendingPollRef = useRef<number | null>(null);
   const pendingUnsubscribeRef = useRef<(() => void) | null>(null);
+  const pausedPollRef = useRef<number | null>(null);
   const pointerStart = useRef<{ x: number; y: number; edge: 'left' | 'right' | null } | null>(null);
 
   const isLoading = isSubmitting || isEntering;
@@ -128,7 +129,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const loadingSubtext = (() => {
     if (loadingPhase === 'admin_breached') return 'Opening admin profile dashboard';
     if (loadingPhase === 'waiting_approval') return 'Stay on this screen — access refreshes automatically';
-    if (loadingPhase === 'access_paused') return 'Contact your administrator';
+    if (loadingPhase === 'access_paused') return 'Stay on this screen — signing in when access is restored';
     if (loadingPhase === 'access_denied') return 'This request was not approved';
     if (isEntering) return 'Opening your workspace';
     if (mode === 'signup') return 'Setting up your account';
@@ -136,14 +137,22 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   })();
 
   const signupLoadingDurationMs =
-    loadingPhase === 'waiting_approval'
+    loadingPhase === 'waiting_approval' || loadingPhase === 'access_paused'
       ? AUTH_SIGNUP_LOADING_MS
       : mode === 'signup'
         ? AUTH_SIGNUP_LOADING_MS
         : AUTH_MIN_LOADING_MS;
 
+  const stopPausedWatch = useCallback(() => {
+    if (pausedPollRef.current !== null) {
+      window.clearInterval(pausedPollRef.current);
+      pausedPollRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
+      stopPausedWatch();
       if (pendingPollRef.current !== null) {
         window.clearInterval(pendingPollRef.current);
       }
@@ -413,9 +422,43 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     [onFinalizeAccess, stopPendingWatch]
   );
 
+  const startPausedAccessWatch = useCallback(
+    (loginIdentifier: string, loginPassword: string) => {
+      stopPausedWatch();
+      const attempt = async () => {
+        const result = await onLogin(loginIdentifier, loginPassword);
+        if (result.account) {
+          stopPausedWatch();
+          stopPendingWatch();
+          setLoadingPhase('default');
+          flushSync(() => setIsEntering(true));
+          if ('vibrate' in navigator) navigator.vibrate([10, 30]);
+          await wait(AUTH_SUCCESS_HOLD_MS);
+          flushSync(() => {
+            setIsEntering(false);
+            setIsSubmitting(false);
+            setIsExiting(true);
+          });
+          onAuthComplete(result.account);
+          return;
+        }
+        if (result.error && !result.paused && !result.pendingApproval) {
+          stopPausedWatch();
+          setLoadingPhase('default');
+          setIsSubmitting(false);
+          setError(result.error);
+        }
+      };
+      void attempt();
+      pausedPollRef.current = window.setInterval(() => void attempt(), 3000);
+    },
+    [onAuthComplete, onLogin, stopPausedWatch, stopPendingWatch]
+  );
+
   const startPendingApprovalWatch = useCallback(
     (accessCode: string, pendingUsername: string) => {
       stopPendingWatch();
+      stopPausedWatch();
 
       const poll = async () => {
         const status = await checkAccessCodeStatus(accessCode);
@@ -477,10 +520,10 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
       if (result.paused) {
         setLoadingPhase('access_paused');
-        await wait(1800);
-        setIsSubmitting(false);
-        setLoadingPhase('default');
-        setError('Your account is paused.');
+        const elapsed = Date.now() - startedAt;
+        const remaining = Math.max(0, AUTH_MIN_LOADING_MS - elapsed);
+        if (remaining > 0) await wait(remaining);
+        startPausedAccessWatch(username.trim(), secret);
         return;
       }
 
@@ -994,12 +1037,12 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
             <div className="w-full auth-loading-bar" aria-hidden="true">
               <div
                 className={`auth-loading-bar-fill ${
-                  (mode === 'signup' || loadingPhase === 'waiting_approval') && isSubmitting
+                  (mode === 'signup' || loadingPhase === 'waiting_approval' || loadingPhase === 'access_paused') && isSubmitting
                     ? 'auth-loading-bar-fill--signup'
                     : ''
                 }`}
                 style={
-                  (mode === 'signup' || loadingPhase === 'waiting_approval') && isSubmitting
+                  (mode === 'signup' || loadingPhase === 'waiting_approval' || loadingPhase === 'access_paused') && isSubmitting
                     ? { animationDuration: `${signupLoadingDurationMs}ms` }
                     : undefined
                 }
