@@ -34,6 +34,16 @@ const TABS: { id: AdminTab; label: string }[] = [
 
 const LONG_PRESS_MS = 520;
 const COPY_FEEDBACK_MS = 2000;
+const CARD_STAGGER_MS = 48;
+const HISTORY_STAGGER_MS = 40;
+
+const cardEnterStyle = (index: number): React.CSSProperties => ({
+  animationDelay: `${Math.min(index, 14) * CARD_STAGGER_MS}ms`,
+});
+
+const historyRowEnterStyle = (index: number): React.CSSProperties => ({
+  animationDelay: `${Math.min(index, 10) * HISTORY_STAGGER_MS}ms`,
+});
 
 const copyTextToClipboard = async (text: string): Promise<boolean> => {
   try {
@@ -174,7 +184,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         onPointerDown={(e) => {
           if (options?.stopCard) e.stopPropagation();
         }}
-        className={`inline-flex items-center gap-2 font-mono font-black tracking-widest text-left rounded-lg -mx-1 px-1 transition-colors active:opacity-70 ${
+        className={`inline-flex items-center gap-2 font-mono font-black tracking-widest text-left rounded-lg -mx-1 px-1 admin-interactive transition-colors active:opacity-70 ${
           isCopied ? 'text-emerald-500' : ''
         } ${sizeClass}`}
         aria-label={isCopied ? `Copied ${code}` : `Copy code ${code}`}
@@ -322,14 +332,14 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const adminProfile = createAdminProfile();
 
   return (
-    <div className="fixed inset-0 z-[1100] flex flex-col bg-black/80 backdrop-blur-xl">
-      <div className="flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-3">
+    <div className="admin-portal-shell fixed inset-0 z-[1100] flex flex-col bg-black/80 backdrop-blur-xl">
+      <div className="admin-portal-header flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-3">
         <div className="flex items-center gap-3">
           {onReturnToPOS ? (
             <button
               type="button"
               onClick={onReturnToPOS}
-              className="w-10 h-10 rounded-xl overflow-hidden shrink-0 transition-transform active:scale-95"
+              className="admin-interactive w-10 h-10 rounded-xl overflow-hidden shrink-0"
               aria-label="Return to POS dashboard"
               title="Return to POS dashboard (dev)"
             >
@@ -346,7 +356,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         <button
           type="button"
           onClick={() => void handleExit()}
-          className={`h-10 w-10 rounded-full flex items-center justify-center border ${isLight ? 'bg-white/80 border-black/10' : 'bg-white/10 border-white/15'}`}
+          className={`admin-interactive h-10 w-10 rounded-full flex items-center justify-center border ${isLight ? 'bg-white/80 border-black/10' : 'bg-white/10 border-white/15'}`}
           aria-label="Exit admin portal"
         >
           <Icons.X size={18} />
@@ -362,7 +372,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               key={item.id}
               type="button"
               onClick={() => setTab(item.id)}
-              className={`px-5 py-2 rounded-full text-[11px] font-black uppercase tracking-[0.2em] transition-all inline-flex items-center gap-2 ${
+              className={`admin-interactive px-5 py-2 rounded-full text-[11px] font-black uppercase tracking-[0.2em] inline-flex items-center gap-2 ${
                 tab === item.id
                   ? 'bg-blue-500 text-white shadow-md'
                   : isLight
@@ -394,7 +404,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
 
       <div className="flex-1 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {error && (
-          <p className="text-center text-sm font-bold text-red-500 mb-3" role="alert">
+          <p className="admin-error-enter text-center text-sm font-bold text-red-500 mb-3" role="alert">
             {error}
           </p>
         )}
@@ -404,17 +414,18 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
             <div className="auth-loading-ring auth-loading-ring--outer w-16 h-16" aria-hidden="true" />
           </div>
         ) : codes.length === 0 ? (
-          <p className={`text-center text-sm opacity-50 py-16 ${isLight ? 'text-black' : 'text-white'}`}>
+          <p className={`admin-list-enter text-center text-sm opacity-50 py-16 ${isLight ? 'text-black' : 'text-white'}`}>
             No codes in this view.
           </p>
         ) : (
-          <div className="max-w-lg mx-auto space-y-3">
-            {codes.map((row) => (
+          <div key={tab} className="admin-list-enter max-w-lg mx-auto space-y-3">
+            {codes.map((row, index) => (
               <div
                 key={row.code}
                 role="button"
                 tabIndex={0}
-                className={`rounded-2xl border px-4 py-4 select-none touch-manipulation cursor-pointer ${panelClass}`}
+                style={cardEnterStyle(index)}
+                className={`admin-card-enter admin-interactive rounded-2xl border px-4 py-4 select-none touch-manipulation cursor-pointer ${panelClass}`}
                 onClick={() => openDetail(row)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -458,7 +469,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                           disabled={actionCode === row.code}
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={(e) => { e.stopPropagation(); openApproveModal(row); }}
-                          className="px-3 py-1.5 rounded-lg bg-green-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
+                          className="admin-interactive px-3 py-1.5 rounded-lg bg-green-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
                         >
                           Approve
                         </button>
@@ -467,7 +478,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                           disabled={actionCode === row.code}
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={(e) => { e.stopPropagation(); void runAction(row.code, () => adminDenyCode(adminToken, row.code)); }}
-                          className="px-3 py-1.5 rounded-lg bg-red-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
+                          className="admin-interactive px-3 py-1.5 rounded-lg bg-red-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
                         >
                           Deny
                         </button>
@@ -482,7 +493,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                           e.stopPropagation();
                           void runAction(row.code, () => adminRevokeAccess(adminToken, row.code));
                         }}
-                        className="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
+                        className="admin-interactive px-3 py-1.5 rounded-lg bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
                       >
                         Revoke
                       </button>
@@ -496,7 +507,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                           e.stopPropagation();
                           void runAction(row.code, () => adminGrantAccess(adminToken, row.code));
                         }}
-                        className="px-3 py-1.5 rounded-lg bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
+                        className="admin-interactive px-3 py-1.5 rounded-lg bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
                       >
                         Grant
                       </button>
@@ -510,8 +521,8 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       </div>
 
       {approveTarget && (
-        <div className="fixed inset-0 z-[1110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className={`w-full max-w-sm rounded-2xl border p-5 shadow-2xl ${modalClass}`} role="dialog" aria-modal="true">
+        <div className="admin-modal-backdrop fixed inset-0 z-[1110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className={`admin-modal-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl ${modalClass}`} role="dialog" aria-modal="true">
             <div className="flex items-center justify-between mb-3">
               <h3 className={FORM_SECTION_TITLE}>Approve access</h3>
               <button type="button" onClick={() => setApproveTarget(null)} aria-label="Close">
@@ -537,7 +548,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setApproveTarget(null)}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border ${isLight ? 'border-black/15' : 'border-white/15'}`}
+                className={`admin-interactive flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border ${isLight ? 'border-black/15' : 'border-white/15'}`}
               >
                 Cancel
               </button>
@@ -545,7 +556,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 type="button"
                 disabled={actionCode === approveTarget.code}
                 onClick={() => void confirmApprove()}
-                className="flex-1 py-2.5 rounded-xl bg-green-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
+                className="admin-interactive flex-1 py-2.5 rounded-xl bg-green-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
               >
                 Approve
               </button>
@@ -555,8 +566,8 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       )}
 
       {detailRow && (
-        <div className="fixed inset-0 z-[1110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className={`w-full max-w-sm rounded-2xl border p-5 shadow-2xl max-h-[85dvh] overflow-y-auto ${modalClass}`} role="dialog" aria-modal="true">
+        <div className="admin-modal-backdrop fixed inset-0 z-[1110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className={`admin-modal-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl max-h-[85dvh] overflow-y-auto ${modalClass}`} role="dialog" aria-modal="true">
             <div className="flex items-center justify-between mb-3">
               <h3 className={FORM_SECTION_TITLE}>Code details</h3>
               <button type="button" onClick={() => setDetailRow(null)} aria-label="Close">
@@ -568,7 +579,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
             <p className="text-[10px] uppercase tracking-widest opacity-50 font-black mt-1">{detailRow.status}</p>
 
             {(detailRow.business_name || detailRow.business_phone || detailRow.business_address) && (
-              <div className={`mt-4 rounded-xl border px-4 py-3 space-y-2 ${isLight ? 'bg-emerald-50 border-emerald-200/80' : 'bg-emerald-500/10 border-emerald-400/25'}`}>
+              <div className={`admin-section-enter mt-4 rounded-xl border px-4 py-3 space-y-2 ${isLight ? 'bg-emerald-50 border-emerald-200/80' : 'bg-emerald-500/10 border-emerald-400/25'}`} style={{ animationDelay: '60ms' }}>
                 <p className="text-[10px] font-black uppercase tracking-widest opacity-55">Business info</p>
                 {detailRow.business_name && (
                   <p className="text-sm font-black">{detailRow.business_name}</p>
@@ -583,7 +594,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
             )}
 
             {detailRow.user_id && (
-              <div className={`mt-4 rounded-xl border px-4 py-3 ${isLight ? 'bg-zinc-50 border-zinc-200' : 'bg-white/5 border-white/10'}`}>
+              <div className={`admin-section-enter mt-4 rounded-xl border px-4 py-3 ${isLight ? 'bg-zinc-50 border-zinc-200' : 'bg-white/5 border-white/10'}`} style={{ animationDelay: '120ms' }}>
                 <p className="text-[10px] font-black uppercase tracking-widest opacity-55 mb-3">
                   Password history
                 </p>
@@ -593,12 +604,13 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                   <p className="app-subtext text-[10px] opacity-45 py-2">No passwords recorded yet.</p>
                 ) : (
                   <ul className="space-y-2">
-                    {passwordHistory.map((entry) => {
+                    {passwordHistory.map((entry, index) => {
                       const isRevealed = revealedPasswordIds.has(entry.id);
                       return (
                         <li
                           key={entry.id}
-                          className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 ${
+                          style={historyRowEnterStyle(index)}
+                          className={`admin-history-row-enter flex items-center justify-between gap-2 rounded-lg px-3 py-2 ${
                             entry.is_current
                               ? isLight
                                 ? 'bg-emerald-100 border border-emerald-200'
@@ -614,7 +626,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                             className="min-w-0 flex-1 text-left"
                             aria-label={`Copy password ${entry.password_value}`}
                           >
-                            <span className="font-mono font-black text-sm tracking-widest block truncate">
+                            <span className="font-mono font-black text-sm tracking-widest block truncate transition-opacity duration-200">
                               {isRevealed ? entry.password_value : maskPassword(entry.password_value)}
                             </span>
                             <span className="text-[10px] opacity-50 font-bold uppercase tracking-wider">
@@ -630,7 +642,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                             <button
                               type="button"
                               onClick={() => togglePasswordReveal(entry.id)}
-                              className={`h-8 w-8 rounded-lg flex items-center justify-center border transition-colors active:scale-95 ${
+                              className={`admin-interactive h-8 w-8 rounded-lg flex items-center justify-center border ${
                                 isLight
                                   ? 'border-black/10 bg-white/80 text-black/55 hover:text-black'
                                   : 'border-white/12 bg-white/8 text-white/55 hover:text-white'
@@ -648,7 +660,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               </div>
             )}
 
-            <dl className="mt-4 space-y-2 text-xs">
+            <dl className="admin-section-enter mt-4 space-y-2 text-xs" style={{ animationDelay: '180ms' }}>
               <div className="flex justify-between gap-3">
                 <dt className="opacity-50 font-bold">Username</dt>
                 <dd className="font-bold text-right truncate">{detailRow.username ?? '—'}</dd>
@@ -698,7 +710,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               type="button"
               disabled={savingMemo}
               onClick={() => void saveDetailMemo()}
-              className={`w-full mt-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider ${isLight ? 'bg-black text-white' : 'bg-white text-black'} disabled:opacity-50`}
+              className={`admin-interactive w-full mt-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider ${isLight ? 'bg-black text-white' : 'bg-white text-black'} disabled:opacity-50`}
             >
               {savingMemo ? 'Saving…' : 'Save memo'}
             </button>
@@ -712,7 +724,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                     adminRevokeAccess(adminToken, detailRow.code)
                   )
                 }
-                className="w-full mt-2 py-2.5 rounded-xl bg-amber-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
+                className="admin-interactive w-full mt-2 py-2.5 rounded-xl bg-amber-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
               >
                 Revoke access
               </button>
@@ -726,7 +738,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                     adminGrantAccess(adminToken, detailRow.code)
                   )
                 }
-                className="w-full mt-2 py-2.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
+                className="admin-interactive w-full mt-2 py-2.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
               >
                 Grant access
               </button>

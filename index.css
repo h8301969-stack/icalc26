@@ -155,6 +155,113 @@
   animation: auth-calc-enter 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Admin portal — insight-pop modals, staggered cards, tab transitions */
+@keyframes admin-portal-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.admin-portal-shell {
+  animation: admin-portal-enter 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes admin-header-enter {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.admin-portal-header {
+  animation: admin-header-enter 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes admin-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.admin-modal-backdrop {
+  animation: admin-backdrop-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.admin-modal-panel {
+  animation: insight-pop 0.42s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@keyframes admin-card-enter {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.admin-card-enter {
+  animation: admin-card-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+@keyframes admin-list-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.admin-list-enter {
+  animation: admin-list-enter 0.36s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes admin-error-enter {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.admin-error-enter {
+  animation: admin-error-enter 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes admin-history-row-enter {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.admin-history-row-enter {
+  animation: admin-history-row-enter 0.34s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+@keyframes admin-section-enter {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+.admin-section-enter {
+  animation: admin-section-enter 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+.admin-interactive {
+  transition:
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+.admin-interactive:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-portal-shell,
+  .admin-portal-header,
+  .admin-modal-backdrop,
+  .admin-modal-panel,
+  .admin-card-enter,
+  .admin-list-enter,
+  .admin-error-enter,
+  .admin-history-row-enter,
+  .admin-section-enter {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .admin-interactive {
+    transition: none;
+  }
+  .admin-interactive:active:not(:disabled) {
+    transform: none;
+  }
+}
+
 .auth-loading-overlay {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
