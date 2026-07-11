@@ -92,12 +92,16 @@ const AppContent: React.FC = () => {
 
   const displayResult = expression === '0' ? '0' : safeEvaluate(expression);
   const liveResultParts = useMemo(() => {
-    const formatted = formatCurrency(displayResult);
+    const num = parseFloat(displayResult) || 0;
+    const val = num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if (settings.currency === 'GHS') {
-      return { amount: formatted.replace(/ghs$/i, ''), suffix: 'ghs' };
+      if (settings.ghsCalculatorStyle === 'cedis') {
+        return { amount: `¢${val}`, suffix: '' };
+      }
+      return { amount: val, suffix: 'ghs' };
     }
-    return { amount: formatted, suffix: '' };
-  }, [displayResult, formatCurrency, settings.currency]);
+    return { amount: formatCurrency(displayResult), suffix: '' };
+  }, [displayResult, formatCurrency, settings.currency, settings.ghsCalculatorStyle]);
   const showLiveResult = displayResult !== '0' && displayResult !== '0.00';
   const isDraggingCursor = useRef(false);
   const activeProfileName = useMemo(() => activeProfile?.name ?? 'Staff', [activeProfile]);
@@ -1044,7 +1048,7 @@ const AppContent: React.FC = () => {
               </div>
             )}
 
-            <div ref={expressionColumnRef} className={`flex flex-col min-h-0 min-w-0 ${isLandscape ? 'flex-1 gap-0' : 'flex-1 gap-2'}`}>
+            <div ref={expressionColumnRef} className={`flex flex-col min-h-0 min-w-0 ${isLandscape ? 'flex-1 gap-0' : 'flex-1 gap-3'}`}>
               {/* Display area */}
               <div
                 className={`flex-1 flex flex-col items-center overflow-hidden min-h-0 transition-all duration-300 ${isLight ? 'text-black' : 'text-white'} ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
@@ -1209,11 +1213,11 @@ const AppContent: React.FC = () => {
               {/* Action toolbar */}
               <div
                 ref={expressionToolbarRef}
-                className={`relative z-10 shrink-0 flex justify-between gap-1.5 py-[0.34rem] rounded-full border transition-all duration-300 self-center ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white/60 border-black/5 text-black' : 'bg-black/20 border-white/10 text-white'}`}
+                className={`calc-expression-toolbar relative z-50 isolate shrink-0 flex justify-between gap-1.5 py-[0.34rem] rounded-full border transition-all duration-300 self-center ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white border-black/8 text-black' : 'bg-[#141414] border-white/14 text-white'}`}
                 style={{
                   width: '80%',
-                  marginBottom: isLandscape ? '0' : '0.15rem',
-                  marginTop: isLandscape ? '2px' : undefined,
+                  marginBottom: isLandscape ? '0.35rem' : '0.5rem',
+                  marginTop: isLandscape ? '0.35rem' : '0.15rem',
                   boxShadow: isLight ? '0 4px 16px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)' : '0 4px 16px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.25)',
                 }}
               >

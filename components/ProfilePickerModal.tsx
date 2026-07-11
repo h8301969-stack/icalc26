@@ -3,6 +3,7 @@ import { Icons } from '../constants';
 import { NewProfileInput, ProfileSellerType, UserProfile } from '../types';
 import ProfileAvatar from './ProfileAvatar';
 import { ADMIN_PROFILE_NAME, isAdminProfile } from '../utils/auth';
+import PasswordField from './PasswordField';
 import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
 
 interface ProfilePickerModalProps {
@@ -236,14 +237,13 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
             <p className={`app-subtext text-[11px] leading-relaxed ${isLight ? 'text-black/60' : 'text-white/60'}`}>
               Enter the account password (one-time code or your changed password) to switch to the admin profile.
             </p>
-            <input
-              type="password"
+            <PasswordField
+              isLight={isLight}
               value={adminPassword}
-              onChange={(e) => setAdminPassword(e.target.value)}
+              onChange={setAdminPassword}
               placeholder="Admin password"
               autoFocus
               autoComplete="current-password"
-              className={formInputClass(isLight)}
             />
             {adminPasswordError && (
               <p className="text-red-500 text-[11px] font-bold" role="alert">{adminPasswordError}</p>

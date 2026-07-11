@@ -16,7 +16,9 @@ import { RECEIPT_LAYOUT_OPTIONS } from '../utils/receiptLayout';
 import FluidSegmentControl from './FluidSegmentControl';
 import FluidToggle from './FluidToggle';
 import BusinessInfoReceiptCard from './BusinessInfoReceiptCard';
-import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
+import PasswordField from './PasswordField';
+import { updateUserBusinessInfo } from '../utils/accessControl';
+import { FORM_FIELD_LABEL } from '../utils/formFields';
 
 interface SettingsSlice {
   themeMode: 'light' | 'dark' | 'system';
@@ -34,6 +36,8 @@ interface SettingsSlice {
   businessName?: string;
   businessPhone?: string;
   businessAddress?: string;
+  currency?: string;
+  ghsCalculatorStyle?: 'ghs' | 'cedis';
 }
 
 interface SettingsPanelProps {
@@ -105,6 +109,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
   const closeRef = useRef<HTMLButtonElement>(null);
   const lastFocusedRef = useRef<HTMLElement | null>(null);
+  const businessDraftRef = useRef({
+    businessName: settings.businessName ?? '',
+    businessPhone: settings.businessPhone ?? '',
+    businessAddress: settings.businessAddress ?? '',
+  });
+  const businessSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [businessSyncError, setBusinessSyncError] = useState<string | null>(null);
+
+  useEffect(() => {
+    businessDraftRef.current = {
+      businessName: settings.businessName ?? '',
+      businessPhone: settings.businessPhone ?? '',
+      businessAddress: settings.businessAddress ?? '',
+    };
+  }, [settings.businessName, settings.businessPhone, settings.businessAddress]);
+
+  useEffect(() => () => {
+    if (businessSyncTimerRef.current) clearTimeout(businessSyncTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -284,6 +307,125 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     });
   };
 
+  const scheduleBusinessInfoSync = useCallback((patch: Partial<typeof businessDraftRef.current>) => {
+    businessDraftRef.current = { ...businessDraftRef.current, ...patch };
+    _updateSettings(patch);
+    if (businessSyncTimerRef.current) clearTimeout(businessSyncTimerRef.current);
+    businessSyncTimerRef.current = setTimeout(() => {
+      void (async () => {
+        const draft = businessDraftRef.current;
+        const result = await updateUserBusinessInfo({
+          businessName: draft.businessName,
+          businessPhone: draft.businessPhone,
+          businessAddress: draft.businessAddress,
+        });
+        if (!result.ok) setBusinessSyncError(result.error);
+        else setBusinessSyncError(null);
+      })();
+    }, 900);
+  }, [_updateSettings]);
+
+  const renderAccountActions = () => {
+    if (!accountUsername || !onChangePassword || !onLogout) return null;
+    return (
+      <div className="w-full pt-4 space-y-3">
+        {showPasswordPanel && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className={FORM_FIELD_LABEL}>Change password</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPasswordPanel(false);
+                  setPasswordError(null);
+                  setCurrentPassword('');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                }}
+                aria-label="Close change password"
+                className={`p-1.5 rounded-full ${isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+              >
+                <Icons.X size={16} />
+              </button>
+            </div>
+            <PasswordField
+              isLight={isLight}
+              value={currentPassword}
+              onChange={setCurrentPassword}
+              placeholder="Current password"
+              autoComplete="current-password"
+            />
+            <PasswordField
+              isLight={isLight}
+              value={newPassword}
+              onChange={setNewPassword}
+              placeholder="New password"
+              autoComplete="new-password"
+            />
+            <PasswordField
+              isLight={isLight}
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              placeholder="Confirm new password"
+              autoComplete="new-password"
+            />
+            {passwordError && (
+              <p className="text-red-500 text-[11px] font-bold">{passwordError}</p>
+            )}
+            {passwordSuccess && (
+              <p className="text-emerald-500 text-[11px] font-bold">Password updated.</p>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleChangePasswordSubmit()}
+              disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}
+              className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
+                isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+              }`}
+            >
+              {isChangingPassword ? (
+                <>
+                  <span className="auth-spinner" aria-hidden="true" />
+                  Updating…
+                </>
+              ) : (
+                'Save new password'
+              )}
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-3">
+          <p className={`app-subtext text-[10px] font-bold truncate ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+            {accountUsername}
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowPasswordPanel((v) => !v)}
+              className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider active:scale-95 transition-all ${
+                showPasswordPanel
+                  ? isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+                  : isLight ? 'bg-white border border-zinc-200 text-zinc-900' : 'bg-white/10 text-white'
+              }`}
+            >
+              Password
+            </button>
+            <button
+              type="button"
+              onClick={() => { handleClose(); onLogout(); }}
+              className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider active:scale-95 transition-all border ${
+                isLight ? 'border-zinc-200 text-zinc-700' : 'border-white/15 text-white/80'
+              }`}
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const handleActiveAvatarGallery = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -374,15 +516,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           ref={(el) => { sectionRefs.current[0] = el; }}
           className={`rounded-2xl border overflow-hidden transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
         >
-          {settings.businessName?.trim() && (
+          {(accountUsername || settings.businessName?.trim()) && (
             <BusinessInfoReceiptCard
               variant="settings"
               badgeLabel="Business"
-              businessName={settings.businessName.trim()}
+              businessName={settings.businessName?.trim() || ''}
               businessPhone={settings.businessPhone}
               businessAddress={settings.businessAddress}
               className="w-full"
+              editable={!!accountUsername}
+              isLight={isLight}
+              onBusinessNameChange={(value) => scheduleBusinessInfoSync({ businessName: value })}
+              onBusinessPhoneChange={(value) => scheduleBusinessInfoSync({ businessPhone: value })}
+              onBusinessAddressChange={(value) => scheduleBusinessInfoSync({ businessAddress: value })}
             />
+          )}
+          {businessSyncError && (
+            <p className="px-4 pt-2 text-red-500 text-[11px] font-bold">{businessSyncError}</p>
+          )}
+          {accountUsername && (
+            <div className="px-6 pb-2">
+              {renderAccountActions()}
+            </div>
           )}
           <input
             ref={avatarFileInputRef}
@@ -572,6 +727,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 options={RECEIPT_LAYOUT_OPTIONS.map(({ id, label }) => ({ id, label }))}
               />
             </div>
+
+            {(settings.currency ?? 'GHS') === 'GHS' && (
+              <div className="pt-2 border-t border-white/10 space-y-3">
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm font-black">Calculator currency style</span>
+                  <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                    How amounts appear in the live result
+                  </span>
+                </div>
+                <FluidSegmentControl
+                  isLight={isLight}
+                  className="w-full"
+                  ariaLabel="Calculator GHS display style"
+                  value={settings.ghsCalculatorStyle ?? 'ghs'}
+                  onChange={(ghsCalculatorStyle) => _updateSettings({ ghsCalculatorStyle })}
+                  options={[
+                    { id: 'ghs', label: 'ghs' },
+                    { id: 'cedis', label: '¢ cedis' },
+                  ]}
+                />
+              </div>
+            )}
 
             <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
               <div className="flex flex-col min-w-0">
@@ -787,107 +964,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
       </div>
-
-      {accountUsername && onChangePassword && onLogout && (
-        <div className={`shrink-0 border-t ${isLight ? 'border-zinc-200 bg-[#f2f2f7]' : 'border-white/8 bg-[#1c1c1e]'}`}>
-          {showPasswordPanel && (
-            <div className={`px-4 pt-4 pb-2 space-y-2 border-b ${isLight ? 'border-zinc-200' : 'border-white/8'}`}>
-              <div className="flex items-center justify-between">
-                <span className={FORM_FIELD_LABEL}>Change password</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPasswordPanel(false);
-                    setPasswordError(null);
-                    setCurrentPassword('');
-                    setNewPassword('');
-                    setConfirmPassword('');
-                  }}
-                  aria-label="Close change password"
-                  className={`p-1.5 rounded-full ${isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
-                >
-                  <Icons.X size={16} />
-                </button>
-              </div>
-              <input
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="Current password"
-                autoComplete="current-password"
-                className={formInputClass(isLight)}
-              />
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="New password"
-                autoComplete="new-password"
-                className={formInputClass(isLight)}
-              />
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm new password"
-                autoComplete="new-password"
-                className={formInputClass(isLight)}
-              />
-              {passwordError && (
-                <p className="text-red-500 text-[11px] font-bold">{passwordError}</p>
-              )}
-              {passwordSuccess && (
-                <p className="text-emerald-500 text-[11px] font-bold">Password updated.</p>
-              )}
-              <button
-                type="button"
-                onClick={() => void handleChangePasswordSubmit()}
-                disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}
-                className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
-                  isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
-                }`}
-              >
-                {isChangingPassword ? (
-                  <>
-                    <span className="auth-spinner" aria-hidden="true" />
-                    Updating…
-                  </>
-                ) : (
-                  'Save new password'
-                )}
-              </button>
-            </div>
-          )}
-
-          <div className="px-4 py-3 flex items-center justify-between gap-3">
-            <p className={`app-subtext text-[10px] font-bold truncate ${isLight ? 'text-black/50' : 'text-white/50'}`}>
-              {accountUsername}
-            </p>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowPasswordPanel((v) => !v)}
-                className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider active:scale-95 transition-all ${
-                  showPasswordPanel
-                    ? isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
-                    : isLight ? 'bg-white border border-zinc-200 text-zinc-900' : 'bg-white/10 text-white'
-                }`}
-              >
-                Password
-              </button>
-              <button
-                type="button"
-                onClick={() => { handleClose(); onLogout(); }}
-                className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider active:scale-95 transition-all border ${
-                  isLight ? 'border-zinc-200 text-zinc-700' : 'border-white/15 text-white/80'
-                }`}
-              >
-                Sign out
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

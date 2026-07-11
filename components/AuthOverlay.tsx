@@ -11,6 +11,7 @@ import {
   type AccessBusinessInfo,
 } from '../utils/accessControl';
 import BusinessInfoReceiptCard from './BusinessInfoReceiptCard';
+import PasswordField from './PasswordField';
 import { supabase } from '../utils/supabase';
 import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
 
@@ -807,21 +808,19 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 <span className={FORM_FIELD_LABEL}>
                   {mode === 'signup' ? 'Signup code' : 'Password'}
                 </span>
-                <input
-                  type={mode === 'signup' ? 'password' : 'text'}
+                <PasswordField
+                  isLight={isLight}
                   value={secret}
-                  onChange={(e) =>
-                    setSecret(mode === 'signup' ? e.target.value.toUpperCase() : e.target.value)
+                  onChange={(value) =>
+                    setSecret(mode === 'signup' ? value.toUpperCase() : value)
                   }
                   onKeyDown={(e) => e.stopPropagation()}
                   autoComplete={mode === 'signup' ? 'one-time-code' : 'current-password'}
                   spellCheck={false}
                   maxLength={mode === 'signup' ? 7 : 64}
                   disabled={isLoading || showSignupInsight}
-                  className={formInputClass(isLight, {
-                    mono: mode === 'signup',
-                    className: mode === 'signup' ? 'tracking-widest' : '',
-                  })}
+                  mono={mode === 'signup'}
+                  inputClassName={mode === 'signup' ? 'tracking-widest' : ''}
                   placeholder={mode === 'signup' ? '7-character code' : 'Your password'}
                 />
               </label>

@@ -1480,7 +1480,7 @@ select.app-input--dark {
 .invoice-receipt-stage {
   flex-shrink: 0;
   max-height: calc(100dvh - 7.5rem);
-  --invoice-receipt-width: min(320px, 78vw, 384px);
+  --invoice-receipt-width: min(272px, 68vw, 300px);
   --invoice-action-rail-width: 3.25rem;
 }
 .invoice-receipt-stage--58mm {
@@ -1488,10 +1488,9 @@ select.app-input--dark {
   height: min(calc(var(--invoice-receipt-width) * 13 / 6), calc(100dvh - 7.5rem));
   aspect-ratio: 6 / 13;
 }
-.invoice-switcher-shell-stage {
-  width: calc(var(--invoice-receipt-width) + var(--invoice-action-rail-width));
-  height: min(calc(var(--invoice-receipt-width) * 13 / 6), calc(100dvh - 7.5rem));
-  aspect-ratio: unset;
+.invoice-switcher-printable--full {
+  width: 100%;
+  max-width: 100%;
 }
 .invoice-receipt-stage--25mm {
   width: min(168px, 48vw, 192px);
@@ -1557,21 +1556,25 @@ select.app-input--dark {
   background: #10b981;
   box-shadow: 0 6px 18px rgba(16, 185, 129, 0.35);
 }
-.invoice-switcher-card__footer--attendant {
+.invoice-switcher-card__footer--actions {
   border-top: 1px solid rgba(0, 0, 0, 0.06);
-  padding: 0.55rem 0.75rem 0.7rem;
+  padding: 0.5rem 0.65rem 0.65rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 .invoice-switcher-card__attendant-btn {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
-  padding: 0.65rem 0.85rem;
+  padding: 0.55rem 0.7rem;
   border-radius: 0.75rem;
   border: 1px solid rgba(0, 0, 0, 0.08);
   background: #fff;
-  font-size: 0.75rem;
+  font-size: 0.68rem;
   font-weight: 900;
   letter-spacing: -0.02em;
-  color: #0a0a0a;
+  color: #2563eb;
   cursor: pointer;
   transition: background 0.2s ease, transform 0.2s ease;
   overflow: hidden;
@@ -1581,6 +1584,58 @@ select.app-input--dark {
 .invoice-switcher-card__attendant-btn:active {
   transform: scale(0.99);
   background: rgba(0, 0, 0, 0.03);
+}
+.invoice-switcher-card__action-btn {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.invoice-switcher-card__action-btn:active:not(:disabled) {
+  transform: scale(0.9);
+}
+.invoice-switcher-card__action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.invoice-switcher-card__action-btn--share {
+  background: #3b82f6;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.32);
+}
+.invoice-switcher-card__action-btn--print {
+  background: #10b981;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.32);
+}
+.password-field {
+  position: relative;
+}
+.password-field__input {
+  padding-right: 2.75rem !important;
+}
+.password-field__toggle {
+  position: absolute;
+  right: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.calc-expression-toolbar {
+  overflow: visible;
+  position: relative;
+  z-index: 50;
 }
 .invoice-switcher-card__served-by {
   font-size: 0.58rem;
@@ -1942,6 +1997,35 @@ select.app-input--dark {
   opacity: 0.42;
   text-align: center;
   padding: 0.25rem 0;
+}
+.business-receipt-card--editable .business-receipt-card__title-input {
+  width: 100%;
+  margin-top: 0.15rem;
+  padding: 0.35rem 0;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+  background: transparent;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  outline: none;
+}
+.business-receipt-card--editable .business-receipt-card__title-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+.business-receipt-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.business-receipt-card__field--stacked {
+  margin-top: 0.15rem;
+}
+.business-receipt-card__input {
+  font-size: 0.72rem !important;
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
 }
 .invoice-receipt-preview--tile,
 .invoice-receipt-preview--list,
