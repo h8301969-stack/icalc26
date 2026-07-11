@@ -1258,7 +1258,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     if (restocks.length === 0) {
       return (
         <div className={`rounded-2xl p-12 text-center ${levitateClass}`}>
-          <p className={`pos-subtext text-xs font-black ${cardSubtextMutedClass}`}>No restock notes yet</p>
+          <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No restock notes yet</p>
         </div>
       );
     }
@@ -1431,7 +1431,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           )
         ) : (
           <div className="p-12 text-center">
-            <p className={`pos-subtext text-[11px] font-black ${cardSubtextMutedClass}`}>No restock notes yet</p>
+            <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No restock notes yet</p>
           </div>
         )}
       </div>
@@ -1730,7 +1730,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           ))
         ) : (
           <div className="p-12 text-center">
-            <p className={`pos-subtext text-[11px] font-black ${cardSubtextMutedClass}`}>No matching logs</p>
+            <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No matching logs</p>
           </div>
         )}
       </div>
@@ -2014,7 +2014,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <div className="absolute inset-0 p-8 flex flex-col justify-between">
                   <div className="flex items-center gap-5 translate-y-2">
                     <div className="p-4 rounded-[13px] bg-orange-500/20 text-orange-500 backdrop-blur-3xl shadow-2xl border border-white/10"><Icons.Scientific size={28} /></div>
-                    <span className={`pos-subtext text-[11px] font-black opacity-90 drop-shadow-md ${heroSubtextClass}`}>Live Matrix</span>
+                    <span className={`pos-subtext text-[10px] font-black opacity-90 drop-shadow-md ${heroSubtextClass}`}>Live Matrix</span>
                   </div>
                   <div className="space-y-1 relative z-10 translate-y-2">
                     <div className="flex items-end justify-between">
@@ -2093,7 +2093,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     renderActivityLogRows(systemLogs, 8, true)
                   ) : (
                     <div className="py-16 text-center space-y-3">
-                       <p className={`pos-subtext text-[11px] font-black ${cardSubtextMutedClass}`}>No Log Data</p>
+                       <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No Log Data</p>
                     </div>
                   )}
                 </div>
@@ -2114,7 +2114,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Monthly Revenue</h3>
-              <p className={`pos-subtext text-sm px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.monthlyRev.toFixed(2))} this month • sorted by date</p>
+              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.monthlyRev.toFixed(2))} this month • sorted by date</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
                 <div className="relative">
@@ -2150,7 +2150,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className={`pos-subtext text-[11px] font-black ${statDetailTextClass}`}>No revenue this month</p>
+                    <p className={`pos-subtext text-[10px] font-black ${statDetailTextClass}`}>No revenue this month</p>
                   </div>
                 )}
                 </div>
@@ -2166,7 +2166,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Daily Sales</h3>
-              <p className={`pos-subtext text-sm px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.dailyRev.toFixed(2))} today • sorted by time</p>
+              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.dailyRev.toFixed(2))} today • sorted by time</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
                 <div className="relative">
@@ -2202,7 +2202,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className={`pos-subtext text-[11px] font-black ${statDetailTextClass}`}>No sales today</p>
+                    <p className={`pos-subtext text-[10px] font-black ${statDetailTextClass}`}>No sales today</p>
                   </div>
                 )}
                 </div>
@@ -2218,7 +2218,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Customers</h3>
-              <p className={`pos-subtext text-sm px-1 -mt-4 ${cardSubtextMutedClass}`}>Invoice names • print count</p>
+              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>Invoice names • print count</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
                 <div className="relative">
@@ -2237,7 +2237,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className={`pos-subtext text-[11px] font-black ${statDetailTextClass}`}>No customers yet</p>
+                    <p className={`pos-subtext text-[10px] font-black ${statDetailTextClass}`}>No customers yet</p>
                   </div>
                 )}
                 </div>
@@ -2253,7 +2253,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
               <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Invoices Today</h3>
-              <p className={`pos-subtext text-sm px-1 -mt-4 ${cardSubtextMutedClass}`}>Sorted by most recent activity</p>
+              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>Sorted by most recent activity</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
                 <div className="relative">
@@ -2292,7 +2292,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className={`pos-subtext text-[11px] font-black ${statDetailTextClass}`}>No invoices today</p>
+                    <p className={`pos-subtext text-[10px] font-black ${statDetailTextClass}`}>No invoices today</p>
                   </div>
                 )}
                 </div>
@@ -2410,7 +2410,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   filteredRequests.map((req, idx) => renderRequestRow(req, idx, filteredRequests.length))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className={`pos-subtext text-[11px] font-black ${cardSubtextMutedClass}`}>No {requestTab} requests</p>
+                    <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No {requestTab} requests</p>
                   </div>
                 )}
               </div>
@@ -2577,7 +2577,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   filteredRequests.map((req, idx) => renderRequestRow(req, idx, filteredRequests.length))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className={`pos-subtext text-[11px] font-black ${cardSubtextMutedClass}`}>No {requestTab} requests</p>
+                    <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No {requestTab} requests</p>
                   </div>
                 )}
               </div>
@@ -2627,8 +2627,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   })}
                 {paidInvoiceCards.length === 0 && (
                   <div className="p-10 text-center">
-                    <p className={`pos-subtext text-[11px] font-black ${cardSubtextMutedClass}`}>No transactions yet</p>
-                    <p className={`text-xs mt-2 opacity-60 ${textColorClass}`}>Transactions appear after a confirmed print</p>
+                    <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No transactions yet</p>
+                    <p className={`app-subtext text-[10px] opacity-45 mt-2 ${textColorClass}`}>Transactions appear after a confirmed print</p>
                   </div>
                 )}
               </div>
@@ -2826,8 +2826,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center">
-                    <p className={`pos-subtext text-[11px] font-black ${cardSubtextMutedClass}`}>No suppliers yet</p>
-                    <p className={`text-xs mt-2 opacity-60 ${textColorClass}`}>Suppliers appear when stock is received</p>
+                    <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No suppliers yet</p>
+                    <p className={`app-subtext text-[10px] opacity-45 mt-2 ${textColorClass}`}>Suppliers appear when stock is received</p>
                   </div>
                 )}
               </div>

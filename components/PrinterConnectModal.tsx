@@ -256,7 +256,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
           })}
 
           {knownPrinters.length === 0 && (
-            <div className={`app-subtext p-4 rounded-xl text-center text-xs font-bold ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+            <div className={`app-subtext text-[10px] opacity-45 p-4 rounded-xl text-center ${isLight ? 'text-black' : 'text-white'}`}>
               No printers yet. Scan to pair your first device.
             </div>
           )}

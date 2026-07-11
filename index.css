@@ -660,7 +660,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   z-index: 2;
   text-align: center;
   font-family: var(--font-brand, "Montserrat"), Candara, sans-serif;
-  font-size: 0.62rem;
+  font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.1em;
   text-transform: lowercase;
@@ -1195,10 +1195,11 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   font-weight: 900;
 }
 
-/* App-wide hint / helper subtext — Candara */
-.app-subtext {
+/* App-wide hint / helper subtext — Candara (matches admin “tap code to copy” at 10px) */
+.app-subtext,
+.pos-subtext {
   font-family: var(--font-text);
-  font-size: 0.75rem;
+  font-size: 10px;
   font-weight: 800;
   line-height: 1.35;
 }

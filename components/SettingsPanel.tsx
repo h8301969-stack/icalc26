@@ -748,7 +748,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             )}
 
             {knownPrinters.length === 0 && (
-              <div className={`p-4 rounded-xl text-center text-xs font-bold ${isLight ? 'text-black' : 'text-white'}`}>
+              <div className={`app-subtext text-[10px] opacity-45 p-4 rounded-xl text-center ${isLight ? 'text-black' : 'text-white'}`}>
                 No printers yet. Scan to pair your first device.
               </div>
             )}

@@ -821,7 +821,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                       Access granted
                     </h4>
                   </div>
-                  <p className={`app-subtext text-xs leading-relaxed text-center mb-5 ${isLight ? 'text-black/70' : 'text-white/75'}`}>
+                  <p className={`app-subtext text-[10px] leading-relaxed text-center mb-5 opacity-45 ${isLight ? 'text-black' : 'text-white'}`}>
                     Set up your business details. Your business name appears on invoice cards.
                   </p>
 
@@ -903,7 +903,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                       Confirm your email
                     </h4>
                   </div>
-                  <p className={`app-subtext text-xs leading-relaxed text-center ${isLight ? 'text-black/70' : 'text-white/75'}`}>
+                  <p className={`app-subtext text-[10px] leading-relaxed text-center opacity-45 ${isLight ? 'text-black' : 'text-white'}`}>
                     We sent a confirmation link to{' '}
                     <span className="font-black">{signupConfirmation.email}</span>.
                     Open your email, tap the link to verify your account, then come back here and sign in.
@@ -930,7 +930,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       {isIdle && (
         <div className="flex flex-col items-center w-full max-w-xs select-none">
           <p
-            className="app-subtext animate-swipe-hint-pulse opacity-50 text-center pointer-events-none"
+            className="app-subtext text-[10px] animate-swipe-hint-pulse opacity-45 text-center pointer-events-none"
             style={{ color: textColor }}
           >
             Click or swipe to continue
@@ -958,7 +958,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         </div>
       )}
 
-      <p className={`app-subtext opacity-40 text-center pb-2 transition-opacity duration-300 normal-case ${isLoading ? 'opacity-20' : ''}`} style={{ color: textColor }}>
+      <p className={`app-subtext text-[10px] opacity-45 text-center pb-2 transition-opacity duration-300 normal-case ${isLoading ? 'opacity-20' : ''}`} style={{ color: textColor }}>
         © 2026 iCalc
       </p>
 

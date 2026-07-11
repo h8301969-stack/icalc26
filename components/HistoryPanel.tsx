@@ -900,7 +900,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         </div>
         <div className={`mt-1 space-y-0.5 min-h-0 flex-1 overflow-hidden ${isSelected ? 'opacity-90' : 'opacity-70'}`}>
           {card.items.length === 0 ? (
-            <div className="app-subtext text-[9px] opacity-45">No items yet</div>
+            <div className="app-subtext text-[10px] opacity-45">No items yet</div>
           ) : (
             card.items.slice(0, 4).map((item, i) =>
               renderSwitcherProductLine(item, i, { compact: true, inverted: isSelected })
@@ -1308,7 +1308,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
               <div className="text-sm font-black tracking-tight text-white drop-shadow-sm">
                 Invoices
               </div>
-              <p className="app-subtext text-[10px] text-white/50 mt-1">Tap to load · Hold to preview</p>
+              <p className="app-subtext text-[10px] opacity-45 text-white/50 mt-1">Tap to load · Hold to preview</p>
             </div>
 
             <div

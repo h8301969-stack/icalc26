@@ -63,7 +63,7 @@ const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({ showPrompt, onInsta
             </div>
 
             {/* Helpful hint */}
-            <p className="text-xs text-gray-500 text-center">
+            <p className="app-subtext text-[10px] opacity-45 text-gray-500 text-center">
               You can install or uninstall anytime from your device settings
             </p>
           </div>

@@ -34,7 +34,7 @@ const BrandHeader: React.FC = () => (
 const SwipeHint: React.FC<{ isLight: boolean }> = ({ isLight }) => (
   <div className="flex flex-col items-center gap-4 select-none pointer-events-none">
     <p
-      className="app-subtext animate-swipe-hint-pulse opacity-50"
+      className="app-subtext text-[10px] animate-swipe-hint-pulse opacity-45"
       style={{ color: isLight ? '#000' : '#fff' }}
     >
       Tap or swipe anywhere to unlock

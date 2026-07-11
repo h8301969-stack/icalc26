@@ -377,7 +377,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         </div>
       </div>
 
-      <p className={`text-center text-[10px] opacity-45 px-4 pb-2 ${isLight ? 'text-white' : 'text-white'}`}>
+      <p className={`app-subtext text-center text-[10px] opacity-45 px-4 pb-2 ${isLight ? 'text-white' : 'text-white'}`}>
         Tap code to copy · tap card for details · hold for quick open
       </p>
 
@@ -577,9 +577,9 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                   Password history
                 </p>
                 {passwordHistoryLoading ? (
-                  <p className="text-xs opacity-50 py-2">Loading…</p>
+                  <p className="app-subtext text-[10px] opacity-45 py-2">Loading…</p>
                 ) : passwordHistory.length === 0 ? (
-                  <p className="text-xs opacity-50 py-2">No passwords recorded yet.</p>
+                  <p className="app-subtext text-[10px] opacity-45 py-2">No passwords recorded yet.</p>
                 ) : (
                   <ul className="space-y-2">
                     {passwordHistory.map((entry) => (

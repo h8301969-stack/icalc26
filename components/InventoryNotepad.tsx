@@ -178,7 +178,7 @@ const InventoryNotepad: React.FC<InventoryNotepadProps> = ({
             ))}
           </div>
         ) : (
-          <p className={`text-sm leading-7 opacity-40 ${textMain}`}>{emptyHint}</p>
+          <p className={`app-subtext text-[10px] opacity-45 ${textMain}`}>{emptyHint}</p>
         )}
       </div>
 
