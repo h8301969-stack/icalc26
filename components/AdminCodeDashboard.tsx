@@ -6,6 +6,7 @@ import {
   adminApproveCode,
   adminDenyCode,
   adminGrantAccess,
+  adminSetAccessBusinessInfo,
   adminListCodes,
   adminListPasswordHistory,
   adminRevokeAccess,
@@ -14,7 +15,7 @@ import {
   PasswordHistoryRow,
 } from '../utils/accessControl';
 import { ADMIN_PROFILE_NAME, createAdminProfile } from '../utils/auth';
-import { FORM_FIELD_LABEL, FORM_SECTION_TITLE, formTextareaClass } from '../utils/formFields';
+import { FORM_FIELD_LABEL, FORM_SECTION_TITLE, formInputClass, formTextareaClass } from '../utils/formFields';
 
 type AdminTab = 'unused' | 'pending' | 'approved';
 
@@ -96,6 +97,10 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const [actionCode, setActionCode] = useState<string | null>(null);
   const [approveTarget, setApproveTarget] = useState<AccessCodeRow | null>(null);
   const [approveMemo, setApproveMemo] = useState('');
+  const [approveBusinessName, setApproveBusinessName] = useState('');
+  const [approveBusinessPhone, setApproveBusinessPhone] = useState('');
+  const [approveBusinessAddress, setApproveBusinessAddress] = useState('');
+  const [grantTarget, setGrantTarget] = useState<AccessCodeRow | null>(null);
   const [detailRow, setDetailRow] = useState<AccessCodeRow | null>(null);
   const [detailMemo, setDetailMemo] = useState('');
   const [savingMemo, setSavingMemo] = useState(false);
@@ -217,21 +222,46 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     await refreshPendingCount();
   };
 
-  const runGrantAccess = async (code: string) => {
-    setActionCode(code);
+  const openGrantModal = (row: AccessCodeRow) => {
+    setGrantTarget(row);
+    setApproveBusinessName(row.business_name ?? '');
+    setApproveBusinessPhone(row.business_phone ?? '');
+    setApproveBusinessAddress(row.business_address ?? '');
     setError(null);
     setSuccessNotice(null);
-    const result = await adminGrantAccess(adminToken, code);
-    setActionCode(null);
+  };
+
+  const confirmGrantAccess = async () => {
+    if (!grantTarget) return;
+    if (!approveBusinessName.trim()) {
+      setError('Enter the business name.');
+      return;
+    }
+    setActionCode(grantTarget.code);
+    setError(null);
+    const result = await adminGrantAccess(adminToken, grantTarget.code);
     if (!result.ok) {
+      setActionCode(null);
       setError(result.error ?? 'Grant access failed.');
       return;
     }
+    const businessResult = await adminSetAccessBusinessInfo(adminToken, grantTarget.code, {
+      businessName: approveBusinessName.trim(),
+      businessPhone: approveBusinessPhone.trim(),
+      businessAddress: approveBusinessAddress.trim(),
+    });
+    setActionCode(null);
+    if (!businessResult.ok) {
+      setError(businessResult.error ?? 'Access granted but business info could not be saved.');
+      return;
+    }
+    const grantedCode = grantTarget.code;
+    setGrantTarget(null);
     setSuccessNotice(result.hint);
     const refreshedCodes = await loadCodes();
     await refreshPendingCount();
-    if (detailRow?.code === code) {
-      const refreshed = refreshedCodes.find((row) => row.code === code);
+    if (detailRow?.code === grantedCode) {
+      const refreshed = refreshedCodes.find((row) => row.code === grantedCode);
       if (refreshed) setDetailRow(refreshed);
     }
   };
@@ -239,16 +269,33 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const openApproveModal = (row: AccessCodeRow) => {
     setApproveTarget(row);
     setApproveMemo(row.admin_memo ?? '');
+    setApproveBusinessName(row.business_name ?? '');
+    setApproveBusinessPhone(row.business_phone ?? '');
+    setApproveBusinessAddress(row.business_address ?? '');
     setError(null);
   };
 
   const confirmApprove = async () => {
     if (!approveTarget) return;
+    if (!approveBusinessName.trim()) {
+      setError('Enter the business name.');
+      return;
+    }
     setActionCode(approveTarget.code);
     const result = await adminApproveCode(adminToken, approveTarget.code, approveMemo);
-    setActionCode(null);
     if (!result.ok) {
+      setActionCode(null);
       setError(result.error ?? 'Approve failed.');
+      return;
+    }
+    const businessResult = await adminSetAccessBusinessInfo(adminToken, approveTarget.code, {
+      businessName: approveBusinessName.trim(),
+      businessPhone: approveBusinessPhone.trim(),
+      businessAddress: approveBusinessAddress.trim(),
+    });
+    setActionCode(null);
+    if (!businessResult.ok) {
+      setError(businessResult.error ?? 'Approved but business info could not be saved.');
       return;
     }
     setApproveTarget(null);
@@ -537,7 +584,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation();
-                          void runGrantAccess(row.code);
+                          openGrantModal(row);
                         }}
                         className="admin-interactive px-3 py-1.5 rounded-lg bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
                       >
@@ -581,6 +628,37 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               {approveTarget.email ? ` · ${approveTarget.email}` : ''}
             </p>
             <label className="block">
+              <span className={FORM_FIELD_LABEL}>Business name</span>
+              <input
+                type="text"
+                value={approveBusinessName}
+                onChange={(e) => setApproveBusinessName(e.target.value)}
+                required
+                className={formInputClass(isLight)}
+                placeholder="Shop or business name"
+              />
+            </label>
+            <label className="block mt-3">
+              <span className={FORM_FIELD_LABEL}>Phone number</span>
+              <input
+                type="tel"
+                value={approveBusinessPhone}
+                onChange={(e) => setApproveBusinessPhone(e.target.value)}
+                className={formInputClass(isLight)}
+                placeholder="+233 …"
+              />
+            </label>
+            <label className="block mt-3">
+              <span className={FORM_FIELD_LABEL}>Location</span>
+              <input
+                type="text"
+                value={approveBusinessAddress}
+                onChange={(e) => setApproveBusinessAddress(e.target.value)}
+                className={formInputClass(isLight)}
+                placeholder="Street, city"
+              />
+            </label>
+            <label className="block mt-3">
               <span className={`${FORM_FIELD_LABEL} opacity-50 mb-0`}>Admin memo</span>
               <textarea
                 value={approveMemo}
@@ -605,6 +683,86 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 className="admin-interactive flex-1 py-2.5 rounded-xl bg-green-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
               >
                 Approve
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {grantTarget && (
+        <div
+          className="admin-modal-backdrop fixed inset-0 z-[1110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={() => setGrantTarget(null)}
+          role="presentation"
+        >
+          <div
+            className={`admin-modal-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl ${modalClass}`}
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className={FORM_SECTION_TITLE}>Grant access</h3>
+              <button
+                type="button"
+                onClick={() => setGrantTarget(null)}
+                aria-label="Close grant modal"
+                className={`admin-interactive p-2 rounded-full ${isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+              >
+                <Icons.X size={20} />
+              </button>
+            </div>
+            <div className="mb-1">{renderCopyableCode(grantTarget.code, 'text-xl')}</div>
+            <p className="text-xs opacity-60 mb-4">
+              {grantTarget.username ?? 'Unknown user'}
+              {grantTarget.email ? ` · ${grantTarget.email}` : ''}
+            </p>
+            <label className="block">
+              <span className={FORM_FIELD_LABEL}>Business name</span>
+              <input
+                type="text"
+                value={approveBusinessName}
+                onChange={(e) => setApproveBusinessName(e.target.value)}
+                required
+                className={formInputClass(isLight)}
+                placeholder="Shop or business name"
+              />
+            </label>
+            <label className="block mt-3">
+              <span className={FORM_FIELD_LABEL}>Phone number</span>
+              <input
+                type="tel"
+                value={approveBusinessPhone}
+                onChange={(e) => setApproveBusinessPhone(e.target.value)}
+                className={formInputClass(isLight)}
+                placeholder="+233 …"
+              />
+            </label>
+            <label className="block mt-3">
+              <span className={FORM_FIELD_LABEL}>Location</span>
+              <input
+                type="text"
+                value={approveBusinessAddress}
+                onChange={(e) => setApproveBusinessAddress(e.target.value)}
+                className={formInputClass(isLight)}
+                placeholder="Street, city"
+              />
+            </label>
+            <div className="flex gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setGrantTarget(null)}
+                className={`admin-interactive flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border ${isLight ? 'border-black/15' : 'border-white/15'}`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionCode === grantTarget.code}
+                onClick={() => void confirmGrantAccess()}
+                className="admin-interactive flex-1 py-2.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
+              >
+                Grant
               </button>
             </div>
           </div>
@@ -794,7 +952,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               <button
                 type="button"
                 disabled={actionCode === detailRow.code}
-                onClick={() => void runGrantAccess(detailRow.code)}
+                onClick={() => openGrantModal(detailRow)}
                 className="admin-interactive w-full mt-2 py-2.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
               >
                 Grant access

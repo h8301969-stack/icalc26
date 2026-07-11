@@ -15,6 +15,7 @@ import { EXPRESSION_VIEW_OPTIONS } from '../utils/expressionDisplay';
 import { RECEIPT_LAYOUT_OPTIONS } from '../utils/receiptLayout';
 import FluidSegmentControl from './FluidSegmentControl';
 import FluidToggle from './FluidToggle';
+import BusinessInfoReceiptCard from './BusinessInfoReceiptCard';
 import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
 
 interface SettingsSlice {
@@ -30,6 +31,9 @@ interface SettingsSlice {
   standbyTimerSeconds?: number;
   profiles?: UserProfile[];
   activeProfileId?: string;
+  businessName?: string;
+  businessPhone?: string;
+  businessAddress?: string;
 }
 
 interface SettingsPanelProps {
@@ -368,8 +372,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* Profile */}
         <div
           ref={(el) => { sectionRefs.current[0] = el; }}
-          className={`p-8 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
+          className={`rounded-2xl border overflow-hidden transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
         >
+          {settings.businessName?.trim() && (
+            <BusinessInfoReceiptCard
+              variant="settings"
+              badgeLabel="Business"
+              businessName={settings.businessName.trim()}
+              businessPhone={settings.businessPhone}
+              businessAddress={settings.businessAddress}
+              className="w-full"
+            />
+          )}
           <input
             ref={avatarFileInputRef}
             type="file"
@@ -378,7 +392,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             onChange={handleActiveAvatarGallery}
             aria-hidden="true"
           />
-          <div className="flex flex-col items-center gap-3">
+          <div className="flex flex-col items-center gap-3 p-8 pt-6">
             <ProfileAvatar
               profile={activeProfile}
               size={80}

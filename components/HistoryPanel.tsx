@@ -52,6 +52,7 @@ const SWITCHER_LAYOUT_OPTIONS = [
 const LONG_PRESS_MS = 480;
 const INVOICE_LOAD_MS = 400;
 const SWITCHER_DISPLAY_PAPER_WIDTH: PaperWidth = '58mm';
+const INVOICE_SWITCHER_RADIUS = 'rounded-2xl';
 const SCATTERED_GRID_MIN_TILE = 'min(100%, 168px)';
 const SCATTERED_GRID_GAP = '1.1rem';
 
@@ -632,7 +633,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   const textMuted = isLight ? 'text-zinc-400' : 'text-zinc-500';
 
-  const renderInvoiceLoadingOverlay = (idx: number, roundedClass = 'rounded-[32px]') => {
+  const renderInvoiceLoadingOverlay = (idx: number, roundedClass = INVOICE_SWITCHER_RADIUS) => {
     if (loadingInvoiceIdx !== idx) return null;
     return (
       <div
@@ -1069,7 +1070,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
               beginInvoiceLoad(activeIdx);
             }}
           >
-            <div className="absolute inset-0 flex flex-col rounded-[32px] overflow-hidden bg-white text-black shadow-[0_32px_96px_rgba(0,0,0,0.65)] ring-1 ring-white/20">
+            <div className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_32px_96px_rgba(0,0,0,0.65)] ring-1 ring-white/20`}>
               {renderCardBody(cards[activeIdx], true)}
               {renderInvoiceLoadingOverlay(activeIdx)}
             </div>
@@ -1454,7 +1455,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 inert={!isActive || !isOpen ? true : undefined}
                 role={isActive ? 'dialog' : undefined}
                 aria-modal={isActive ? true : undefined}
-                className="absolute inset-0 flex flex-col rounded-[32px] overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
+                className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]`}
                 style={{
                   transform: `translateX(${translateX}) translateY(${translateY}) scale(${scale})`,
                   transformOrigin,
@@ -1487,7 +1488,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 inert={!isActive || !isOpen ? true : undefined}
                 role={isActive ? 'dialog' : undefined}
                 aria-modal={isActive ? true : undefined}
-                className="absolute inset-0 flex flex-col rounded-[32px] overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
+                className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]`}
                 style={{
                   transform: `translateX(${translateX}) translateY(${translateY}px) scale(${scale})`,
                   transformOrigin,

@@ -4,7 +4,13 @@ import icalcLogo from '../assets/logo/icalc-logo.png';
 import { Icons } from '../constants';
 import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
 import { AppAccount } from '../utils/auth';
-import { checkAccessCodeStatus, submitAccessBusinessInfo, subscribeAccessStatus } from '../utils/accessControl';
+import {
+  checkAccessCodeStatus,
+  fetchAccessCodeBusinessInfo,
+  subscribeAccessStatus,
+  type AccessBusinessInfo,
+} from '../utils/accessControl';
+import BusinessInfoReceiptCard from './BusinessInfoReceiptCard';
 import { supabase } from '../utils/supabase';
 import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
 
@@ -98,9 +104,8 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [isExiting, setIsExiting] = useState(false);
   const [signupConfirmation, setSignupConfirmation] = useState<{ email: string } | null>(null);
   const [businessSetup, setBusinessSetup] = useState<{ accessCode: string; username: string } | null>(null);
-  const [businessName, setBusinessName] = useState('');
-  const [businessPhone, setBusinessPhone] = useState('');
-  const [businessAddress, setBusinessAddress] = useState('');
+  const [receivedBusinessInfo, setReceivedBusinessInfo] = useState<AccessBusinessInfo | null>(null);
+  const [businessInfoLoading, setBusinessInfoLoading] = useState(false);
   const [loadingPhase, setLoadingPhase] = useState<AuthLoadingPhase>('default');
   const pendingPollRef = useRef<number | null>(null);
   const pendingUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -358,41 +363,56 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     [onAuthComplete, onFinalizeAccess]
   );
 
-  const handleBusinessSetupSubmit = useCallback(async () => {
-    if (!businessSetup || !businessName.trim()) {
-      setError('Enter your business name.');
+  useEffect(() => {
+    if (!businessSetup) {
+      setReceivedBusinessInfo(null);
+      setBusinessInfoLoading(false);
       return;
     }
+
+    let cancelled = false;
+    setBusinessInfoLoading(true);
+    setError(null);
+
+    void fetchAccessCodeBusinessInfo(businessSetup.accessCode).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setReceivedBusinessInfo(result.info);
+      } else {
+        setReceivedBusinessInfo({
+          businessName: '',
+          businessPhone: '',
+          businessAddress: '',
+        });
+        setError(result.error);
+      }
+      setBusinessInfoLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [businessSetup]);
+
+  const handleBusinessReceiveContinue = useCallback(async () => {
+    if (!businessSetup) return;
+    const info = receivedBusinessInfo;
+    if (!info?.businessName.trim()) {
+      setError('Business details are not ready yet. Ask your admin to set them when granting access.');
+      return;
+    }
+
     setError(null);
     setIsSubmitting(true);
 
-    const saved = await submitAccessBusinessInfo(businessSetup.accessCode, {
-      businessName: businessName.trim(),
-      businessPhone: businessPhone.trim(),
-      businessAddress: businessAddress.trim(),
-    });
-
-    if (!saved.ok) {
-      setIsSubmitting(false);
-      setError(saved.error);
-      return;
-    }
-
     updateSettings?.({
-      businessName: businessName.trim(),
-      businessPhone: businessPhone.trim(),
-      businessAddress: businessAddress.trim(),
+      businessName: info.businessName.trim(),
+      businessPhone: info.businessPhone.trim(),
+      businessAddress: info.businessAddress.trim(),
     });
 
     await completeAccessGrant(businessSetup.accessCode, businessSetup.username);
-  }, [
-    businessSetup,
-    businessName,
-    businessPhone,
-    businessAddress,
-    updateSettings,
-    completeAccessGrant,
-  ]);
+  }, [businessSetup, receivedBusinessInfo, updateSettings, completeAccessGrant]);
 
   const handleAccessStatus = useCallback(
     async (accessCode: string, pendingUsername: string, status: string) => {
@@ -400,9 +420,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         stopPendingWatch();
         setIsSubmitting(false);
         setLoadingPhase('default');
-        setBusinessName('');
-        setBusinessPhone('');
-        setBusinessAddress('');
+        setReceivedBusinessInfo(null);
         setBusinessSetup({ accessCode, username: pendingUsername });
         setPane('auth');
         setAuthCardAnimKey((k) => k + 1);
@@ -850,76 +868,54 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 aria-labelledby="business-setup-title"
               >
                 <div
-                  className={`w-full rounded-[24px] border px-6 py-7 shadow-2xl animate-insight-pop ${
+                  className={`invoice-receipt-stage w-full max-w-[min(320px,92vw)] rounded-2xl border shadow-2xl animate-insight-pop overflow-hidden ${
                     isLight
-                      ? 'bg-white/95 border-black/10 text-black'
-                      : 'pos-dashboard-card-glass border-white/12 text-white'
+                      ? 'bg-white border-black/10 text-black'
+                      : 'bg-zinc-900 border-white/12 text-white'
                   }`}
                 >
-                  <div className="flex items-center justify-center gap-2 mb-2">
-                    <Icons.Trends size={20} className="text-emerald-500" />
-                    <h4 id="business-setup-title" className="app-subtext text-sm font-black">
-                      Access granted
-                    </h4>
+                  <div className="px-5 pt-5 pb-3 text-center">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <Icons.Trends size={20} className="text-emerald-500" />
+                      <h4 id="business-setup-title" className="app-subtext text-sm font-black">
+                        Access granted
+                      </h4>
+                    </div>
+                    <p className={`app-subtext text-[10px] leading-relaxed opacity-45 ${isLight ? 'text-black' : 'text-white'}`}>
+                      You are receiving your business profile
+                    </p>
                   </div>
-                  <p className={`app-subtext text-[10px] leading-relaxed text-center mb-5 opacity-45 ${isLight ? 'text-black' : 'text-white'}`}>
-                    Set up your business details. Your business name appears on invoice cards.
-                  </p>
 
-                  <form
-                    className="space-y-3"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void handleBusinessSetupSubmit();
-                    }}
-                  >
-                    <label className="block">
-                      <span className={FORM_FIELD_LABEL}>Business name</span>
-                      <input
-                        type="text"
-                        value={businessName}
-                        onChange={(e) => setBusinessName(e.target.value)}
-                        autoFocus
-                        required
-                        className={formInputClass(isLight)}
-                        placeholder="Your shop or business"
+                  {businessInfoLoading ? (
+                    <div className="px-5 pb-6 flex flex-col items-center gap-3">
+                      <span className="auth-spinner" aria-hidden="true" />
+                      <p className="app-subtext text-[10px] opacity-45">Loading business details…</p>
+                    </div>
+                  ) : (
+                    <>
+                      <BusinessInfoReceiptCard
+                        variant="modal"
+                        badgeLabel="Receiving"
+                        businessName={receivedBusinessInfo?.businessName || '—'}
+                        businessPhone={receivedBusinessInfo?.businessPhone}
+                        businessAddress={receivedBusinessInfo?.businessAddress}
+                        className="mx-auto w-full"
                       />
-                    </label>
-                    <label className="block">
-                      <span className={FORM_FIELD_LABEL}>Phone number</span>
-                      <input
-                        type="tel"
-                        value={businessPhone}
-                        onChange={(e) => setBusinessPhone(e.target.value)}
-                        className={formInputClass(isLight)}
-                        placeholder="+233 …"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className={FORM_FIELD_LABEL}>
-                        Address <span className="opacity-50">optional</span>
-                      </span>
-                      <input
-                        type="text"
-                        value={businessAddress}
-                        onChange={(e) => setBusinessAddress(e.target.value)}
-                        className={formInputClass(isLight)}
-                        placeholder="Street, city"
-                      />
-                    </label>
-
-                    {error && (
-                      <p className="text-xs font-bold text-red-500" role="alert">{error}</p>
-                    )}
-
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || !businessName.trim()}
-                      className={`w-full mt-2 py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all active:scale-[0.98] min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
-                    >
-                      {isSubmitting ? 'Saving…' : 'Continue'}
-                    </button>
-                  </form>
+                      <div className="px-5 pb-5 pt-3">
+                        {error && (
+                          <p className="text-xs font-bold text-red-500 mb-3 text-center" role="alert">{error}</p>
+                        )}
+                        <button
+                          type="button"
+                          disabled={isSubmitting || !receivedBusinessInfo?.businessName.trim()}
+                          onClick={() => void handleBusinessReceiveContinue()}
+                          className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all active:scale-[0.98] min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
+                        >
+                          {isSubmitting ? 'Opening workspace…' : 'Continue'}
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}

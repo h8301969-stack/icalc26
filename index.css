@@ -1616,10 +1616,17 @@ select.app-input--dark {
 }
 .invoice-switcher-card__header {
   flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
   padding: 0.85rem 1rem 0.75rem;
   background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 52%, #60a5fa 100%);
   color: #fff;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.invoice-switcher-printable .invoice-switcher-card__header,
+.invoice-switcher-printable .invoice-switcher-card__body {
+  width: 100%;
+  max-width: 100%;
 }
 .invoice-switcher-card__brand-row {
   display: flex;
@@ -1847,6 +1854,85 @@ select.app-input--dark {
 }
 .vision-hub-click-focus .invoice-receipt-preview--drawer {
   max-width: min(18rem, 100%);
+}
+
+/* Business profile receipt card (grant popup + settings) */
+.business-receipt-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  background: #ffffff;
+  color: #0a0a0a;
+  overflow: hidden;
+}
+.business-receipt-card__header,
+.business-receipt-card .invoice-switcher-card__header {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 0;
+}
+.business-receipt-card__body {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.business-receipt-card--modal {
+  width: 100%;
+  max-width: var(--invoice-receipt-width, min(320px, 78vw, 384px));
+}
+.business-receipt-card--settings {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+.business-receipt-card__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.business-receipt-card__line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.65rem;
+  font-size: 0.78rem;
+}
+.business-receipt-card__line--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+}
+.business-receipt-card__label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+.business-receipt-card__value {
+  font-weight: 700;
+  color: #0a0a0a;
+  text-align: right;
+  min-width: 0;
+  word-break: break-word;
+}
+.business-receipt-card__line--stacked .business-receipt-card__value {
+  text-align: left;
+  width: 100%;
+}
+.business-receipt-card__empty {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.42;
+  text-align: center;
+  padding: 0.25rem 0;
+}
+.invoice-receipt-preview--tile,
+.invoice-receipt-preview--list,
+.invoice-receipt-preview--drawer {
+  border-radius: 0.85rem;
 }
 
 

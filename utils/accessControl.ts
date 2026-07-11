@@ -186,6 +186,62 @@ export const updateUserBusinessInfo = async (
   return { ok: true };
 };
 
+export interface AccessBusinessInfo {
+  businessName: string;
+  businessPhone: string;
+  businessAddress: string;
+}
+
+export const fetchAccessCodeBusinessInfo = async (
+  code: string
+): Promise<{ ok: true; info: AccessBusinessInfo } | { ok: false; error: string }> => {
+  if (!isAccessControlEnabled()) {
+    return { ok: false, error: 'Access control is not configured.' };
+  }
+
+  const { data, error } = await supabase.rpc('get_access_business_info', {
+    p_code: code.trim().toUpperCase(),
+  });
+
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) {
+    return { ok: false, error: (data?.error as string) ?? 'Could not load business info.' };
+  }
+
+  return {
+    ok: true,
+    info: {
+      businessName: String(data.business_name ?? '').trim(),
+      businessPhone: String(data.business_phone ?? '').trim(),
+      businessAddress: String(data.business_address ?? '').trim(),
+    },
+  };
+};
+
+export const adminSetAccessBusinessInfo = async (
+  token: string,
+  code: string,
+  info: BusinessInfoInput
+): Promise<{ ok: true } | { ok: false; error: string }> => {
+  if (!isAccessControlEnabled()) {
+    return { ok: false, error: 'Access control is not configured.' };
+  }
+
+  const { data, error } = await supabase.rpc('admin_set_access_business_info', {
+    p_token: token,
+    p_code: code.trim().toUpperCase(),
+    p_business_name: info.businessName.trim(),
+    p_business_phone: info.businessPhone?.trim() || null,
+    p_business_address: info.businessAddress?.trim() || null,
+  });
+
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) {
+    return { ok: false, error: (data?.error as string) ?? 'Could not save business info.' };
+  }
+  return { ok: true };
+};
+
 export const submitAccessBusinessInfo = async (
   code: string,
   info: BusinessInfoInput

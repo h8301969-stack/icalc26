@@ -32,6 +32,9 @@ export const DEFAULT_SETTINGS = {
   standbyTimerSeconds: 0,
   profiles: [] as UserProfile[],
   activeProfileId: '',
+  businessName: '',
+  businessPhone: '',
+  businessAddress: '',
 };
 
 export type AppSettings = typeof DEFAULT_SETTINGS;
