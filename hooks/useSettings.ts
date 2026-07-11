@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS = {
   hapticIntensity: 'medium' as 'soft' | 'medium' | 'intense',
   themeMode: 'system' as ThemeMode,
   currency: 'GHS' as 'GHS' | 'USD' | 'EUR' | 'GBP' | 'JPY' | 'NGN',
+  ghsCalculatorStyle: 'ghs' as 'ghs' | 'cedis',
   customWallpapers: WALLPAPER_SLIDES,
   uiScale: 1,
   disableCalculatorCard: false as boolean,
@@ -242,9 +243,12 @@ export const useSettings = (options: UseSettingsOptions = {}) => {
   const formatCurrency = useCallback((valStr: string) => {
     const num = parseFloat(valStr) || 0;
     const val = num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (settings.currency === 'GHS' && settings.ghsCalculatorStyle === 'cedis') {
+      return `¢${val}`;
+    }
     const symbols: Record<string, string> = { GHS: `${val}ghs`, USD: `$${val}`, EUR: `€${val}`, GBP: `£${val}`, JPY: `¥${val}`, NGN: `₦${val}` };
     return symbols[settings.currency] || val;
-  }, [settings.currency]);
+  }, [settings.currency, settings.ghsCalculatorStyle]);
 
   const triggerHaptic = useCallback((multiplier: number = 1) => {
     if (!settings.hapticFeedback || !('vibrate' in navigator)) return;

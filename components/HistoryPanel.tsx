@@ -115,8 +115,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     () => getReceiptSpec(SWITCHER_DISPLAY_PAPER_WIDTH),
     []
   );
-  const receiptStageClass =
-    'invoice-receipt-stage invoice-receipt-stage--58mm invoice-switcher-shell-stage';
+  const receiptStageClass = 'invoice-receipt-stage invoice-receipt-stage--58mm';
 
   const printedNames = useMemo(
     () => new Set(printLogs.map((log) => log.invoiceName)),
@@ -1082,13 +1081,25 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     );
   };
 
-  const renderCardActionRail = (card: InvoiceCard, isActive: boolean) => {
-    if (!isActive) {
-      return <div className="invoice-switcher-action-rail invoice-switcher-action-rail--placeholder" aria-hidden="true" />;
-    }
+  const renderCardFooter = (card: InvoiceCard, isActive: boolean) => {
+    if (!isActive) return null;
+    const attendant = getAttendantForInvoice(card.name);
 
     return (
-      <div className="invoice-switcher-action-rail" style={{ touchAction: 'auto' }}>
+      <div className="invoice-switcher-card__footer invoice-switcher-card__footer--actions" style={{ touchAction: 'auto' }}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setAttendantPickerInvoice(card.name);
+            setAttendantPickerOpen(true);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="invoice-switcher-card__attendant-btn"
+          aria-label="Choose name for print"
+        >
+          @{attendant}
+        </button>
         <button
           type="button"
           onClick={(e) => {
@@ -1097,7 +1108,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           }}
           onPointerDown={(e) => e.stopPropagation()}
           disabled={isSharing || isPrinting || card.items.length === 0}
-          className="invoice-switcher-action-rail__btn invoice-switcher-action-rail__btn--share"
+          className="invoice-switcher-card__action-btn invoice-switcher-card__action-btn--share"
           aria-label="Share invoice as image"
           title="Share (WhatsApp, etc.)"
         >
@@ -1111,34 +1122,11 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           }}
           onPointerDown={(e) => e.stopPropagation()}
           disabled={isPrinting || isSharing || !canPrintCard(card)}
-          className="invoice-switcher-action-rail__btn invoice-switcher-action-rail__btn--print"
-          aria-label="Print invoice name, total, and served by"
-          title="Print invoice name, total, and served by"
+          className="invoice-switcher-card__action-btn invoice-switcher-card__action-btn--print"
+          aria-label="Print invoice"
+          title="Print invoice"
         >
           <Icons.Printer size={16} />
-        </button>
-      </div>
-    );
-  };
-
-  const renderCardFooter = (card: InvoiceCard, isActive: boolean) => {
-    if (!isActive) return null;
-    const attendant = getAttendantForInvoice(card.name);
-
-    return (
-      <div className="invoice-switcher-card__footer invoice-switcher-card__footer--attendant" style={{ touchAction: 'auto' }}>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setAttendantPickerInvoice(card.name);
-            setAttendantPickerOpen(true);
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          className="invoice-switcher-card__attendant-btn"
-          aria-label="Choose name for print"
-        >
-          {attendant}
         </button>
       </div>
     );
@@ -1152,7 +1140,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     return (
     <div className="invoice-switcher-shell flex flex-col h-full min-h-0">
       <div className="invoice-switcher-shell__row flex flex-1 min-h-0">
-        <div className="invoice-switcher-printable flex flex-col min-h-0 min-w-0">
+        <div className="invoice-switcher-printable invoice-switcher-printable--full flex flex-col min-h-0 min-w-0 flex-1">
           <header className="invoice-switcher-card__header relative">
             <div className="invoice-switcher-card__brand-row">
               <span className="invoice-switcher-card__brand" title={invoiceBrandLabel}>
@@ -1211,7 +1199,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           </div>
         </div>
 
-        {renderCardActionRail(card, isActive)}
       </div>
 
       {renderCardFooter(card, isActive)}

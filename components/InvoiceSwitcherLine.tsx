@@ -1,5 +1,6 @@
 import React from 'react';
 import { CartLineItem } from '../types';
+import { formatSwitcherLineSum, formatSwitcherTotal } from '../utils/switcherCurrency';
 
 export const formatSwitcherLineAmount = (value: number): string => {
   if (!Number.isFinite(value)) return '0';
@@ -33,8 +34,7 @@ export const InvoiceSwitcherProductLine: React.FC<InvoiceSwitcherProductLineProp
         {name}
       </span>
       <span className="invoice-switcher-card__line-sum tabular-nums">
-        {currency}
-        {lineTotal}
+        {formatSwitcherLineSum(lineTotal, currency)}
       </span>
     </div>
   );
@@ -51,8 +51,7 @@ export const InvoiceSwitcherTotalRow: React.FC<InvoiceSwitcherTotalRowProps> = (
 }) => (
   <div className="invoice-switcher-card__total">
     <span className="invoice-switcher-card__total-value tabular-nums">
-      {currency}
-      {total}
+      {formatSwitcherTotal(total, currency)}
     </span>
   </div>
 );
