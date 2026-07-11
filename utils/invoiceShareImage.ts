@@ -15,7 +15,16 @@ export interface InvoiceSharePayload {
 }
 
 const CANVAS_WIDTH = 720;
-const HEADER_HEIGHT = 148;
+const HEADER_HEIGHT = 184;
+const SHARE_FONTS = {
+  brand: 16,
+  title: 36,
+  item: 20,
+  totalLabel: 16,
+  totalValue: 52,
+  servedBy: 18,
+} as const;
+const SHARE_ITEM_LINE_HEIGHT = 40;
 
 const formatShareTotal = (total: string, currency: string): string => {
   const num = parseFloat(total) || 0;
@@ -49,11 +58,11 @@ export const renderInvoiceShareImage = (
   const isFull = shareSettings.layoutMode === 'full';
   const attendant = attendantName?.trim() ?? '';
 
-  let height = HEADER_HEIGHT + 24;
-  if (isFull && items.length > 0) height += items.length * 32;
-  height += 88;
-  if (attendant) height += 36;
-  height = Math.max(height, 240);
+  let height = HEADER_HEIGHT + 32;
+  if (isFull && items.length > 0) height += items.length * SHARE_ITEM_LINE_HEIGHT;
+  height += 104;
+  if (attendant) height += 44;
+  height = Math.max(height, 280);
 
   const canvas = document.createElement('canvas');
   canvas.width = CANVAS_WIDTH;
@@ -75,22 +84,22 @@ export const renderInvoiceShareImage = (
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillStyle = RECEIPT_THEME.headerText;
-  ctx.font = '700 12px Montserrat, Candara';
-  ctx.fillText('ICALC', CANVAS_WIDTH / 2, 28);
-  ctx.font = '700 28px Montserrat, Candara';
-  ctx.fillText(invoiceName, CANVAS_WIDTH / 2, 52);
+  ctx.font = `700 ${SHARE_FONTS.brand}px Montserrat, Candara`;
+  ctx.fillText('ICALC', CANVAS_WIDTH / 2, 34);
+  ctx.font = `700 ${SHARE_FONTS.title}px Montserrat, Candara`;
+  ctx.fillText(invoiceName, CANVAS_WIDTH / 2, 64);
 
-  let y = HEADER_HEIGHT + 28;
+  let y = HEADER_HEIGHT + 32;
   ctx.fillStyle = RECEIPT_THEME.bodyText;
 
   if (isFull && items.length > 0) {
     ctx.textAlign = 'left';
-    ctx.font = '500 15px Montserrat, Candara';
+    ctx.font = `500 ${SHARE_FONTS.item}px Montserrat, Candara`;
     items.forEach((item, index) => {
       ctx.fillText(formatItemLine(item, index, currency), 48, y);
-      y += 32;
+      y += SHARE_ITEM_LINE_HEIGHT;
     });
-    y += 8;
+    y += 10;
   }
 
   ctx.strokeStyle = RECEIPT_THEME.rule;
@@ -98,28 +107,28 @@ export const renderInvoiceShareImage = (
   ctx.moveTo(48, y);
   ctx.lineTo(CANVAS_WIDTH - 48, y);
   ctx.stroke();
-  y += 20;
+  y += 24;
 
   ctx.textAlign = 'left';
-  ctx.font = '700 12px Montserrat, Candara';
+  ctx.font = `700 ${SHARE_FONTS.totalLabel}px Montserrat, Candara`;
   ctx.fillStyle = RECEIPT_THEME.muted;
   ctx.fillText('TOTAL', 48, y);
 
   ctx.textAlign = 'right';
-  ctx.font = '800 40px Montserrat, Candara';
+  ctx.font = `800 ${SHARE_FONTS.totalValue}px Montserrat, Candara`;
   ctx.fillStyle = RECEIPT_THEME.totalGreen;
-  ctx.fillText(formatShareTotal(total, currency), CANVAS_WIDTH - 48, y - 6);
-  y += 72;
+  ctx.fillText(formatShareTotal(total, currency), CANVAS_WIDTH - 48, y - 8);
+  y += 84;
 
   if (attendant) {
     const prefix = 'served by ';
     const name = attendant;
     ctx.textAlign = 'left';
-    ctx.font = 'italic 500 14px Montserrat, Candara';
+    ctx.font = `italic 500 ${SHARE_FONTS.servedBy}px Montserrat, Candara`;
     ctx.fillStyle = RECEIPT_THEME.muted;
     const prefixWidth = ctx.measureText(prefix).width;
     ctx.fillText(prefix, (CANVAS_WIDTH - prefixWidth - ctx.measureText(name).width) / 2, y);
-    ctx.font = '700 14px Montserrat, Candara';
+    ctx.font = `700 ${SHARE_FONTS.servedBy}px Montserrat, Candara`;
     ctx.fillStyle = RECEIPT_THEME.bodyText;
     ctx.fillText(name, (CANVAS_WIDTH - prefixWidth - ctx.measureText(name).width) / 2 + prefixWidth, y);
   }

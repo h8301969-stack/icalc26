@@ -104,22 +104,34 @@ export async function drawThermalReceiptCanvas(
     // logo optional
   }
 
+  const brandFontPx = Math.max(12, Math.round(width * 0.036));
+  const titleFontPx = Math.max(20, Math.round(width * 0.058));
+  const attendantFontPx = Math.max(12, Math.round(width * 0.031));
+  const itemFontPx = Math.max(14, Math.round(width * 0.039));
+  const totalLabelFontPx = Math.max(12, Math.round(width * 0.031));
+  const totalValueFontPx = Math.max(20, Math.round(width * 0.052));
+  const thanksFontPx = Math.max(12, Math.round(width * 0.031));
+
   ctx.fillStyle = RECEIPT_THEME.headerText;
   ctx.textAlign = 'center';
-  ctx.font = '700 11px Montserrat, Candara';
+  ctx.font = `700 ${brandFontPx}px Montserrat, Candara`;
   ctx.fillText(brandLabel.toUpperCase(), width / 2, headerOffset);
 
-  ctx.font = '700 18px Montserrat, Candara';
+  ctx.font = `700 ${titleFontPx}px Montserrat, Candara`;
   ctx.fillText(
     truncateReceiptText(invoiceName.toUpperCase(), spec.maxInvoiceTitleChars),
     width / 2,
-    headerOffset + 14
+    headerOffset + Math.round(titleFontPx * 0.78)
   );
 
   if (attendantName) {
-    ctx.font = '500 10px Montserrat, Candara';
+    ctx.font = `500 ${attendantFontPx}px Montserrat, Candara`;
     ctx.fillStyle = 'rgba(255,255,255,0.88)';
-    ctx.fillText(formatServedByLine(attendantName, spec), width / 2, headerOffset + 36);
+    ctx.fillText(
+      formatServedByLine(attendantName, spec),
+      width / 2,
+      headerOffset + Math.round(titleFontPx * 1.85)
+    );
   }
 
   const bodyStart = headerHeight + 8;
@@ -144,7 +156,7 @@ export async function drawThermalReceiptCanvas(
 
       ctx.fillStyle = RECEIPT_THEME.bodyText;
       ctx.textAlign = 'left';
-      ctx.font = '500 12px Montserrat, Candara';
+      ctx.font = `500 ${itemFontPx}px Montserrat, Candara`;
       ctx.fillText(displayName, 8, currentY);
 
       ctx.textAlign = 'right';
@@ -159,20 +171,20 @@ export async function drawThermalReceiptCanvas(
   ctx.lineTo(width - 8, currentY + 4);
   ctx.stroke();
 
-  currentY += 14;
+  currentY += Math.round(totalLabelFontPx * 1.4);
   ctx.textAlign = 'left';
-  ctx.font = '700 10px Montserrat, Candara';
+  ctx.font = `700 ${totalLabelFontPx}px Montserrat, Candara`;
   ctx.fillStyle = RECEIPT_THEME.muted;
   ctx.fillText('TOTAL', 8, currentY);
 
   ctx.textAlign = 'right';
-  ctx.font = '800 16px Montserrat, Candara';
+  ctx.font = `800 ${totalValueFontPx}px Montserrat, Candara`;
   ctx.fillStyle = RECEIPT_THEME.totalGreen;
   ctx.fillText(`${currency}${runningTotal.toFixed(2)}`, width - 8, currentY - 2);
 
-  currentY += 22;
+  currentY += Math.round(totalValueFontPx * 1.35);
   ctx.textAlign = 'center';
-  ctx.font = '500 10px Montserrat, Candara';
+  ctx.font = `500 ${thanksFontPx}px Montserrat, Candara`;
   ctx.fillStyle = RECEIPT_THEME.muted;
   ctx.fillText('Thank you for your purchase', width / 2, currentY);
 }
