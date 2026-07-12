@@ -198,6 +198,10 @@ export const useAuth = () => {
     setAdminSessionToken(null);
   }, []);
 
+  const hideAdminPortal = useCallback(() => {
+    setIsAdminPortal(false);
+  }, []);
+
   const logout = useCallback(() => {
     if (isCloudBackendEnabled() || usesSupabaseAuth()) void logoutSupabase();
     logoutAccount();
@@ -332,5 +336,6 @@ export const useAuth = () => {
     verifyPassword,
     finalizeApprovedAccess,
     closeAdminPortal,
+    hideAdminPortal,
   };
 };

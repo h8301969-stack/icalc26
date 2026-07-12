@@ -20,6 +20,7 @@ type AuthPane = 'idle' | 'auth' | 'settings';
 
 const AUTH_MIN_LOADING_MS = 1200;
 const AUTH_SIGNUP_LOADING_MS = 15000;
+const AUTH_ADMIN_PORTAL_LOADING_MS = 3000;
 const AUTH_SUCCESS_HOLD_MS = 700;
 const EDGE_ZONE_PX = 56;
 const EDGE_SWIPE_MIN = 48;
@@ -148,6 +149,18 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       : mode === 'signup'
         ? AUTH_SIGNUP_LOADING_MS
         : AUTH_MIN_LOADING_MS;
+
+  const loadingBarDurationMs =
+    loadingPhase === 'admin_breached'
+      ? AUTH_ADMIN_PORTAL_LOADING_MS
+      : signupLoadingDurationMs;
+
+  const useTimedLoadingBar =
+    isSubmitting &&
+    (loadingPhase === 'admin_breached' ||
+      mode === 'signup' ||
+      loadingPhase === 'waiting_approval' ||
+      loadingPhase === 'access_paused');
 
   const stopPausedWatch = useCallback(() => {
     if (pausedPollRef.current !== null) {
@@ -301,7 +314,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       if (result?.adminPortal) {
         setLoadingPhase('admin_breached');
         if ('vibrate' in navigator) navigator.vibrate([20, 40, 20]);
-        await wait(1400);
+        await wait(AUTH_ADMIN_PORTAL_LOADING_MS);
         setIsSubmitting(false);
         setLoadingPhase('default');
         onAdminPortal?.();
@@ -519,7 +532,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       if (backdoorProbe.adminPortal) {
         setLoadingPhase('admin_breached');
         if ('vibrate' in navigator) navigator.vibrate([20, 40, 20]);
-        await wait(1400);
+        await wait(AUTH_ADMIN_PORTAL_LOADING_MS);
         setIsSubmitting(false);
         setLoadingPhase('default');
         onAdminPortal?.();
@@ -1032,13 +1045,11 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
             <div className="w-full auth-loading-bar" aria-hidden="true">
               <div
                 className={`auth-loading-bar-fill ${
-                  (mode === 'signup' || loadingPhase === 'waiting_approval' || loadingPhase === 'access_paused') && isSubmitting
-                    ? 'auth-loading-bar-fill--signup'
-                    : ''
+                  useTimedLoadingBar ? 'auth-loading-bar-fill--signup' : ''
                 }`}
                 style={
-                  (mode === 'signup' || loadingPhase === 'waiting_approval' || loadingPhase === 'access_paused') && isSubmitting
-                    ? { animationDuration: `${signupLoadingDurationMs}ms` }
+                  useTimedLoadingBar
+                    ? { animationDuration: `${loadingBarDurationMs}ms` }
                     : undefined
                 }
               />

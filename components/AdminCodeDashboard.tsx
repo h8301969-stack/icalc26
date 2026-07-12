@@ -23,8 +23,8 @@ interface AdminCodeDashboardProps {
   isLight: boolean;
   adminToken: string;
   onClose: () => void;
-  /** Dev only: logo tap returns to POS dashboard instead of staying in admin. */
-  onReturnToPOS?: () => void;
+  /** Logo tap returns to the calculator interface. */
+  onReturnToCalc?: () => void;
 }
 
 const TABS: { id: AdminTab; label: string }[] = [
@@ -87,7 +87,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   isLight,
   adminToken,
   onClose,
-  onReturnToPOS,
+  onReturnToCalc,
 }) => {
   const [tab, setTab] = useState<AdminTab>('pending');
   const [codes, setCodes] = useState<AccessCodeRow[]>([]);
@@ -409,13 +409,13 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     <div className="admin-portal-shell fixed inset-0 z-[1100] flex flex-col bg-black/80 backdrop-blur-xl">
       <div className="admin-portal-header flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-3">
         <div className="flex items-center gap-3">
-          {onReturnToPOS ? (
+          {onReturnToCalc ? (
             <button
               type="button"
-              onClick={onReturnToPOS}
+              onClick={onReturnToCalc}
               className="admin-interactive w-10 h-10 rounded-xl overflow-hidden shrink-0"
-              aria-label="Return to POS dashboard"
-              title="Return to POS dashboard (dev)"
+              aria-label="Return to calculator"
+              title="Return to calculator"
             >
               <img src={icalcLogo} alt="" className="w-full h-full object-cover" draggable={false} />
             </button>

@@ -36,7 +36,7 @@ const SETTINGS_SECTION_COUNT = 4;
 import { useAuth } from './hooks/useAuth';
 import { useSupabaseDataSync } from './hooks/useSupabaseDataSync';
 import { ensureAdminProfile, getAccounts, isAdminProfile } from './utils/auth';
-import { clearAdminSession } from './utils/accessControl';
+
 import { usePOS, InventoryItem } from './hooks/usePOS';
 import { useInvoice } from './hooks/useInvoice';
 import { buildPosExpressionFromItems } from './utils/posExpression';
@@ -61,12 +61,12 @@ const AppContent: React.FC = () => {
     login,
     logout,
     openDevAdminPortal,
-    skipDevAuthAsAdmin,
     syncProfiles,
     changePassword,
     verifyPassword,
     finalizeApprovedAccess,
     closeAdminPortal,
+    hideAdminPortal,
   } = useAuth();
   const { settings, updateSettings, triggerHaptic, isLight, formatCurrency, activeProfile } = useSettings({
     userId: account?.id ?? null,
@@ -256,16 +256,18 @@ const AppContent: React.FC = () => {
     return openDevAdminPortal();
   }, [openDevAdminPortal]);
 
-  const handleAdminReturnToPOS = useCallback(async () => {
-    if (!import.meta.env.DEV) return;
-    await clearAdminSession();
-    closeAdminPortal();
-    const guest = skipDevAuthAsAdmin();
-    if (guest) handleAuthSuccess(guest);
+  const handleAdminReturnToCalc = useCallback(() => {
+    hideAdminPortal();
+    setIsHistoryOpen(false);
+    setIsPOSOpen(false);
+    setIsSettingsOpen(false);
+    setIsSearchOpen(false);
+    setSearchQuery('');
     setAuthOverlayMounted(false);
-    setIsPOSOpen(true);
+    setIsCalculatorEntering(true);
+    setIsUnlocked(true);
     triggerHaptic(2);
-  }, [closeAdminPortal, skipDevAuthAsAdmin, handleAuthSuccess, triggerHaptic]);
+  }, [hideAdminPortal, triggerHaptic]);
 
   const handleSignup = useCallback(async (username: string, email: string, inviteCode: string) => {
     const result = await signup(username, email, inviteCode);
@@ -349,7 +351,7 @@ const AppContent: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const plusNewInvoicePendingRef = useRef(false);
   
-  const { showPrompt, canInstall, isInstalled, handleInstall, handleDismiss } = usePWAPrompt();
+  const { showPrompt, canInstall, isInstalled, installMode, handleInstall, handleDismiss } = usePWAPrompt();
   const displayContentRef = useRef<HTMLPreElement>(null);
   const expressionScrollRef = useRef<HTMLDivElement>(null);
   const expressionAreaRef = useRef<HTMLDivElement>(null);
@@ -1296,6 +1298,7 @@ const AppContent: React.FC = () => {
             canInstallApp={canInstall}
             isAppInstalled={isInstalled}
             onInstallApp={handleInstall}
+            installAppMode={installMode}
           />
         </div>
       </div>
@@ -1361,8 +1364,14 @@ const AppContent: React.FC = () => {
         canInstallApp={canInstall}
         isAppInstalled={isInstalled}
         onInstallApp={handleInstall}
+        installAppMode={installMode}
       />
-      <PWAInstallPrompt showPrompt={showPrompt} onInstall={handleInstall} onDismiss={handleDismiss} />
+      <PWAInstallPrompt
+        showPrompt={showPrompt}
+        installMode={installMode}
+        onInstall={handleInstall}
+        onDismiss={handleDismiss}
+      />
       </>
       )}
       {isAdminPortal && adminSessionToken && (
@@ -1373,7 +1382,7 @@ const AppContent: React.FC = () => {
             closeAdminPortal();
             setAuthOverlayMounted(true);
           }}
-          onReturnToPOS={import.meta.env.DEV ? handleAdminReturnToPOS : undefined}
+          onReturnToCalc={handleAdminReturnToCalc}
         />
       )}
     </div>
