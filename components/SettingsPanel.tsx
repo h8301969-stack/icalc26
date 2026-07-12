@@ -60,6 +60,7 @@ interface SettingsPanelProps {
   canInstallApp?: boolean;
   isAppInstalled?: boolean;
   onInstallApp?: () => void;
+  installAppMode?: 'chromium' | 'ios-safari' | 'ios-other' | null;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
@@ -82,7 +83,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   canInstallApp = false,
   isAppInstalled = false,
   onInstallApp,
+  installAppMode = null,
 }) => {
+  const isIOSInstall = installAppMode === 'ios-safari' || installAppMode === 'ios-other';
   const isLight = isLightProp ?? settings.themeMode === 'light';
 
   // Bluetooth states
@@ -770,9 +773,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             {canInstallApp && !isAppInstalled && onInstallApp && (
               <div className="pt-2 border-t border-white/10">
                 <div className="flex flex-col gap-1 mb-3">
-                  <span className="text-sm font-black">Install app</span>
+                  <span className="text-sm font-black">
+                    {isIOSInstall ? 'Add to Home Screen' : 'Install app'}
+                  </span>
                   <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                    Add iCalc to your home screen for offline access
+                    {isIOSInstall
+                      ? installAppMode === 'ios-other'
+                        ? 'Open in Safari, then Share → Add to Home Screen'
+                        : 'Tap Share in Safari, then Add to Home Screen'
+                      : 'Add iCalc to your home screen for offline access'}
                   </span>
                 </div>
                 <button
@@ -782,8 +791,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                   }`}
                 >
-                  <Icons.Download size={16} />
-                  Install app
+                  {isIOSInstall ? <Icons.Share size={16} /> : <Icons.Download size={16} />}
+                  {isIOSInstall ? 'How to add' : 'Install app'}
                 </button>
               </div>
             )}

@@ -1290,18 +1290,12 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   box-shadow: 0 0 14px rgba(34, 197, 94, 0.45);
 }
 
-/* Subtext: lowercase body, bold capital first letter ("low starting with block") */
+/* Subtext: lowercase body */
 .app-subtext,
 .pos-subtext,
 .low-block {
   text-transform: lowercase;
   letter-spacing: 0.04em;
-}
-.app-subtext::first-letter,
-.pos-subtext::first-letter,
-.low-block::first-letter {
-  text-transform: uppercase;
-  font-weight: 900;
 }
 
 /* App-wide hint / helper subtext — uniform 10px mobile, 11px desktop (matches admin portal footer) */

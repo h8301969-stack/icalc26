@@ -1,24 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
+import {
+  getIOSInstallMode,
+  isPwaInstalled,
+  type PwaInstallMode,
+} from '../utils/pwaInstall';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-export const isPwaInstalled = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  const nav = window.navigator as Navigator & { standalone?: boolean };
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    window.matchMedia('(display-mode: fullscreen)').matches ||
-    nav.standalone === true
-  );
-};
+export { isPwaInstalled } from '../utils/pwaInstall';
 
 export const usePWAPrompt = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [isInstalled, setIsInstalled] = useState(() => isPwaInstalled());
+  const [iosInstallMode, setIosInstallMode] = useState<ReturnType<typeof getIOSInstallMode>>(() =>
+    getIOSInstallMode()
+  );
 
   const syncInstalled = useCallback(() => {
     const installed = isPwaInstalled();
@@ -26,6 +26,9 @@ export const usePWAPrompt = () => {
     if (installed) {
       setShowPrompt(false);
       setDeferredPrompt(null);
+      setIosInstallMode(null);
+    } else {
+      setIosInstallMode(getIOSInstallMode());
     }
     return installed;
   }, []);
@@ -56,19 +59,30 @@ export const usePWAPrompt = () => {
     };
   }, [syncInstalled]);
 
-  const handleInstall = async () => {
-    if (!deferredPrompt || isInstalled) return;
+  const installMode: PwaInstallMode | null = deferredPrompt
+    ? 'chromium'
+    : iosInstallMode;
 
-    try {
-      await deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome !== 'accepted') {
-        setShowPrompt(false);
+  const handleInstall = async () => {
+    if (isInstalled) return;
+
+    if (deferredPrompt) {
+      try {
+        await deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome !== 'accepted') {
+          setShowPrompt(false);
+        }
+        setDeferredPrompt(null);
+        syncInstalled();
+      } catch (err) {
+        console.error('Error handling install prompt:', err);
       }
-      setDeferredPrompt(null);
-      syncInstalled();
-    } catch (err) {
-      console.error('Error handling install prompt:', err);
+      return;
+    }
+
+    if (iosInstallMode) {
+      setShowPrompt(true);
     }
   };
 
@@ -76,12 +90,13 @@ export const usePWAPrompt = () => {
     setShowPrompt(false);
   };
 
-  const canInstall = deferredPrompt !== null && !isInstalled;
+  const canInstall = !isInstalled && installMode !== null;
 
   return {
     showPrompt: showPrompt && !isInstalled,
     canInstall,
     isInstalled,
+    installMode,
     handleInstall,
     handleDismiss,
   };

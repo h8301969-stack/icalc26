@@ -69,6 +69,7 @@ interface POSDashboardProps {
   canInstallApp?: boolean;
   isAppInstalled?: boolean;
   onInstallApp?: () => void;
+  installAppMode?: 'chromium' | 'ios-safari' | 'ios-other' | null;
 }
 
 type DashboardLogFilter = 'all' | 'restock' | 'sale' | 'invoice' | 'unidentified' | 'updates' | '24h' | '48h' | '7d';
@@ -223,6 +224,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   canInstallApp = false,
   isAppInstalled = false,
   onInstallApp,
+  installAppMode = null,
 }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -2983,6 +2985,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         canInstallApp={canInstallApp}
         isAppInstalled={isAppInstalled}
         onInstallApp={onInstallApp}
+        installAppMode={installAppMode}
       />
 
     </div>
