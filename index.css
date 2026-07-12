@@ -1953,79 +1953,80 @@ select.app-input--dark {
 .business-receipt-card--settings {
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
-.business-receipt-card__lines {
+.business-receipt-identity {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
-}
-.business-receipt-card__line {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.65rem;
-  font-size: 0.78rem;
-}
-.business-receipt-card__line--stacked {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.2rem;
-}
-.business-receipt-card__label {
-  font-size: 0.58rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  opacity: 0.45;
-  flex-shrink: 0;
-}
-.business-receipt-card__value {
-  font-weight: 700;
-  color: #0a0a0a;
-  text-align: right;
-  min-width: 0;
-  word-break: break-word;
-}
-.business-receipt-card__line--stacked .business-receipt-card__value {
-  text-align: left;
-  width: 100%;
-}
-.business-receipt-card__empty {
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.42;
+  align-items: center;
   text-align: center;
-  padding: 0.25rem 0;
-}
-.business-receipt-card--editable .business-receipt-card__title-input {
+  gap: 0.18rem;
   width: 100%;
-  margin-top: 0.15rem;
-  padding: 0.35rem 0;
+  margin-top: 0.1rem;
+}
+.business-receipt-identity__name {
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  color: #fff;
+  width: 100%;
+  margin: 0;
+}
+.business-receipt-identity__location {
+  font-family: var(--font-num);
+  font-weight: 300;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.82);
+  width: 100%;
+  margin: 0;
+}
+.business-receipt-identity__phone {
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.95);
+  width: 100%;
+  margin: 0;
+}
+.business-receipt-identity--editable {
+  gap: 0.35rem;
+  padding-bottom: 0.15rem;
+}
+.business-receipt-identity__name-input,
+.business-receipt-identity__location-input,
+.business-receipt-identity__phone-input {
+  width: 100%;
   border: none;
   border-bottom: 1px solid rgba(255, 255, 255, 0.22);
   background: transparent;
   color: #fff;
-  font-size: 1rem;
-  font-weight: 900;
-  letter-spacing: -0.03em;
+  text-align: center;
   outline: none;
 }
-.business-receipt-card--editable .business-receipt-card__title-input::placeholder {
+.business-receipt-identity__name-input {
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  padding: 0.3rem 0;
+}
+.business-receipt-identity__location-input {
+  font-family: var(--font-num);
+  font-weight: 300;
+  font-size: 0.72rem;
+  padding: 0.25rem 0;
+}
+.business-receipt-identity__phone-input {
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.25rem 0;
+}
+.business-receipt-identity__name-input::placeholder,
+.business-receipt-identity__location-input::placeholder,
+.business-receipt-identity__phone-input::placeholder {
   color: rgba(255, 255, 255, 0.35);
 }
-.business-receipt-card__field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.business-receipt-card__field--stacked {
-  margin-top: 0.15rem;
-}
-.business-receipt-card__input {
-  font-size: 0.72rem !important;
-  padding-top: 0.5rem !important;
-  padding-bottom: 0.5rem !important;
+.invoice-switcher-card__header .invoice-switcher-card__title {
+  margin-top: 0.35rem;
 }
 .invoice-receipt-preview--tile,
 .invoice-receipt-preview--list,

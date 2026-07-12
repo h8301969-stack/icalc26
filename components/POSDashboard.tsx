@@ -1967,6 +1967,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             onCloseAnimationEnd={() => setIsCloseAnimating(false)}
             drawerMode={settings.visionHubDrawerMode ?? 'drag'}
             businessName={typeof settings.businessName === 'string' ? settings.businessName : ''}
+            businessPhone={typeof settings.businessPhone === 'string' ? settings.businessPhone : ''}
+            businessAddress={typeof settings.businessAddress === 'string' ? settings.businessAddress : ''}
           />
         )}
 

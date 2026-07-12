@@ -14,6 +14,7 @@ import { storage } from '../hooks/storage';
 import { resolveWallpaperImage } from '../utils/wallpapers';
 import InvoiceAttendantPicker from './InvoiceAttendantPicker';
 import InvoiceReceiptPreview from './InvoiceReceiptPreview';
+import BusinessReceiptIdentity from './BusinessReceiptIdentity';
 import PrinterConnectModal from './PrinterConnectModal';
 import { shareInvoiceAsImage, type ShareReceiptSettings } from '../utils/invoiceShareImage';
 
@@ -40,6 +41,8 @@ interface HistoryPanelProps {
   wallpapers?: { image: string }[];
   shareReceiptSettings?: ShareReceiptSettings;
   businessName?: string;
+  businessPhone?: string;
+  businessAddress?: string;
 }
 
 const SWITCHER_LAYOUT_OPTIONS = [
@@ -95,8 +98,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   wallpapers = [],
   shareReceiptSettings = { layoutMode: 'summary' },
   businessName = '',
+  businessPhone = '',
+  businessAddress = '',
 }) => {
-  const invoiceBrandLabel = businessName.trim() || 'iCalc POS';
+  const invoiceBrandLabel = 'iCalc POS';
   const [attendantNames, setAttendantNames] = useState<Record<string, string>>(() =>
     storage.get(ATTENDANT_NAMES_KEY, {})
   );
@@ -886,6 +891,9 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         {isSelected && !focusZoomed ? (
           <InvoiceReceiptPreview
             brandLabel={invoiceBrandLabel}
+            businessName={businessName}
+            businessPhone={businessPhone}
+            businessAddress={businessAddress}
             title={card.name}
             status={getReceiptStatus(card)}
             items={card.items}
@@ -963,6 +971,9 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         {isSelected ? (
           <InvoiceReceiptPreview
             brandLabel={invoiceBrandLabel}
+            businessName={businessName}
+            businessPhone={businessPhone}
+            businessAddress={businessAddress}
             title={card.name}
             status={getReceiptStatus(card)}
             items={card.items}
@@ -1150,6 +1161,12 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 {statusLabel}
               </span>
             </div>
+
+            <BusinessReceiptIdentity
+              businessName={businessName}
+              businessPhone={businessPhone}
+              businessAddress={businessAddress}
+            />
 
             {card.isCurrent && isActive ? (
               <input

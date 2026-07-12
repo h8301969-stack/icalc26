@@ -1325,6 +1325,8 @@ const AppContent: React.FC = () => {
           layoutMode: settings.receiptLayoutMode ?? 'summary',
         }}
         businessName={settings.businessName ?? ''}
+        businessPhone={settings.businessPhone ?? ''}
+        businessAddress={settings.businessAddress ?? ''}
       />
       <POSDashboard
         history={history}

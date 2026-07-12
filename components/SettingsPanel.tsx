@@ -10,7 +10,7 @@ import { CartLineItem, NewProfileInput, UserProfile } from '../types';
 import ProfileAvatar from './ProfileAvatar';
 import ProfilePickerModal from './ProfilePickerModal';
 import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
-import { ADMIN_PROFILE_NAME, ensureAdminProfile } from '../utils/auth';
+import { ADMIN_PROFILE_NAME, ensureAdminProfile, isAdminProfile } from '../utils/auth';
 import { EXPRESSION_VIEW_OPTIONS } from '../utils/expressionDisplay';
 import { RECEIPT_LAYOUT_OPTIONS } from '../utils/receiptLayout';
 import FluidSegmentControl from './FluidSegmentControl';
@@ -260,6 +260,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const profiles = settings.profiles ?? [];
   const activeProfile =
     profiles.find((p) => p.id === settings.activeProfileId) ?? profiles[0] ?? null;
+  const canEditBusinessInfo = isAdminProfile(activeProfile);
 
   const handleSelectProfile = (profileId: string) => {
     _updateSettings({ activeProfileId: profileId });
@@ -503,14 +504,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               businessPhone={settings.businessPhone}
               businessAddress={settings.businessAddress}
               className="w-full"
-              editable={!!accountUsername}
+              editable={canEditBusinessInfo}
               isLight={isLight}
               onBusinessNameChange={(value) => handleBusinessFieldChange({ businessName: value })}
               onBusinessPhoneChange={(value) => handleBusinessFieldChange({ businessPhone: value })}
               onBusinessAddressChange={(value) => handleBusinessFieldChange({ businessAddress: value })}
             />
           )}
-          {accountUsername && businessDirty && (
+          {canEditBusinessInfo && businessDirty && (
             <div className="px-6 pb-3">
               <button
                 type="button"

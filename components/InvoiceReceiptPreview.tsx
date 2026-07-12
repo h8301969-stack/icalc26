@@ -1,6 +1,7 @@
 import React from 'react';
 import { CartLineItem } from '../types';
 import { InvoiceSwitcherProductLine, InvoiceSwitcherTotalRow } from './InvoiceSwitcherLine';
+import BusinessReceiptIdentity from './BusinessReceiptIdentity';
 
 export type InvoiceReceiptStatus = 'Current' | 'Paid' | 'Open' | 'Saved';
 
@@ -15,6 +16,9 @@ export interface InvoiceReceiptPreviewProps {
   maxItemLines?: number;
   meta?: string;
   className?: string;
+  businessName?: string;
+  businessPhone?: string;
+  businessAddress?: string;
 }
 
 const InvoiceReceiptPreview: React.FC<InvoiceReceiptPreviewProps> = ({
@@ -28,6 +32,9 @@ const InvoiceReceiptPreview: React.FC<InvoiceReceiptPreviewProps> = ({
   maxItemLines,
   meta,
   className = '',
+  businessName = '',
+  businessPhone = '',
+  businessAddress = '',
 }) => {
   const isPaid = status === 'Paid';
   const visibleItems = maxItemLines != null ? items.slice(0, maxItemLines) : items;
@@ -49,6 +56,11 @@ const InvoiceReceiptPreview: React.FC<InvoiceReceiptPreviewProps> = ({
             {status}
           </span>
         </div>
+        <BusinessReceiptIdentity
+          businessName={businessName}
+          businessPhone={businessPhone}
+          businessAddress={businessAddress}
+        />
         <div className="invoice-switcher-card__title invoice-receipt-line truncate" title={title}>
           {title}
         </div>

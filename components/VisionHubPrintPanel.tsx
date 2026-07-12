@@ -47,6 +47,8 @@ interface VisionHubPrintPanelProps {
   onSettingsAnimationEnd: () => void;
   onCloseAnimationEnd: () => void;
   businessName?: string;
+  businessPhone?: string;
+  businessAddress?: string;
 }
 
 const OPEN_THRESHOLD = 68;
@@ -82,8 +84,10 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
   onSettingsAnimationEnd,
   onCloseAnimationEnd,
   businessName = '',
+  businessPhone = '',
+  businessAddress = '',
 }) => {
-  const invoiceBrandLabel = businessName.trim() || 'iCalc POS';
+  const invoiceBrandLabel = 'iCalc POS';
   const [expanded, setExpanded] = useState(false);
   const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -438,6 +442,9 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
           <div className="vision-hub-click-focus" onClick={(e) => e.stopPropagation()}>
             <InvoiceReceiptPreview
               brandLabel={invoiceBrandLabel}
+              businessName={businessName}
+              businessPhone={businessPhone}
+              businessAddress={businessAddress}
               title={focusedInvoice.name}
               status={
                 focusedInvoice.isCurrent ? 'Current' : focusedInvoice.isPaid ? 'Paid' : 'Open'
@@ -595,6 +602,9 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
       mode === 'focused' ? (
         <InvoiceReceiptPreview
           brandLabel={invoiceBrandLabel}
+          businessName={businessName}
+          businessPhone={businessPhone}
+          businessAddress={businessAddress}
           title={invoice.name}
           status={invoice.isCurrent ? 'Current' : invoice.isPaid ? 'Paid' : 'Open'}
           items={invoice.items}
