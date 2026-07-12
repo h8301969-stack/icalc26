@@ -1630,12 +1630,26 @@ select.app-input--dark {
   position: relative;
   z-index: 50;
 }
+.settings-panel-title {
+  font-size: 1.8rem;
+}
+.settings-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.settings-card-header__icon {
+  color: #3b82f6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .settings-card-title.text-base {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
 }
 .settings-card-title {
   color: #3b82f6;
-  font-size: 1.125rem;
+  font-size: 1.35rem;
   font-weight: 900;
   text-transform: capitalize;
   letter-spacing: -0.02em;
@@ -1644,8 +1658,25 @@ select.app-input--dark {
     0 3px 12px rgba(59, 130, 246, 0.28),
     0 1px 4px rgba(0, 0, 0, 0.14);
 }
-.settings-security-link {
-  text-align: left;
+.settings-panel--dark .settings-card-title--chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 1.15rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 12px 34px rgba(255, 255, 255, 0.36),
+    0 4px 14px rgba(255, 255, 255, 0.22);
+  text-shadow:
+    0 4px 16px rgba(255, 255, 255, 0.38),
+    0 2px 6px rgba(255, 255, 255, 0.22);
+}
+.settings-security__actions {
+  width: 100%;
+}
+.settings-security__btn--signout:hover {
+  opacity: 0.88;
 }
 .pos-dashboard-section-title {
   font-weight: 900;
@@ -1658,9 +1689,17 @@ select.app-input--dark {
     0 2px 6px rgba(0, 0, 0, 0.12);
 }
 .pos-dashboard-shell--dark .pos-dashboard-section-title {
+  display: inline-block;
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 12px 34px rgba(255, 255, 255, 0.36),
+    0 4px 14px rgba(255, 255, 255, 0.22);
   text-shadow:
-    0 4px 18px rgba(255, 255, 255, 0.26),
-    0 2px 8px rgba(255, 255, 255, 0.14);
+    0 4px 18px rgba(255, 255, 255, 0.31),
+    0 2px 8px rgba(255, 255, 255, 0.17);
 }
 .pos-dashboard .vision-hub-title {
   font-weight: 900;
@@ -1669,8 +1708,8 @@ select.app-input--dark {
 }
 .vision-hub-shell.bg-zinc-900 .vision-hub-title {
   text-shadow:
-    0 4px 18px rgba(255, 255, 255, 0.32),
-    0 2px 8px rgba(255, 255, 255, 0.18);
+    0 4px 18px rgba(255, 255, 255, 0.38),
+    0 2px 8px rgba(255, 255, 255, 0.22);
 }
 .vision-hub-shell.bg-white .vision-hub-title {
   text-shadow:
@@ -1693,9 +1732,9 @@ select.app-input--dark {
 }
 .pos-dashboard-icon-lift--on-dark {
   box-shadow:
-    0 10px 28px rgba(255, 255, 255, 0.3),
-    0 4px 12px rgba(255, 255, 255, 0.18);
-  filter: drop-shadow(0 2px 6px rgba(255, 255, 255, 0.2));
+    0 12px 34px rgba(255, 255, 255, 0.36),
+    0 4px 14px rgba(255, 255, 255, 0.22);
+  filter: drop-shadow(0 2px 7px rgba(255, 255, 255, 0.24));
 }
 .pos-dashboard-shell--light .pos-dashboard-icon-lift:not(.pos-dashboard-icon-lift--on-dark):not(.pos-dashboard-icon-lift--on-light) {
   box-shadow:
@@ -1704,8 +1743,8 @@ select.app-input--dark {
 }
 .pos-dashboard-shell--dark .pos-dashboard-icon-lift:not(.pos-dashboard-icon-lift--on-dark):not(.pos-dashboard-icon-lift--on-light) {
   box-shadow:
-    0 10px 28px rgba(255, 255, 255, 0.3),
-    0 4px 12px rgba(255, 255, 255, 0.18);
+    0 12px 34px rgba(255, 255, 255, 0.36),
+    0 4px 14px rgba(255, 255, 255, 0.22);
 }
 .invoice-switcher-card__served-by {
   font-size: 0.58rem;

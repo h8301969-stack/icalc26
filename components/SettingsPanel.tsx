@@ -374,17 +374,34 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     </div>
   );
 
+  const renderSettingsCardHeader = (title: string, icon: React.ReactNode) => (
+    <div className="settings-card-header mb-4">
+      <span className="settings-card-header__icon shrink-0">{icon}</span>
+      <h3 className="settings-card-title settings-card-title--chip">{title}</h3>
+    </div>
+  );
+
   const renderSecuritySection = () => {
     if (!accountUsername || !onChangePassword || !onLogout) return null;
     return (
-      <div className="w-full px-8 pb-8 pt-2 border-t border-current/8">
-        <h4 className="settings-card-title mb-3">Security</h4>
-        <div className="flex flex-col items-start gap-2">
+      <div className={`settings-security w-full px-8 pb-8 pt-4 border-t ${isLight ? 'border-zinc-200/80' : 'border-white/10'}`}>
+        <div className="settings-card-header mb-3">
+          <span className="settings-card-header__icon shrink-0 text-blue-500">
+            <Icons.Settings size={20} />
+          </span>
+          <h4 className="settings-card-title settings-card-title--chip">Security</h4>
+        </div>
+        <p className={`settings-security__account app-subtext text-[11px] mb-4 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+          Signed in as <span className="font-bold">{accountUsername}</span>
+        </p>
+        <div className="settings-security__actions flex flex-col gap-2.5">
           <button
             type="button"
             onClick={() => setShowPasswordPanel(true)}
-            className={`settings-security-link text-sm font-bold underline underline-offset-2 active:opacity-60 transition-opacity ${
-              isLight ? 'text-blue-600' : 'text-blue-400'
+            className={`settings-security__btn w-full py-3.5 px-4 rounded-xl text-sm font-black tracking-tight active:scale-[0.98] transition-all ${
+              isLight
+                ? 'bg-blue-500 text-white shadow-[0_8px_22px_rgba(59,130,246,0.35)]'
+                : 'bg-blue-500/90 text-white shadow-[0_10px_28px_rgba(255,255,255,0.22)]'
             }`}
           >
             Change password
@@ -392,16 +409,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <button
             type="button"
             onClick={() => setShowSignOutConfirm(true)}
-            className={`settings-security-link text-sm font-bold underline underline-offset-2 active:opacity-60 transition-opacity ${
-              isLight ? 'text-zinc-600' : 'text-white/70'
+            className={`settings-security__btn settings-security__btn--signout w-full py-3 px-4 rounded-xl text-sm font-bold active:scale-[0.98] transition-all border ${
+              isLight
+                ? 'bg-white border-zinc-200 text-zinc-700'
+                : 'bg-white/8 border-white/14 text-white/85'
             }`}
           >
             Click here to sign out
           </button>
         </div>
-        <p className={`app-subtext mt-3 text-[10px] ${isLight ? 'text-black/45' : 'text-white/45'}`}>
-          Signed in as {accountUsername}
-        </p>
       </div>
     );
   };
@@ -471,14 +487,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       className={`
         absolute inset-0 z-50 flex flex-col transition-transform duration-300 cubic-bezier(0.16, 1, 0.3, 1)
         ${isOpen ? 'translate-x-0 pointer-events-auto' : 'translate-x-full pointer-events-none'}
-        ${isLight ? 'bg-[#f2f2f7] text-black' : 'bg-[#1c1c1e] text-white'}
+        settings-panel ${isLight ? 'settings-panel--light bg-[#f2f2f7] text-black' : 'settings-panel--dark bg-[#1c1c1e] text-white'}
       `}
       role="dialog"
       aria-modal={isOpen}
       aria-labelledby="settings-title"
     >
       <div className="p-8 pb-4 flex items-center justify-between border-b border-current/5">
-        <h2 id="settings-title" className="text-2xl font-black tracking-tight">Settings</h2>
+        <h2 id="settings-title" className="settings-panel-title text-2xl font-black tracking-tight">Settings</h2>
         <button 
           ref={closeRef}
           onClick={handleClose} 
@@ -580,10 +596,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           ref={(el) => { sectionRefs.current[1] = el; }}
           className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
         >
-          <div className="flex items-center gap-3 mb-4">
-            <span className="text-blue-500">{isLight ? <Icons.Sun size={20} /> : <Icons.Moon size={20} />}</span>
-            <h3 className="settings-card-title">Appearance</h3>
-          </div>
+          {renderSettingsCardHeader('Appearance', isLight ? <Icons.Sun size={22} /> : <Icons.Moon size={22} />)}
 
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
@@ -795,10 +808,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           ref={(el) => { sectionRefs.current[2] = el; }}
           className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
         >
-          <div className="flex items-center gap-3 mb-4">
-            <span className="text-blue-500"><Icons.Printer size={22} /></span>
-            <h3 className="settings-card-title">Bluetooth and connectivity</h3>
-          </div>
+          {renderSettingsCardHeader('Bluetooth and connectivity', <Icons.Printer size={22} />)}
 
           <div className="space-y-4">
             {bluetoothSupport.message && (
