@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icons } from '../constants';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { CartLineItem } from '../types';
 import { printerInstance } from '../utils/bluetoothPrinter';
 import InvoiceReceiptPreview from './InvoiceReceiptPreview';
@@ -681,6 +682,16 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
     ? 'bg-zinc-900 text-white'
     : 'bg-white text-zinc-900';
 
+  const isOnline = useOnlineStatus();
+  const showSessionStatus = printDrawerEnabled && !expanded;
+  const sessionLabel = !printDrawerEnabled
+    ? 'Admin Print Hub'
+    : expanded
+      ? 'Print Hub Open'
+      : isOnline
+        ? 'Live Session'
+        : 'Connect Internet';
+
   return (
     <>
       {expanded && (
@@ -718,8 +729,25 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
                 <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <div className="font-num-medium text-xl tracking-tight leading-none shrink-0">{currentTimeLabel}</div>
                   <div className={`w-px h-4 shrink-0 ${isLight ? 'bg-white/20' : 'bg-zinc-900/20'}`} />
-                  <div className={`pos-subtext text-[9px] font-bold shrink-0 ${invertedBarSubtextClass}`}>
-                    {printDrawerEnabled ? (expanded ? 'Print hub open' : 'Live Session') : 'Admin print hub'}
+                  <div className="flex items-center gap-1.5 shrink-0 min-w-0">
+                    {showSessionStatus && (
+                      <span
+                        className={`vision-hub-wifi-icon ${
+                          isOnline ? 'vision-hub-wifi-icon--online' : 'vision-hub-wifi-icon--offline'
+                        }`}
+                        aria-hidden
+                      >
+                        <Icons.Wifi size={12} />
+                      </span>
+                    )}
+                    <span
+                      key={sessionLabel}
+                      className={`vision-hub-session-label text-[9px] font-bold shrink-0 ${invertedBarSubtextClass} ${
+                        showSessionStatus && !isOnline ? 'vision-hub-session-label--pulse' : ''
+                      }`}
+                    >
+                      {sessionLabel}
+                    </span>
                   </div>
                 </div>
               </div>
