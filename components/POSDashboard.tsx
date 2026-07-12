@@ -838,7 +838,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             e.stopPropagation();
             onPrint();
           }}
-          className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+          className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center active:scale-90 transition-all ${iconLiftLight} ${
             isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
           }`}
           aria-label={`Print ${title}`}
@@ -1413,7 +1413,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           + Add more
         </button>
       </div>
-      <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Restocking</h3>
+      <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Restocking</h3>
 
       <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
         {restocks.length > 0 ? (
@@ -1472,15 +1472,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   const getLogIcon = (type: DashboardLogEntry['type']) => {
     switch (type) {
-      case 'restock': return <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-500"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></div>;
-      case 'sale': return <div className="p-1.5 rounded-lg bg-green-500/20 text-green-500"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20"/><path d="m17 5-5-3-5 3"/><path d="m17 19-5 3-5-3"/><path d="M2 12h20"/></svg></div>;
-      case 'image-update': return <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-500"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>;
-      case 'invoice-unidentified': return <div className="p-1.5 rounded-lg bg-red-500/20 text-red-500"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>;
-      case 'invoice-add': return <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-500"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>;
+      case 'restock': return <div className={`p-1.5 rounded-lg bg-blue-500/20 text-blue-500 ${iconLiftLight}`}><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></div>;
+      case 'sale': return <div className={`p-1.5 rounded-lg bg-green-500/20 text-green-500 ${iconLiftLight}`}><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20"/><path d="m17 5-5-3-5 3"/><path d="m17 19-5 3-5-3"/><path d="M2 12h20"/></svg></div>;
+      case 'image-update': return <div className={`p-1.5 rounded-lg bg-purple-500/20 text-purple-500 ${iconLiftLight}`}><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>;
+      case 'invoice-unidentified': return <div className={`p-1.5 rounded-lg bg-red-500/20 text-red-500 ${iconLiftLight}`}><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>;
+      case 'invoice-add': return <div className={`p-1.5 rounded-lg bg-amber-500/20 text-amber-500 ${iconLiftLight}`}><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>;
       case 'price-update':
       case 'stock-update':
-        return <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-500"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg></div>;
-      default: return <div className={`p-1.5 rounded-lg ${isLight ? 'bg-black/10 text-black' : 'bg-white/10 text-white'}`}><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></div>;
+        return <div className={`p-1.5 rounded-lg bg-blue-500/20 text-blue-500 ${iconLiftLight}`}><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg></div>;
+      default: return <div className={`p-1.5 rounded-lg ${iconLiftLight} ${isLight ? 'bg-black/10 text-black' : 'bg-white/10 text-white'}`}><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></div>;
     }
   };
 
@@ -1538,6 +1538,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const heroSubtextClass = 'text-white';
   const panelSubtextClass = isLight ? 'text-black/60' : 'text-white/60';
   const noteCardSubtextClass = 'text-black/60';
+  const iconLiftLight = 'pos-dashboard-icon-lift pos-dashboard-icon-lift--on-light';
+  const iconLiftDark = 'pos-dashboard-icon-lift pos-dashboard-icon-lift--on-dark';
   const statDetailCardClass = isLight
     ? 'bg-zinc-900 text-white shadow-[0_16px_36px_rgba(0,0,0,0.28)]'
     : 'pos-dashboard-card-glass border border-white/10 text-white';
@@ -1689,13 +1691,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         <button
           type="button"
           onClick={() => setShowActionLogSearch((v) => !v)}
-          className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-all ${showActionLogSearch ? (isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black') : (isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white')}`}
+          className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-all ${iconLiftLight} ${showActionLogSearch ? (isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black') : (isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white')}`}
           aria-label="Search action logs"
         >
           <Icons.Search size={18} />
         </button>
       </div>
-      <h3 className={`text-4xl font-black tracking-tighter px-1 ${textColorClass}`}>Action Logs</h3>
+      <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-1 ${textColorClass}`}>Action Logs</h3>
       <p className={`app-subtext px-1 -mt-4 ${cardSubtextMutedClass}`}>Neural Ledger • 24h</p>
 
       {showActionLogSearch && (
@@ -1747,7 +1749,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back
       </button>
-      <h3 className={`text-4xl font-black tracking-tighter px-1 ${textColorClass}`}>New Item</h3>
+      <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-1 ${textColorClass}`}>New Item</h3>
       <p className={`text-sm px-1 -mt-4 text-red-500 font-bold`}>
         Unidentified price {formatPriceLabel(namingUnidentified!.price, currency)}
         {namingUnidentified!.quantity > 1 ? ` × ${namingUnidentified!.quantity}` : ''}
@@ -1868,7 +1870,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           </div>
           <div className={`p-8 space-y-8 ${textColorClass}`}>
             <div className="flex justify-between items-start gap-4">
-              <h3 className="text-4xl font-black tracking-tighter leading-tight">{item.name}</h3>
+              <h3 className="pos-dashboard-section-title text-4xl tracking-tighter leading-tight">{item.name}</h3>
               {item.category ? (
                 <span className={`px-5 py-2 rounded-2xl pos-subtext text-[10px] font-black shrink-0 ${cardSubtextClass} ${isLight ? 'bg-zinc-100' : 'bg-white/10'}`}>{item.category}</span>
               ) : null}
@@ -1928,7 +1930,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         </div>
 
         <div className={`rounded-2xl p-8 ${levitateClass}`}>
-          <h4 className={`text-xl font-black tracking-tighter mb-5 ${textColorClass}`}>Action Logs</h4>
+          <h4 className={`pos-dashboard-section-title text-xl tracking-tighter mb-5 ${textColorClass}`}>Action Logs</h4>
           <div className="space-y-4">
             {renderActivityLogRows(logs, undefined, true)}
           </div>
@@ -2014,7 +2016,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <div className="absolute inset-x-0 bottom-0 h-[65%] bg-linear-to-t from-black/95 via-black/30 to-transparent pointer-events-none" />
                 <div className="absolute inset-0 p-8 flex flex-col justify-between">
                   <div className="flex items-center gap-5 translate-y-2">
-                    <div className="p-4 rounded-[13px] bg-orange-500/20 text-orange-500 backdrop-blur-3xl shadow-2xl border border-white/10"><Icons.Scientific size={28} /></div>
+                    <div className={`p-4 rounded-[13px] bg-orange-500/20 text-orange-500 backdrop-blur-3xl border border-white/10 ${iconLiftDark}`}><Icons.Scientific size={28} /></div>
                     <span className={`pos-subtext text-[10px] font-black opacity-90 drop-shadow-md ${heroSubtextClass}`}>Live Matrix</span>
                   </div>
                   <div className="space-y-1 relative z-10 translate-y-2">
@@ -2040,13 +2042,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 className={`col-span-1 aspect-[16/10] rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer active:scale-[0.985] p-6 flex flex-col justify-between`}
               >
                 <div className="flex items-start justify-between">
-                  <div className="p-3.5 rounded-2xl bg-emerald-500/20 text-emerald-500 shadow-inner">
+                  <div className={`p-3.5 rounded-2xl bg-emerald-500/20 text-emerald-500 ${iconLiftLight}`}>
                     <Icons.Requests size={26} />
                   </div>
                   <div className={`pos-subtext text-[10px] font-black px-3 py-1 rounded-full bg-emerald-500/10 ${cardSubtextClass}`}>Requests</div>
                 </div>
                 <div>
-                  <div className={`text-3xl font-black tracking-tighter ${textColorClass}`}>Requests</div>
+                  <div className={`pos-dashboard-section-title text-3xl tracking-tighter ${textColorClass}`}>Requests</div>
                   <p className={`app-subtext mt-0.5 ${cardSubtextMutedClass}`}>Pending • Delivered • Out of Stock</p>
                   <div className={`mt-2 text-xs font-black ${cardSubtextClass}`}>
                     {requests.filter(r => r.status === 'pending').length} active
@@ -2059,13 +2061,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 className={`col-span-1 aspect-[16/10] rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer active:scale-[0.985] p-6 flex flex-col justify-between`}
               >
                 <div className="flex items-start justify-between">
-                  <div className="p-3.5 rounded-2xl bg-amber-500/20 text-amber-500 shadow-inner">
+                  <div className={`p-3.5 rounded-2xl bg-amber-500/20 text-amber-500 ${iconLiftLight}`}>
                     <Icons.Restock size={26} />
                   </div>
                   <div className={`pos-subtext text-[10px] font-black px-3 py-1 rounded-full bg-amber-500/10 ${cardSubtextClass}`}>Restocking</div>
                 </div>
                 <div>
-                  <div className={`text-3xl font-black tracking-tighter ${textColorClass}`}>Restocking</div>
+                  <div className={`pos-dashboard-section-title text-3xl tracking-tighter ${textColorClass}`}>Restocking</div>
                   <p className={`app-subtext mt-0.5 ${cardSubtextMutedClass}`}>Low stock replenishment</p>
                   <div className={`mt-2 text-xs font-black ${cardSubtextClass}`}>
                     {items.filter(i => i.stock < i.threshold).length} items need attention
@@ -2084,10 +2086,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <div className="flex justify-between items-center mb-8">
                    <div className="space-y-1">
-                      <h3 className={`text-2xl font-black tracking-tighter ${textColorClass}`}>Action Logs</h3>
+                      <h3 className={`pos-dashboard-section-title text-2xl tracking-tighter ${textColorClass}`}>Action Logs</h3>
                       <p className={`app-subtext ${cardSubtextMutedClass}`}>Neural Ledger • 24h</p>
                    </div>
-                   <div className="p-3.5 rounded-full bg-blue-500/10 text-blue-500 shadow-xl"><Icons.Trends size={24} /></div>
+                   <div className={`p-3.5 rounded-full bg-blue-500/10 text-blue-500 ${iconLiftLight}`}><Icons.Trends size={24} /></div>
                 </div>
                 <div className="space-y-4" onClick={(e) => e.stopPropagation()}>
                   {systemLogs.length > 0 ? (
@@ -2114,7 +2116,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
-              <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Monthly Revenue</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Monthly Revenue</h3>
               <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.monthlyRev.toFixed(2))} this month • sorted by date</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
@@ -2166,7 +2168,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
-              <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Daily Sales</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Daily Sales</h3>
               <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.dailyRev.toFixed(2))} today • sorted by time</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
@@ -2218,7 +2220,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
-              <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Customers</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Customers</h3>
               <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>Invoice names • print count</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
@@ -2253,7 +2255,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
-              <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Invoices Today</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Invoices Today</h3>
               <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>Sorted by most recent activity</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
@@ -2314,7 +2316,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
                     </button>
                     <div className={`flex items-center gap-3 ${textColorClass}`}>
-                      <h3 className="text-2xl font-black tracking-tighter">Asset Hub</h3>
+                      <h3 className="pos-dashboard-section-title text-2xl tracking-tighter">Asset Hub</h3>
                       <button
                         type="button"
                         onClick={() => setShowSuppliersPanel(true)}
@@ -2388,7 +2390,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 </button>
               </div>
 
-              <h3 className={`text-4xl font-black tracking-tighter px-1 ${textColorClass}`}>Requests</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-1 ${textColorClass}`}>Requests</h3>
 
               {/* 3 TOP TABS: Pending, Delivered, Out Of Stock */}
               <div className="flex gap-2 pb-2">
@@ -2427,7 +2429,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back
               </button>
-              <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Transaction Archive</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Transaction Archive</h3>
 
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3 pb-20" role="list" aria-label="Inventory items">
                 {filteredInventory.map((item, idx) => (
@@ -2479,7 +2481,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
                     </button>
                     <div className={`flex items-center gap-3 ${textColorClass}`}>
-                      <h3 className="text-2xl font-black tracking-tighter">Asset Hub</h3>
+                      <h3 className="pos-dashboard-section-title text-2xl tracking-tighter">Asset Hub</h3>
                       <button
                         type="button"
                         onClick={() => setShowSuppliersPanel(true)}
@@ -2557,7 +2559,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 </button>
               </div>
 
-              <h3 className={`text-4xl font-black tracking-tighter px-1 ${textColorClass}`}>Requests</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-1 ${textColorClass}`}>Requests</h3>
 
               {/* 3 TABS */}
               <div className="flex gap-2 border-b pb-1 border-white/10">
@@ -2597,7 +2599,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back
               </button>
-              <h3 className={`text-4xl font-black tracking-tighter px-2 ${textColorClass}`}>Transaction Archive</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Transaction Archive</h3>
               <div className={`rounded-2xl overflow-hidden ${levitateClass}`} role="list" aria-label="Transaction records">
                 {[...paidInvoiceCards]
                   .sort((a, b) => b.latestTimestamp - a.latestTimestamp)
@@ -2651,7 +2653,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             aria-labelledby="plus-menu-title"
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 id="plus-menu-title" className={`text-xl font-black tracking-tighter ${textColorClass}`}>Quick Actions</h3>
+              <h3 id="plus-menu-title" className={`pos-dashboard-section-title text-xl tracking-tighter ${textColorClass}`}>Quick Actions</h3>
               <button onClick={() => setShowPlusMenu(false)} aria-label="Close quick actions menu" className="p-2 rounded-full opacity-60 hover:opacity-100"><Icons.X size={18} /></button>
             </div>
             <div className="space-y-2">
@@ -2728,7 +2730,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       type="button"
                       onClick={() => printRequestNotepad()}
                       disabled={requestLineItems.length === 0 && !newRequesterName.trim()}
-                      className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all disabled:opacity-40 ${
+                      className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all disabled:opacity-40 ${
                         isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                       }`}
                       aria-label="Print request notepad"
@@ -2738,7 +2740,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   )}
                   <button
                     onClick={closeRequestPopup}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all ${
                       isLight ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white'
                     }`}
                     aria-label="Close add request"
@@ -2748,7 +2750,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   <button
                     onClick={saveRequest}
                     disabled={!newRequesterName.trim() || requestLineItems.length === 0}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all disabled:opacity-40 ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all disabled:opacity-40 ${
                       isLight ? 'bg-emerald-500 text-white' : 'bg-emerald-500 text-white shadow-[0_0_14px_rgb(16,185,129)]'
                     }`}
                     aria-label="Save request"
@@ -2805,7 +2807,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowSuppliersPanel(false)}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-all ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-all ${iconLiftLight} ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
                   aria-label="Close suppliers list"
                 >
                   <Icons.X size={18} />
@@ -2887,7 +2889,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       type="button"
                       onClick={() => printRestockNotepad()}
                       disabled={restockLineItems.length === 0}
-                      className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all disabled:opacity-40 ${
+                      className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all disabled:opacity-40 ${
                         isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                       }`}
                       aria-label="Print restock notepad"
@@ -2897,7 +2899,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   )}
                   <button
                     onClick={closeRestockPopup}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all ${
                       isLight ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white'
                     }`}
                     aria-label="Close restock note"
@@ -2907,7 +2909,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   <button
                     onClick={saveRestockNote}
                     disabled={restockLineItems.length === 0}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.22)] active:scale-90 transition-all disabled:opacity-40 ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all disabled:opacity-40 ${
                       isLight ? 'bg-emerald-500 text-white' : 'bg-emerald-500 text-white shadow-[0_0_14px_rgb(16,185,129)]'
                     }`}
                     aria-label="Save restock note"
@@ -2956,7 +2958,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           >
              {isAddingItem && (
                <div className={`space-y-10 ${textColorClass}`}>
-                 <h3 id="add-item-title" className="text-5xl font-black tracking-tighter">New Asset</h3>
+                 <h3 id="add-item-title" className="pos-dashboard-section-title text-5xl tracking-tighter">New Asset</h3>
                  <div className="space-y-6">
                    <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="Item name" aria-label="Item name" className={formInputClass(isLight, { size: 'lg' })} />
                    <div className="grid grid-cols-2 gap-5">

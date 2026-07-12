@@ -729,7 +729,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
                   type="button"
                   onClick={onThemeToggle}
                   onAnimationEnd={onThemeAnimationEnd}
-                  className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 ${isThemeAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-black/40 border-white/5 hover:bg-black/60 text-white' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-900'}`}
+                  className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 pos-dashboard-icon-lift ${isLight ? 'pos-dashboard-icon-lift--on-dark' : 'pos-dashboard-icon-lift--on-light'} ${isThemeAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-black/40 border-white/5 hover:bg-black/60 text-white' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-900'}`}
                   title="Toggle Theme"
                 >
                   {isLight ? <Icons.Moon size={16} /> : <Icons.Sun size={16} />}
@@ -738,7 +738,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
                   type="button"
                   onClick={onSettingsOpen}
                   onAnimationEnd={onSettingsAnimationEnd}
-                  className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 ${isSettingsAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-black/40 border-white/5 hover:bg-black/60 text-white' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-900'}`}
+                  className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 pos-dashboard-icon-lift ${isLight ? 'pos-dashboard-icon-lift--on-dark' : 'pos-dashboard-icon-lift--on-light'} ${isSettingsAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-black/40 border-white/5 hover:bg-black/60 text-white' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-900'}`}
                   title="Settings"
                 >
                   <Icons.Settings size={16} />
@@ -747,8 +747,10 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
                   type="button"
                   onClick={handleCloseClick}
                   onAnimationEnd={onCloseAnimationEnd}
-                  className={`vision-hub-close-btn h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 border ${
+                  className={`vision-hub-close-btn h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 border pos-dashboard-icon-lift ${
                     isCloseAnimating ? 'animate-plus-trigger' : ''
+                  } ${
+                    isLight ? 'pos-dashboard-icon-lift--on-dark' : 'pos-dashboard-icon-lift--on-light'
                   } ${
                     expanded
                       ? 'vision-hub-close-btn--collapse'

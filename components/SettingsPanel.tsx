@@ -378,7 +378,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     if (!accountUsername || !onChangePassword || !onLogout) return null;
     return (
       <div className="w-full px-8 pb-8 pt-2 border-t border-current/8">
-        <h4 className="settings-card-title text-sm font-black mb-3">Security</h4>
+        <h4 className="settings-card-title mb-3">Security</h4>
         <div className="flex flex-col items-start gap-2">
           <button
             type="button"
@@ -582,7 +582,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         >
           <div className="flex items-center gap-3 mb-4">
             <span className="text-blue-500">{isLight ? <Icons.Sun size={20} /> : <Icons.Moon size={20} />}</span>
-            <h3 className="settings-card-title app-subtext text-sm font-black">Appearance</h3>
+            <h3 className="settings-card-title">Appearance</h3>
           </div>
 
           <div className="space-y-4">
@@ -797,7 +797,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         >
           <div className="flex items-center gap-3 mb-4">
             <span className="text-blue-500"><Icons.Printer size={22} /></span>
-            <h3 className="settings-card-title app-subtext text-sm font-black">Bluetooth and connectivity</h3>
+            <h3 className="settings-card-title">Bluetooth and connectivity</h3>
           </div>
 
           <div className="space-y-4">
@@ -968,7 +968,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       {showPasswordPanel && renderSettingsModal(
         <>
           <div className="flex items-center justify-between mb-3">
-            <h4 className="settings-card-title text-base font-black">Change password</h4>
+            <h4 className="settings-card-title text-base">Change password</h4>
             <button
               type="button"
               onClick={closePasswordPanel}
@@ -1034,7 +1034,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
       {showSignOutConfirm && renderSettingsModal(
         <>
-          <h4 className="settings-card-title text-base font-black mb-3">Sign out</h4>
+          <h4 className="settings-card-title text-base mb-3">Sign out</h4>
           <p className={`text-sm leading-relaxed mb-5 ${isLight ? 'text-black/75' : 'text-white/75'}`}>
             Are you sure you want to sign out? Don&apos;t worry — you won&apos;t lose any progress.
           </p>
