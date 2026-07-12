@@ -32,7 +32,7 @@ import {
   scrollCursorIntoView,
 } from './utils/expressionCursor';
 
-const SETTINGS_SECTION_COUNT = 4;
+const SETTINGS_SECTION_COUNT = 3;
 import { useAuth } from './hooks/useAuth';
 import { useSupabaseDataSync } from './hooks/useSupabaseDataSync';
 import { ensureAdminProfile, getAccounts, isAdminProfile } from './utils/auth';

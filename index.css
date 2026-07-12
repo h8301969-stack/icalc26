@@ -1631,6 +1631,12 @@ select.app-input--dark {
   position: relative;
   z-index: 50;
 }
+.settings-card-title {
+  color: #3b82f6;
+}
+.settings-security-link {
+  text-align: left;
+}
 .invoice-switcher-card__served-by {
   font-size: 0.58rem;
   font-weight: 700;

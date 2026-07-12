@@ -18,7 +18,7 @@ import FluidToggle from './FluidToggle';
 import BusinessInfoReceiptCard from './BusinessInfoReceiptCard';
 import PasswordField from './PasswordField';
 import { updateUserBusinessInfo } from '../utils/accessControl';
-import { FORM_FIELD_LABEL } from '../utils/formFields';
+
 
 interface SettingsSlice {
   themeMode: 'light' | 'dark' | 'system';
@@ -117,20 +117,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     businessPhone: settings.businessPhone ?? '',
     businessAddress: settings.businessAddress ?? '',
   });
-  const businessSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedBusinessRef = useRef({
+    businessName: settings.businessName ?? '',
+    businessPhone: settings.businessPhone ?? '',
+    businessAddress: settings.businessAddress ?? '',
+  });
+  const [businessDirty, setBusinessDirty] = useState(false);
+  const [businessSaving, setBusinessSaving] = useState(false);
   const [businessSyncError, setBusinessSyncError] = useState<string | null>(null);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   useEffect(() => {
-    businessDraftRef.current = {
+    const next = {
       businessName: settings.businessName ?? '',
       businessPhone: settings.businessPhone ?? '',
       businessAddress: settings.businessAddress ?? '',
     };
+    businessDraftRef.current = next;
+    savedBusinessRef.current = next;
+    setBusinessDirty(false);
   }, [settings.businessName, settings.businessPhone, settings.businessAddress]);
-
-  useEffect(() => () => {
-    if (businessSyncTimerRef.current) clearTimeout(businessSyncTimerRef.current);
-  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -294,11 +300,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         setPasswordError(result.error);
         return;
       }
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
       setPasswordSuccess(true);
-      setTimeout(() => setPasswordSuccess(false), 3000);
+      setTimeout(() => {
+        setPasswordSuccess(false);
+        closePasswordPanel();
+      }, 1200);
     } finally {
       setIsChangingPassword(false);
     }
@@ -310,121 +316,91 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     });
   };
 
-  const scheduleBusinessInfoSync = useCallback((patch: Partial<typeof businessDraftRef.current>) => {
+  const handleBusinessFieldChange = useCallback((patch: Partial<typeof businessDraftRef.current>) => {
     businessDraftRef.current = { ...businessDraftRef.current, ...patch };
     _updateSettings(patch);
-    if (businessSyncTimerRef.current) clearTimeout(businessSyncTimerRef.current);
-    businessSyncTimerRef.current = setTimeout(() => {
-      void (async () => {
-        const draft = businessDraftRef.current;
-        const result = await updateUserBusinessInfo({
-          businessName: draft.businessName,
-          businessPhone: draft.businessPhone,
-          businessAddress: draft.businessAddress,
-        });
-        if (!result.ok) setBusinessSyncError(result.error);
-        else setBusinessSyncError(null);
-      })();
-    }, 900);
+    setBusinessDirty(true);
+    setBusinessSyncError(null);
   }, [_updateSettings]);
 
-  const renderAccountActions = () => {
+  const confirmBusinessChanges = useCallback(async () => {
+    setBusinessSaving(true);
+    setBusinessSyncError(null);
+    try {
+      const draft = businessDraftRef.current;
+      const result = await updateUserBusinessInfo({
+        businessName: draft.businessName,
+        businessPhone: draft.businessPhone,
+        businessAddress: draft.businessAddress,
+      });
+      if (!result.ok) {
+        setBusinessSyncError(result.error);
+        return;
+      }
+      savedBusinessRef.current = { ...draft };
+      setBusinessDirty(false);
+    } finally {
+      setBusinessSaving(false);
+    }
+  }, []);
+
+  const closePasswordPanel = useCallback(() => {
+    setShowPasswordPanel(false);
+    setPasswordError(null);
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+  }, []);
+
+  const renderSettingsModal = (children: React.ReactNode, onClose: () => void, label: string) => (
+    <div className="settings-modal-overlay absolute inset-0 z-[60] flex items-center justify-center p-6">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/45"
+        aria-label="Close dialog"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
+        className={`settings-modal-card relative w-full max-w-sm rounded-2xl border p-5 shadow-2xl ${
+          isLight ? 'bg-white border-zinc-200 text-black' : 'bg-[#1c1c1e] border-white/12 text-white'
+        }`}
+      >
+        {children}
+      </div>
+    </div>
+  );
+
+  const renderSecuritySection = () => {
     if (!accountUsername || !onChangePassword || !onLogout) return null;
     return (
-      <div className="w-full pt-4 space-y-3">
-        {showPasswordPanel && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className={FORM_FIELD_LABEL}>Change password</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPasswordPanel(false);
-                  setPasswordError(null);
-                  setCurrentPassword('');
-                  setNewPassword('');
-                  setConfirmPassword('');
-                }}
-                aria-label="Close change password"
-                className={`p-1.5 rounded-full ${isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
-              >
-                <Icons.X size={16} />
-              </button>
-            </div>
-            <PasswordField
-              isLight={isLight}
-              value={currentPassword}
-              onChange={setCurrentPassword}
-              placeholder="Current password"
-              autoComplete="current-password"
-            />
-            <PasswordField
-              isLight={isLight}
-              value={newPassword}
-              onChange={setNewPassword}
-              placeholder="New password"
-              autoComplete="new-password"
-            />
-            <PasswordField
-              isLight={isLight}
-              value={confirmPassword}
-              onChange={setConfirmPassword}
-              placeholder="Confirm new password"
-              autoComplete="new-password"
-            />
-            {passwordError && (
-              <p className="text-red-500 text-[11px] font-bold">{passwordError}</p>
-            )}
-            {passwordSuccess && (
-              <p className="text-emerald-500 text-[11px] font-bold">Password updated.</p>
-            )}
-            <button
-              type="button"
-              onClick={() => void handleChangePasswordSubmit()}
-              disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}
-              className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
-                isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
-              }`}
-            >
-              {isChangingPassword ? (
-                <>
-                  <span className="auth-spinner" aria-hidden="true" />
-                  Updating…
-                </>
-              ) : (
-                'Save new password'
-              )}
-            </button>
-          </div>
-        )}
-
-        <div className="flex items-center justify-between gap-3">
-          <p className={`app-subtext text-[10px] font-bold truncate ${isLight ? 'text-black/50' : 'text-white/50'}`}>
-            {accountUsername}
-          </p>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setShowPasswordPanel((v) => !v)}
-              className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider active:scale-95 transition-all ${
-                showPasswordPanel
-                  ? isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
-                  : isLight ? 'bg-white border border-zinc-200 text-zinc-900' : 'bg-white/10 text-white'
-              }`}
-            >
-              Password
-            </button>
-            <button
-              type="button"
-              onClick={() => { handleClose(); onLogout(); }}
-              className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider active:scale-95 transition-all border ${
-                isLight ? 'border-zinc-200 text-zinc-700' : 'border-white/15 text-white/80'
-              }`}
-            >
-              Sign out
-            </button>
-          </div>
+      <div className="w-full px-8 pb-8 pt-2 border-t border-current/8">
+        <h4 className="settings-card-title text-sm font-black mb-3">Security</h4>
+        <div className="flex flex-col items-start gap-2">
+          <button
+            type="button"
+            onClick={() => setShowPasswordPanel(true)}
+            className={`settings-security-link text-sm font-bold underline underline-offset-2 active:opacity-60 transition-opacity ${
+              isLight ? 'text-blue-600' : 'text-blue-400'
+            }`}
+          >
+            Change password
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowSignOutConfirm(true)}
+            className={`settings-security-link text-sm font-bold underline underline-offset-2 active:opacity-60 transition-opacity ${
+              isLight ? 'text-zinc-600' : 'text-white/70'
+            }`}
+          >
+            Click here to sign out
+          </button>
         </div>
+        <p className={`app-subtext mt-3 text-[10px] ${isLight ? 'text-black/45' : 'text-white/45'}`}>
+          Signed in as {accountUsername}
+        </p>
       </div>
     );
   };
@@ -529,18 +505,34 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               className="w-full"
               editable={!!accountUsername}
               isLight={isLight}
-              onBusinessNameChange={(value) => scheduleBusinessInfoSync({ businessName: value })}
-              onBusinessPhoneChange={(value) => scheduleBusinessInfoSync({ businessPhone: value })}
-              onBusinessAddressChange={(value) => scheduleBusinessInfoSync({ businessAddress: value })}
+              onBusinessNameChange={(value) => handleBusinessFieldChange({ businessName: value })}
+              onBusinessPhoneChange={(value) => handleBusinessFieldChange({ businessPhone: value })}
+              onBusinessAddressChange={(value) => handleBusinessFieldChange({ businessAddress: value })}
             />
+          )}
+          {accountUsername && businessDirty && (
+            <div className="px-6 pb-3">
+              <button
+                type="button"
+                onClick={() => void confirmBusinessChanges()}
+                disabled={businessSaving}
+                className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
+                  isLight ? 'bg-blue-500 text-white' : 'bg-blue-500 text-white'
+                }`}
+              >
+                {businessSaving ? (
+                  <>
+                    <span className="auth-spinner" aria-hidden="true" />
+                    Saving…
+                  </>
+                ) : (
+                  'Confirm changes'
+                )}
+              </button>
+            </div>
           )}
           {businessSyncError && (
             <p className="px-4 pt-2 text-red-500 text-[11px] font-bold">{businessSyncError}</p>
-          )}
-          {accountUsername && (
-            <div className="px-6 pb-2">
-              {renderAccountActions()}
-            </div>
           )}
           <input
             ref={avatarFileInputRef}
@@ -567,6 +559,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               {activeProfile?.name ?? 'fred'}
             </button>
           </div>
+          {renderSecuritySection()}
         </div>
 
         <ProfilePickerModal
@@ -581,38 +574,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onVerifyAdminPassword={onVerifyAdminPassword}
         />
 
-        {/* Idle / Standby Screen */}
+        {/* Appearance Settings */}
         <div
           ref={(el) => { sectionRefs.current[1] = el; }}
           className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
         >
           <div className="flex items-center gap-3 mb-4">
-            <span><Icons.Moon size={20} /></span>
-            <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Idle Screen</h3>
-          </div>
-
-          <FluidSegmentControl
-            variant="chip"
-            size="sm"
-            isLight={isLight}
-            ariaLabel="Idle screen timer"
-            value={String(settings.standbyTimerSeconds ?? 0)}
-            onChange={(id) => _updateSettings({ standbyTimerSeconds: Number(id) })}
-            options={STANDBY_TIMER_OPTIONS.map((option) => ({
-              id: String(option.value),
-              label: option.label,
-            }))}
-          />
-        </div>
-
-        {/* Appearance Settings */}
-        <div
-          ref={(el) => { sectionRefs.current[2] = el; }}
-          className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
-        >
-          <div className="flex items-center gap-3 mb-4">
-            <span>{isLight ? <Icons.Sun size={20} /> : <Icons.Moon size={20} />}</span>
-            <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Appearance</h3>
+            <span className="text-blue-500">{isLight ? <Icons.Sun size={20} /> : <Icons.Moon size={20} />}</span>
+            <h3 className="settings-card-title app-subtext text-sm font-black">Appearance</h3>
           </div>
 
           <div className="space-y-4">
@@ -753,6 +722,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </div>
             )}
 
+            <div className="pt-2 border-t border-white/10 space-y-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-sm font-black">Idle screen</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  How long before the lock screen appears
+                </span>
+              </div>
+              <FluidSegmentControl
+                variant="chip"
+                size="sm"
+                isLight={isLight}
+                ariaLabel="Idle screen timer"
+                value={String(settings.standbyTimerSeconds ?? 0)}
+                onChange={(id) => _updateSettings({ standbyTimerSeconds: Number(id) })}
+                options={STANDBY_TIMER_OPTIONS.map((option) => ({
+                  id: String(option.value),
+                  label: option.label,
+                }))}
+              />
+            </div>
+
             <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
               <div className="flex flex-col min-w-0">
                 <span className="text-sm font-black">Calculator on background</span>
@@ -799,14 +789,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
 
-        {/* Bluetooth / BLE Printer */}
+        {/* Bluetooth and connectivity */}
         <div
-          ref={(el) => { sectionRefs.current[3] = el; }}
+          ref={(el) => { sectionRefs.current[2] = el; }}
           className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
         >
           <div className="flex items-center gap-3 mb-4">
             <span className="text-blue-500"><Icons.Printer size={22} /></span>
-            <h3 className={`app-subtext text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>Bluetooth</h3>
+            <h3 className="settings-card-title app-subtext text-sm font-black">Bluetooth and connectivity</h3>
           </div>
 
           <div className="space-y-4">
@@ -973,6 +963,106 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
       </div>
+
+      {showPasswordPanel && renderSettingsModal(
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="settings-card-title text-base font-black">Change password</h4>
+            <button
+              type="button"
+              onClick={closePasswordPanel}
+              aria-label="Close change password"
+              className={`p-1.5 rounded-full ${isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+            >
+              <Icons.X size={16} />
+            </button>
+          </div>
+          <p className={`app-subtext text-[10px] mb-4 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+            You can ask your admin if you&apos;ve forgotten your password.
+          </p>
+          <div className="space-y-2">
+            <PasswordField
+              isLight={isLight}
+              value={currentPassword}
+              onChange={setCurrentPassword}
+              placeholder="Current password"
+              autoComplete="current-password"
+            />
+            <PasswordField
+              isLight={isLight}
+              value={newPassword}
+              onChange={setNewPassword}
+              placeholder="New password"
+              autoComplete="new-password"
+            />
+            <PasswordField
+              isLight={isLight}
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              placeholder="Confirm new password"
+              autoComplete="new-password"
+            />
+            {passwordError && (
+              <p className="text-red-500 text-[11px] font-bold">{passwordError}</p>
+            )}
+            {passwordSuccess && (
+              <p className="text-emerald-500 text-[11px] font-bold">Password updated.</p>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleChangePasswordSubmit()}
+              disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}
+              className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
+                isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+              }`}
+            >
+              {isChangingPassword ? (
+                <>
+                  <span className="auth-spinner" aria-hidden="true" />
+                  Updating…
+                </>
+              ) : (
+                'Confirm changes'
+              )}
+            </button>
+          </div>
+        </>,
+        closePasswordPanel,
+        'Change password'
+      )}
+
+      {showSignOutConfirm && renderSettingsModal(
+        <>
+          <h4 className="settings-card-title text-base font-black mb-3">Sign out</h4>
+          <p className={`text-sm leading-relaxed mb-5 ${isLight ? 'text-black/75' : 'text-white/75'}`}>
+            Are you sure you want to sign out? Don&apos;t worry — you won&apos;t lose any progress.
+          </p>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setShowSignOutConfirm(false)}
+              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
+                isLight ? 'border-zinc-200 text-zinc-700' : 'border-white/15 text-white/80'
+              }`}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowSignOutConfirm(false);
+                handleClose();
+                onLogout?.();
+              }}
+              className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all bg-red-500 text-white"
+            >
+              Sign out
+            </button>
+          </div>
+        </>,
+        () => setShowSignOutConfirm(false),
+        'Sign out confirmation'
+      )}
     </div>
   );
 };
