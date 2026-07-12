@@ -68,21 +68,40 @@ export const mapPointerToExpressionIndex = (
   return Math.max(0, Math.min(maxIndex, fallback(clientX, clientY)));
 };
 
+const getCursorTargetRect = (
+  root: HTMLElement,
+  cursorPos: number
+): DOMRect | null => {
+  const cursorEl = root.querySelector('[data-expression-cursor]');
+  if (cursorEl instanceof HTMLElement) {
+    return cursorEl.getBoundingClientRect();
+  }
+
+  const range = getRangeAtCharacterIndex(root, cursorPos);
+  if (!range) return null;
+  return range.getBoundingClientRect();
+};
+
 export const scrollCursorIntoView = (
   scrollEl: HTMLElement,
   root: HTMLElement,
   cursorPos: number,
-  padding = 8
+  padding = 10
 ): void => {
-  const range = getRangeAtCharacterIndex(root, cursorPos);
-  if (!range) return;
+  const targetRect = getCursorTargetRect(root, cursorPos);
+  if (!targetRect) return;
 
-  const cursorRect = range.getBoundingClientRect();
   const scrollRect = scrollEl.getBoundingClientRect();
 
-  if (cursorRect.top < scrollRect.top + padding) {
-    scrollEl.scrollTop -= scrollRect.top + padding - cursorRect.top;
-  } else if (cursorRect.bottom > scrollRect.bottom - padding) {
-    scrollEl.scrollTop += cursorRect.bottom - (scrollRect.bottom - padding);
+  if (targetRect.top < scrollRect.top + padding) {
+    scrollEl.scrollTop -= scrollRect.top + padding - targetRect.top;
+  } else if (targetRect.bottom > scrollRect.bottom - padding) {
+    scrollEl.scrollTop += targetRect.bottom - (scrollRect.bottom - padding);
+  }
+
+  if (targetRect.left < scrollRect.left + padding) {
+    scrollEl.scrollLeft -= scrollRect.left + padding - targetRect.left;
+  } else if (targetRect.right > scrollRect.right - padding) {
+    scrollEl.scrollLeft += targetRect.right - (scrollRect.right - padding);
   }
 };

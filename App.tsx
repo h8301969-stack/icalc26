@@ -549,14 +549,12 @@ const AppContent: React.FC = () => {
   useLayoutEffect(() => {
     const scrollEl = expressionScrollRef.current;
     const pre = displayContentRef.current;
-    if (!scrollEl) return;
+    if (!scrollEl || !pre) return;
 
     if (scrollExpressionToBottom && !isDraggingCursor.current) {
       scrollEl.scrollTop = scrollEl.scrollHeight;
-      return;
     }
 
-    if (!pre || expression === '0') return;
     scrollCursorIntoView(scrollEl, pre, expressionCursorPos);
   }, [
     expression,
@@ -564,6 +562,8 @@ const AppContent: React.FC = () => {
     displayFontSize,
     charsPerLine,
     scrollExpressionToBottom,
+    expressionBreakAtPlus,
+    isLandscape,
   ]);
 
   useEffect(() => {
@@ -1080,18 +1080,20 @@ const AppContent: React.FC = () => {
                 >
                   <div
                   ref={expressionScrollRef}
-                  className={`no-scrollbar w-full max-w-full flex-1 min-h-0 cursor-text select-text pointer-events-auto overflow-x-hidden flex flex-col ${expressionBreakAtPlus ? 'text-left' : 'text-right'}`}
+                  className={`calc-expression-scroll no-scrollbar w-full max-w-full flex-1 min-h-0 cursor-text select-text pointer-events-auto flex flex-col ${expressionBreakAtPlus ? 'text-left' : 'text-right'}`}
                   onCopy={handleExpressionCopy}
                   onPaste={handleExpressionPaste}
                   tabIndex={0}
                   style={{
-                    overflowY: 'auto',
                     paddingTop: isLandscape ? '0.1rem' : '0.15rem',
                     paddingBottom: isLandscape ? '0.1rem' : '0.5rem',
                     paddingLeft: '8%',
                     paddingRight: '8%',
                     boxSizing: 'border-box',
                     scrollBehavior: 'auto',
+                    ...(expressionViewportMaxHeight
+                      ? { maxHeight: `${expressionViewportMaxHeight}px` }
+                      : {}),
                   }}
                   aria-label={`Expression: ${expression}`}
                   onPointerDown={(e) => {
@@ -1124,7 +1126,7 @@ const AppContent: React.FC = () => {
                   >
                     <pre
                       ref={displayContentRef}
-                      className={`font-num-light w-full max-w-full overflow-hidden break-all ${isLight ? 'text-black' : 'text-white'}`}
+                      className={`calc-expression-display font-num-light w-full max-w-full break-all ${isLight ? 'text-black' : 'text-white'}`}
                       style={{
                         fontSize: `${displayFontSize}px`,
                         color: isLight ? '#000000' : '#ffffff',

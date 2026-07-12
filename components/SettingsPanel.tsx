@@ -377,7 +377,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const renderSettingsCardHeader = (title: string, icon: React.ReactNode) => (
     <div className="settings-card-header mb-4">
       <span className="settings-card-header__icon shrink-0">{icon}</span>
-      <h3 className="settings-card-title settings-card-title--chip">{title}</h3>
+      <h3 className="settings-card-title">{title}</h3>
     </div>
   );
 
@@ -389,7 +389,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <span className="settings-card-header__icon shrink-0 text-blue-500">
             <Icons.Settings size={20} />
           </span>
-          <h4 className="settings-card-title settings-card-title--chip">Security</h4>
+          <h4 className="settings-card-title">Security</h4>
         </div>
         <p className={`settings-security__account app-subtext text-[11px] mb-4 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
           Signed in as <span className="font-bold">{accountUsername}</span>
