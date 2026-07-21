@@ -1,2 +1,0 @@
--- Deprecated: use supabase/setup.sql instead.
--- Paste the entire contents of setup.sql into Supabase SQL Editor and Run.
