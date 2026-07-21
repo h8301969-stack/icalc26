@@ -81,28 +81,35 @@ const tokenize = (str: string): string[] => {
   return matches;
 };
 
-export const safeEvaluate = (expr: string, decimals = 2): string => {
+export const tryEvaluateExpression = (expr: string): number | null => {
   try {
-    if (!expr || expr === '0') return '0.00';
+    if (!expr || expr === '0') return null;
 
     const cleanExpr = isPosStyleExpression(expr)
       ? cleanPosExpressionForEval(expr)
       : expr.replace(/[+\-*/%×÷(]+$/i, '');
-    if (!cleanExpr || cleanExpr === '0') return '0.00';
+    if (!cleanExpr || cleanExpr === '0') return null;
 
     const result = isPosStyleExpression(cleanExpr)
       ? evaluatePosExpression(cleanExpr)
       : evaluateExpression(cleanExpr);
-    if (!isFinite(result)) return '0.00';
-    
-    return result.toLocaleString('en-US', {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
-      useGrouping: false
-    });
+    if (!isFinite(result)) return null;
+
+    return result;
   } catch {
-    return '0.00';
+    return null;
   }
+};
+
+export const safeEvaluate = (expr: string, decimals = 2): string => {
+  const result = tryEvaluateExpression(expr);
+  if (result === null) return '0.00';
+
+  return result.toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+    useGrouping: false
+  });
 };
 
 /** Strip clipboard text to calculator/POS expression characters only. */

@@ -1,15 +1,11 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   safeEvaluate,
-  evaluateExpression,
-  CalculationError,
+  tryEvaluateExpression,
   sanitizeClipboardExpression,
 } from '../utils/calculator';
 import {
-  cleanPosExpressionForEval,
-  evaluatePosExpression,
   formatInventoryPriceSegment,
-  isPosStyleExpression,
 } from '../utils/posExpression';
 
 export const useCalculator = (
@@ -45,23 +41,8 @@ export const useCalculator = (
       setCalcError(null);
       return;
     }
-    try {
-      const cleanExpr = isPosStyleExpression(expression)
-        ? cleanPosExpressionForEval(expression)
-        : expression.replace(/[+\-*/%×÷(]+$/i, '');
-      if (!cleanExpr || cleanExpr === '0') {
-        setCalcError(null);
-        return;
-      }
-      if (isPosStyleExpression(cleanExpr)) {
-        evaluatePosExpression(cleanExpr);
-      } else {
-        evaluateExpression(cleanExpr);
-      }
-      setCalcError(null);
-    } catch (err) {
-      setCalcError(err instanceof CalculationError ? err.message : 'Invalid expression');
-    }
+    const result = tryEvaluateExpression(expression);
+    setCalcError(result === null ? 'Invalid expression' : null);
   }, [expression]);
 
   const inputChar = useCallback((raw: string) => {

@@ -180,15 +180,24 @@ const AppContent: React.FC = () => {
   const [isCalculatorEntering, setIsCalculatorEntering] = useState(false);
   const [authOverlayMounted, setAuthOverlayMounted] = useState(true);
 
-  const lockScreen = useCallback(() => {
+  const closeAllPanels = useCallback(() => {
     setIsHistoryOpen(false);
     setIsPOSOpen(false);
     setIsSettingsOpen(false);
     setIsSearchOpen(false);
     setSearchQuery('');
+  }, []);
+
+  const closeSettings = useCallback(() => {
+    setIsSettingsOpen(false);
+    setSettingsSectionIndex(0);
+  }, []);
+
+  const lockScreen = useCallback(() => {
+    closeAllPanels();
     setIsUnlocked(false);
     setAuthOverlayMounted(true);
-  }, []);
+  }, [closeAllPanels]);
 
   const handleQuickUnlock = useCallback(() => {
     setIsCalculatorEntering(true);
@@ -252,22 +261,14 @@ const AppContent: React.FC = () => {
     setIsUnlocked(true);
   }, [resetToFreshSession, updateSettings, triggerHaptic]);
 
-  const handleDevSkip = useCallback(async () => {
-    return openDevAdminPortal();
-  }, [openDevAdminPortal]);
-
   const handleAdminReturnToCalc = useCallback(() => {
     hideAdminPortal();
-    setIsHistoryOpen(false);
-    setIsPOSOpen(false);
-    setIsSettingsOpen(false);
-    setIsSearchOpen(false);
-    setSearchQuery('');
+    closeAllPanels();
     setAuthOverlayMounted(false);
     setIsCalculatorEntering(true);
     setIsUnlocked(true);
     triggerHaptic(2);
-  }, [hideAdminPortal, triggerHaptic]);
+  }, [hideAdminPortal, closeAllPanels, triggerHaptic]);
 
   const handleSignup = useCallback(async (username: string, email: string, inviteCode: string) => {
     const result = await signup(username, email, inviteCode);
@@ -335,6 +336,14 @@ const AppContent: React.FC = () => {
     triggerHaptic(2);
     return { ok: true };
   }, [verifyPassword, triggerHaptic]);
+
+  const handleUpdateSettings = useCallback(<K extends keyof typeof settings>(
+    keyOrPatch: K | Partial<typeof settings>,
+    value?: typeof settings[K]
+  ) => {
+    if (typeof keyOrPatch === 'string') updateSettings({ [keyOrPatch]: value } as Partial<typeof settings>);
+    else updateSettings(keyOrPatch);
+  }, [updateSettings]);
 
   const authMode = getAccounts().length > 0 || account ? 'login' : 'signup';
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -622,11 +631,10 @@ const AppContent: React.FC = () => {
     if (!isUnlocked || isPOSOpen || isHistoryPanelActive) return;
     triggerHaptic();
     if (isSettingsOpen) {
-      setIsSettingsOpen(false);
-      setSettingsSectionIndex(0);
+      closeSettings();
     }
     setIsCalculatorEntering(true);
-  }, [isUnlocked, isPOSOpen, isHistoryPanelActive, isSettingsOpen, triggerHaptic]);
+  }, [isUnlocked, isPOSOpen, isHistoryPanelActive, isSettingsOpen, triggerHaptic, closeSettings]);
 
   const calcEdgeSwipe = useEdgeSwipe(
     {
@@ -762,11 +770,6 @@ const AppContent: React.FC = () => {
   // Keyboard support for accessibility
   const handleKeyDown = (e: React.KeyboardEvent) => {
     const key = e.key;
-    const target = e.target as HTMLElement;
-    const isTextInput =
-      target.tagName === 'INPUT' ||
-      target.tagName === 'TEXTAREA' ||
-      target.isContentEditable;
 
     if (key === 'Escape' && isSearchOpen) {
       closeSearch();
@@ -774,11 +777,11 @@ const AppContent: React.FC = () => {
       return;
     }
 
-    if (isTextInput || !isUnlocked) return;
+    if (!isUnlocked) return;
 
     if (isAnyModalOpen) return;
 
-    if ((e.ctrlKey || e.metaKey) && !isTextInput) {
+    if (e.ctrlKey || e.metaKey) {
       if (key.toLowerCase() === 'c') {
         void copyExpressionToClipboard();
         e.preventDefault();
@@ -841,7 +844,7 @@ const AppContent: React.FC = () => {
           onAuthComplete={handleAuthSuccess}
           onAdminPortal={handleAdminPortal}
           onFinalizeAccess={handleFinalizeAccess}
-          onDevSkip={import.meta.env.DEV ? handleDevSkip : undefined}
+          onDevSkip={import.meta.env.DEV ? openDevAdminPortal : undefined}
           onQuickUnlock={handleQuickUnlock}
           onExitComplete={() => setAuthOverlayMounted(false)}
         />
@@ -1274,20 +1277,14 @@ const AppContent: React.FC = () => {
 
           <SettingsPanel
             isOpen={isSettingsOpen} 
-            onClose={() => {
-              setIsSettingsOpen(false);
-              setSettingsSectionIndex(0);
-            }}
+            onClose={closeSettings}
             focusSectionIndex={settingsSectionIndex}
             settings={settings}
             isLight={isLight}
-            updateSettings={(keyOrPatch, value) => {
-              if (typeof keyOrPatch === 'string') updateSettings({ [keyOrPatch]: value } as Partial<typeof settings>);
-              else updateSettings(keyOrPatch);
-            }}
+            updateSettings={handleUpdateSettings}
             onApplyAppearance={() => {
               triggerHaptic();
-              setIsSettingsOpen(false);
+              closeSettings();
             }}
             cartItems={cartItems}
             runningTotal={parseFloat(runningTotal) || 0}
@@ -1354,10 +1351,7 @@ const AppContent: React.FC = () => {
         accentColor={settings.accentColor}
         formatCurrency={formatCurrency}
         settings={settings}
-        updateSettings={(keyOrPatch, value) => {
-          if (typeof keyOrPatch === 'string') updateSettings({ [keyOrPatch]: value } as Partial<typeof settings>);
-          else updateSettings(keyOrPatch);
-        }}
+        updateSettings={handleUpdateSettings}
         onInvoicePrinted={handleDrawerInvoicePrinted}
         onResolveUnidentifiedPrice={resolveUnidentifiedPrice}
         canViewTransactions={canViewTransactions}
