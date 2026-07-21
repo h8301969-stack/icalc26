@@ -137,6 +137,11 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
     if (!profile) return;
 
     if (isAdminProfile(profile)) {
+      // Dev mode: skip password verification for admin profile switching
+      if (import.meta.env.DEV) {
+        completeSelect(profileId);
+        return;
+      }
       if (!onVerifyAdminPassword) return;
       setAdminTargetId(profileId);
       setAdminPassword('');

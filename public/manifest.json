@@ -1,29 +1,34 @@
 {
-  "name": "Vision iCalc 26",
+  "name": "iCalc - POS Calculator & Inventory",
   "short_name": "iCalc",
-  "description": "Spatial Glassmorphic Calculator for iOS 26",
+  "description": "Professional point-of-sale calculator with inventory management, invoicing, and business analytics",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "any",
+  "orientation": "portrait-primary",
   "background_color": "#000000",
-  "theme_color": "#000000",
+  "theme_color": "#ff9f0a",
   "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "screenshots": [
     {
       "src": "/icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
+      "sizes": "540x720",
+      "type": "image/png",
+      "form_factor": "narrow"
     }
   ]
 }

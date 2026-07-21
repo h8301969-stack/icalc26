@@ -91,4 +91,24 @@ export interface SavedInvoice {
   name: string;
   expression: string;
   isCurrent: boolean;
+  deletedAt?: number;
+}
+
+export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
+
+export interface SyncState {
+  status: SyncStatus;
+  lastError?: string;
+  lastSyncTime?: number;
+  failedItems: Map<string, { count: number; nextRetryAt: number }>;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  entityType: 'inventory' | 'invoice' | 'purchase' | 'supplier' | 'request' | 'restock';
+  entityId: string;
+  action: 'create' | 'update' | 'delete' | 'restore';
+  profileName?: string;
+  timestamp: number;
+  details?: Record<string, any>;
 }

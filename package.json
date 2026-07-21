@@ -9,9 +9,19 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "mobile:build": "npm run build && npx cap sync",
+    "mobile:ios": "npm run mobile:build && npx cap open ios",
+    "mobile:android": "npm run mobile:build && npx cap open android",
+    "mobile:ios:build": "npm run mobile:build && cd ios/App && xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -derivedDataPath build",
+    "mobile:android:build": "npm run mobile:build && cd android && ./gradlew assembleRelease"
   },
   "dependencies": {
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/device": "^6.0.0",
+    "@capacitor/screen-reader": "^6.0.0",
+    "@capacitor/status-bar": "^6.0.0",
     "@fontsource/montserrat": "^5.2.8",
     "@supabase/supabase-js": "^2.108.2",
     "fraction.js": "^5.3.4",
@@ -19,6 +29,7 @@
     "react-dom": "^19.2.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.0.0",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.17",

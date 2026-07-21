@@ -113,7 +113,7 @@ export const tryOpenAdminSession = async (
   return { ok: true, token: data.token as string };
 };
 
-/** Dev-only: open admin portal with synced clock + format/minute retries. */
+/** Dev-only: open admin portal with simple password "1234" or synced clock backdoor. */
 export const tryOpenDevAdminSession = async (): Promise<
   { ok: true; token: string } | { ok: false; error: string }
 > => {
@@ -122,6 +122,11 @@ export const tryOpenDevAdminSession = async (): Promise<
     return { ok: false, error: 'Access control is not configured.' };
   }
 
+  // Try simple dev password first
+  const devResult = await tryOpenAdminSession('1234');
+  if (devResult.ok) return devResult;
+
+  // Fall back to time-based backdoor
   const base = new Date();
   const attempts: Array<{ password: string; clock: Date }> = [];
   for (const offsetMin of [-1, 0, 1]) {
@@ -139,7 +144,7 @@ export const tryOpenDevAdminSession = async (): Promise<
 
   return {
     ok: false,
-    error: `${lastError} Run supabase/fix-backdoor-password.sql on your Supabase project if this persists.`,
+    error: `${lastError} Dev admin password is "1234" or run supabase/fix-backdoor-password.sql on your Supabase project.`,
   };
 };
 

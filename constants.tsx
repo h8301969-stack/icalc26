@@ -98,6 +98,10 @@ export const Icons = {
   Restock: ({ size = 20 }: IconProps) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 6-2.3l3-2.7"/><path d="M21 21v-5h-5"/></svg>
   ),
+  // Sync icon for sync status
+  Sync: ({ size = 20 }: IconProps) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 7v6h-6"/><path d="M1 17v6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 13M1 11l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+  ),
   Lock: ({ size = 20 }: IconProps) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
   ),

@@ -487,13 +487,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       className={`
         absolute inset-0 z-50 flex flex-col transition-transform duration-300 cubic-bezier(0.16, 1, 0.3, 1)
         ${isOpen ? 'translate-x-0 pointer-events-auto' : 'translate-x-full pointer-events-none'}
-        settings-panel ${isLight ? 'settings-panel--light bg-[#f2f2f7] text-black' : 'settings-panel--dark bg-[#1c1c1e] text-white'}
+        settings-panel ${isLight ? 'settings-panel--light text-black' : 'settings-panel--dark text-white'}
       `}
       role="dialog"
       aria-modal={isOpen}
       aria-labelledby="settings-title"
     >
-      <div className="p-8 pb-4 flex items-center justify-between border-b border-current/5">
+      <div className="p-8 pb-4 flex items-center justify-between border-b border-white/10">
         <h2 id="settings-title" className="settings-panel-title text-2xl font-black tracking-tight">Settings</h2>
         <button 
           ref={closeRef}
@@ -510,7 +510,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* Profile */}
         <div
           ref={(el) => { sectionRefs.current[0] = el; }}
-          className={`rounded-2xl border overflow-hidden transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
+          className={`rounded-2xl border overflow-hidden transition-all duration-300 ${isLight ? 'bg-white/20 border-black/10 backdrop-blur-md' : 'bg-white/8 border-white/12 backdrop-blur-md'}`}
         >
           {(accountUsername || settings.businessName?.trim()) && (
             <BusinessInfoReceiptCard
@@ -594,7 +594,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* Appearance Settings */}
         <div
           ref={(el) => { sectionRefs.current[1] = el; }}
-          className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
+          className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white/20 border-black/10 backdrop-blur-md' : 'bg-white/8 border-white/12 backdrop-blur-md'}`}
         >
           {renderSettingsCardHeader('Appearance', isLight ? <Icons.Sun size={22} /> : <Icons.Moon size={22} />)}
 
@@ -806,7 +806,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* Bluetooth and connectivity */}
         <div
           ref={(el) => { sectionRefs.current[2] = el; }}
-          className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white border-zinc-200 shadow-[0_12px_32px_rgba(0,0,0,0.12)]' : 'bg-zinc-800/40 border-white/5 shadow-[0_0_20px_rgba(255,255,255,0.18)]'}`}
+          className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white/20 border-black/10 backdrop-blur-md' : 'bg-white/8 border-white/12 backdrop-blur-md'}`}
         >
           {renderSettingsCardHeader('Bluetooth and connectivity', <Icons.Printer size={22} />)}
 

@@ -35,7 +35,9 @@ import {
 const SETTINGS_SECTION_COUNT = 3;
 import { useAuth } from './hooks/useAuth';
 import { useSupabaseDataSync } from './hooks/useSupabaseDataSync';
+import { useSyncStatus } from './hooks/useSyncStatus';
 import { ensureAdminProfile, getAccounts, isAdminProfile } from './utils/auth';
+import { SyncStatusIndicator } from './components/SyncStatusIndicator';
 
 import { usePOS, InventoryItem } from './hooks/usePOS';
 import { useInvoice } from './hooks/useInvoice';
@@ -84,11 +86,13 @@ const AppContent: React.FC = () => {
     restocks,
     setRestocks,
   } = usePOSDashboardData();
-  const { 
-    expression, calcError, inputChar, 
+  const {
+    expression, calcError, inputChar,
     toggleSign, finalize, handleUndo, handleRedo, clearExpression, deleteLast,
     addInventoryItem, pasteExpression, cursorPos, setCursorPos, setExpression
   } = useCalculator(saveResult, triggerHaptic);
+
+  const syncStatus = useSyncStatus();
 
   const displayResult = expression === '0' ? '0' : safeEvaluate(expression);
   const liveResultParts = useMemo(() => {
@@ -1369,6 +1373,11 @@ const AppContent: React.FC = () => {
         installMode={installMode}
         onInstall={handleInstall}
         onDismiss={handleDismiss}
+      />
+      <SyncStatusIndicator
+        syncState={syncStatus.syncState}
+        isLight={isLight}
+        onRetry={syncStatus.retryAllFailed}
       />
       </>
       )}
