@@ -86,7 +86,7 @@ create table if not exists public.inventory_activities (
   user_id       uuid not null references auth.users(id) on delete cascade,
   item_id       uuid not null references public.inventory_items(id) on delete cascade,
   type          text not null
-                  check (type in ('restock', 'sale', 'cart-add', 'cart-remove', 'image-update')),
+                  check (type in ('restock', 'sale', 'cart-add', 'cart-remove', 'image-update', 'price-update', 'stock-update')),
   action        text not null,
   profile_name  text,
   logged_at     timestamptz not null default now()
