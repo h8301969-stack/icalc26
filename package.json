@@ -14,8 +14,8 @@
     "mobile:ios": "npm run mobile:build && npx cap open ios",
     "mobile:android": "npm run mobile:build && npx cap open android",
     "mobile:ios:build": "npm run mobile:build && cd ios/App && xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -derivedDataPath build",
-    "mobile:android:build": "npm run mobile:build && cd android && ./gradlew assembleRelease",
-    "mobile:android:build:debug": "npm run mobile:build && cd android && ./gradlew assembleDebug"
+    "mobile:android:build": "npm run mobile:build && cd android && gradlew.bat assembleRelease",
+    "mobile:android:build:debug": "npm run mobile:build && cd android && gradlew.bat assembleDebug"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.1",
