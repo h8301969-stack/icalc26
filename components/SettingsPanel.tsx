@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Icons } from '../constants';
 import {
   printerInstance,
@@ -510,7 +511,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* Profile */}
         <div
           ref={(el) => { sectionRefs.current[0] = el; }}
-          className={`rounded-2xl border overflow-hidden transition-all duration-300 ${isLight ? 'bg-white/20 border-black/10 backdrop-blur-md' : 'bg-white/8 border-white/12 backdrop-blur-md'}`}
+          className={`settings-card rounded-2xl border overflow-hidden transition-all duration-300 ${isLight ? 'bg-white/20 border-black/10 backdrop-blur-md' : 'bg-white/8 border-white/12 backdrop-blur-md'}`}
         >
           {(accountUsername || settings.businessName?.trim()) && (
             <BusinessInfoReceiptCard
@@ -594,7 +595,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* Appearance Settings */}
         <div
           ref={(el) => { sectionRefs.current[1] = el; }}
-          className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white/20 border-black/10 backdrop-blur-md' : 'bg-white/8 border-white/12 backdrop-blur-md'}`}
+          className={`settings-card p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white/20 border-black/10 backdrop-blur-md' : 'bg-white/8 border-white/12 backdrop-blur-md'}`}
         >
           {renderSettingsCardHeader('Appearance', isLight ? <Icons.Sun size={22} /> : <Icons.Moon size={22} />)}
 
@@ -800,13 +801,34 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </button>
               </div>
             )}
+
+            {!Capacitor.isNativePlatform() && (
+              <div className="pt-2 border-t border-white/10">
+                <div className="flex flex-col gap-1 mb-3">
+                  <span className="text-sm font-black">Get app on your phone</span>
+                  <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                    Download the Android app and share it with others
+                  </span>
+                </div>
+                <a
+                  href="/icalc.apk"
+                  download="iCalc.apk"
+                  className={`w-full py-3.5 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
+                    isLight ? 'bg-blue-500 text-white' : 'bg-blue-500/90 text-white'
+                  }`}
+                >
+                  <Icons.Download size={16} />
+                  Download Android app
+                </a>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Bluetooth and connectivity */}
         <div
           ref={(el) => { sectionRefs.current[2] = el; }}
-          className={`p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white/20 border-black/10 backdrop-blur-md' : 'bg-white/8 border-white/12 backdrop-blur-md'}`}
+          className={`settings-card p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white/20 border-black/10 backdrop-blur-md' : 'bg-white/8 border-white/12 backdrop-blur-md'}`}
         >
           {renderSettingsCardHeader('Bluetooth and connectivity', <Icons.Printer size={22} />)}
 

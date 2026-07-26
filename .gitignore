@@ -17,6 +17,11 @@ dist-ssr
 invite-passwords.txt
 data/invitePasswords.ts
 
+# Release signing key and shareable APK
+android/app/release.keystore
+public/icalc.apk
+kimi-debug-session_*.zip
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

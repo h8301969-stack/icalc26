@@ -873,7 +873,7 @@ const AppContent: React.FC = () => {
                 : 'w-[94%] h-[96%] sm:w-[90vw] sm:h-[90vh] max-w-[430px] max-h-[932px] rounded-[26px]'
           } ${
             isSettingsOpen
-              ? `${isLight ? 'bg-[#f2f2f7] text-black' : 'bg-[#1c1c1e] text-white'}`
+              ? `${isLight ? 'bg-white text-black' : 'bg-black text-white'}`
               : disableCard
                 ? `bg-transparent ${isLight ? 'text-black' : 'text-white'}`
                 : `${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px)`

@@ -2353,3 +2353,50 @@ select.app-input--dark {
 .fluid-chip-btn:active {
   transform: scale(0.96);
 }
+
+/* ---------- Settings panel: solid theme background + corner containment ---------- */
+.settings-panel {
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.settings-panel--light {
+  background: #ffffff;
+}
+
+.settings-panel--dark {
+  background: #000000;
+}
+
+/* Settings cards: hover lift with black shadow (light mode) / white shadow (dark mode) */
+.settings-card {
+  will-change: box-shadow;
+}
+
+.settings-panel--light .settings-card:hover {
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18), 0 3px 10px rgba(0, 0, 0, 0.10);
+}
+
+.settings-panel--dark .settings-card:hover {
+  box-shadow: 0 14px 34px rgba(255, 255, 255, 0.16), 0 3px 10px rgba(255, 255, 255, 0.09);
+}
+
+/* ---------- Global fluid spring press feedback ---------- */
+/* Only overrides timing/duration — never transition-property — so
+   component-specific transitions (width, colors, ...) keep working. */
+:root {
+  --spring-fast: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+button:not(:disabled),
+[role="button"],
+a[href] {
+  transition-duration: 180ms;
+  transition-timing-function: var(--spring-fast);
+}
+
+button:not(:disabled):active,
+[role="button"]:active,
+a[href]:active {
+  scale: 0.94;
+}
