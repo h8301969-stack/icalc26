@@ -12,6 +12,7 @@ import '@fontsource/montserrat/latin-800.css';
 import '@fontsource/montserrat/latin-900.css';
 import App from './App';
 import './index.css';
+import { nativeWarmupBle } from './utils/nativeBle';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -25,14 +26,18 @@ root.render(
   </React.StrictMode>
 );
 
-// Register service worker only in production to avoid caching during development
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then(reg => console.log('iCalc SW registered. Scope:', reg.scope))
-      .catch(err => console.warn('iCalc SW registration failed:', err));
+// Warm BLE permissions/adapter on native so printer connect is ready sooner
+void nativeWarmupBle();
+
+// Capacitor wraps the native app — not a PWA. Unregister any leftover service workers
+// from older builds so browser caches do not serve stale shells.
+if ('serviceWorker' in navigator) {
+  void navigator.serviceWorker.getRegistrations().then((regs) => {
+    for (const reg of regs) void reg.unregister();
   });
-} else {
-  // Helpful log during dev
-  console.log('Skipping service worker registration in development');
+  if ('caches' in window) {
+    void caches.keys().then((keys) => {
+      for (const key of keys) void caches.delete(key);
+    });
+  }
 }

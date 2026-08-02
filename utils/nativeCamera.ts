@@ -3,7 +3,7 @@
  * Uses Capacitor Camera plugin for native access
  */
 
-import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Camera, CameraDirection, CameraResultType, CameraSource } from '@capacitor/camera';
 
 export interface QRScanResult {
   success: boolean;
@@ -29,20 +29,19 @@ export const scanQRCode = async (): Promise<QRScanResult> => {
       allowEditing: false,
       resultType: CameraResultType.Uri,
       source: CameraSource.Camera,
-      direction: 'front' // Use back camera
+      direction: CameraDirection.Rear,
     });
 
     // Note: Actual QR decoding requires jsQR or similar library
     // This captures the image - decoding happens client-side
     return {
       success: true,
-      imagePath: image.webPath,
-      data: image.webPath
+      data: image.webPath,
     };
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Camera access denied or unavailable'
+      error: error instanceof Error ? error.message : 'Camera access denied or unavailable',
     };
   }
 };
@@ -57,18 +56,18 @@ export const captureReceiptPhoto = async (): Promise<ReceiptPhotoResult> => {
       quality: 85,
       allowEditing: true,
       resultType: CameraResultType.Base64,
-      source: CameraSource.Camera
+      source: CameraSource.Camera,
     });
 
     return {
       success: true,
       imageData: `data:image/${photo.format};base64,${photo.base64String}`,
-      imagePath: photo.webPath
+      imagePath: photo.webPath,
     };
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to capture photo'
+      error: error instanceof Error ? error.message : 'Failed to capture photo',
     };
   }
 };
@@ -82,18 +81,18 @@ export const pickPhotoFromGallery = async (): Promise<ReceiptPhotoResult> => {
       quality: 85,
       allowEditing: false,
       resultType: CameraResultType.Base64,
-      source: CameraSource.Photos
+      source: CameraSource.Photos,
     });
 
     return {
       success: true,
       imageData: `data:image/${photo.format};base64,${photo.base64String}`,
-      imagePath: photo.webPath
+      imagePath: photo.webPath,
     };
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to pick photo'
+      error: error instanceof Error ? error.message : 'Failed to pick photo',
     };
   }
 };
@@ -104,7 +103,7 @@ export const pickPhotoFromGallery = async (): Promise<ReceiptPhotoResult> => {
 export const isCameraAvailable = async (): Promise<boolean> => {
   try {
     const result = await Camera.checkPermissions();
-    return result.camera !== 'denied' && result.camera !== 'prompt-blocked';
+    return result.camera !== 'denied';
   } catch {
     return false;
   }

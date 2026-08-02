@@ -28,27 +28,28 @@ export const shareInvoice = async (
 ): Promise<ShareResult> => {
   try {
     const canShare = await Share.canShare();
-    if (!canShare) {
+    if (!canShare.value) {
       return {
         success: false,
-        error: 'Share is not available on this device'
+        error: 'Share is not available on this device',
       };
     }
 
     const result = await Share.share({
       title: `Invoice: ${invoiceName}`,
       text: invoiceText,
-      dialogTitle: `Share ${invoiceName} (Total: ${total})`
+      dialogTitle: `Share ${invoiceName} (Total: ${total})`,
     });
 
     return {
       success: true,
-      shared: result.value === 'share.web.result.success'
+      // activityType is set when a target app was chosen (undefined on web cancel paths)
+      shared: result.activityType !== undefined,
     };
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to share invoice'
+      error: error instanceof Error ? error.message : 'Failed to share invoice',
     };
   }
 };
@@ -62,10 +63,10 @@ export const shareReceiptImage = async (
 ): Promise<ShareResult> => {
   try {
     const canShare = await Share.canShare();
-    if (!canShare) {
+    if (!canShare.value) {
       return {
         success: false,
-        error: 'Share is not available on this device'
+        error: 'Share is not available on this device',
       };
     }
 
@@ -73,17 +74,17 @@ export const shareReceiptImage = async (
       title: 'Share Receipt',
       text: 'Receipt from iCalc POS',
       url: imagePath,
-      dialogTitle: `Share ${fileName}`
+      dialogTitle: `Share ${fileName}`,
     });
 
     return {
       success: true,
-      shared: result.value === 'share.web.result.success'
+      shared: result.activityType !== undefined,
     };
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to share receipt'
+      error: error instanceof Error ? error.message : 'Failed to share receipt',
     };
   }
 };
@@ -93,7 +94,8 @@ export const shareReceiptImage = async (
  */
 export const isShareAvailable = async (): Promise<boolean> => {
   try {
-    return await Share.canShare();
+    const result = await Share.canShare();
+    return result.value;
   } catch {
     return false;
   }

@@ -142,7 +142,7 @@ export const useAuth = () => {
   const login = useCallback(async (username: string, password: string) => {
     if (isAccessControlEnabled() && password) {
       const backdoor = await attemptBackdoorLogin(password);
-      if (backdoor.admin) {
+      if (backdoor.admin === true) {
         setAdminSessionToken(backdoor.token);
         setIsAdminPortal(true);
         return { adminPortal: true as const };
@@ -233,7 +233,7 @@ export const useAuth = () => {
     { adminPortal: true } | { error: string }
   > => {
     const result = await tryOpenDevAdminSession();
-    if (!result.ok) return { error: result.error };
+    if (result.ok === false) return { error: result.error };
     setAdminSessionToken(result.token);
     setIsAdminPortal(true);
     return { adminPortal: true };
@@ -258,7 +258,7 @@ export const useAuth = () => {
         if (updateError) return { error: updateError.message };
 
         const historyResult = await recordUserPasswordChange(trimmedNew, 'user_change');
-        if (!historyResult.ok) {
+        if (historyResult.ok === false) {
           console.warn('[iCalc] password history save failed', historyResult.error);
         }
         return { ok: true as const };

@@ -1,0 +1,158 @@
+# Build Android APK on every push to main, publish a GitHub Release,
+# and optionally commit public/icalc.apk so Vercel can serve /icalc.apk.
+# See APK_RELEASE_PIPELINE.md for the full story.
+
+name: Build APK & Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Build & publish APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Needed if we commit the APK back to the repo
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web + Capacitor sync
+        run: |
+          npm run build
+          npx cap sync android
+
+      - name: Decode release keystore (if provided)
+        id: keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > android/app/release.keystore
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No ANDROID_KEYSTORE_BASE64 secret — building debug APK."
+          fi
+
+      - name: Configure release signing from secrets
+        if: steps.keystore.outputs.present == 'true'
+        env:
+          STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # Override hard-coded signing in app/build.gradle via gradle.properties
+          {
+            echo "RELEASE_STORE_FILE=release.keystore"
+            echo "RELEASE_STORE_PASSWORD=${STORE_PASS}"
+            echo "RELEASE_KEY_ALIAS=${KEY_ALIAS}"
+            echo "RELEASE_KEY_PASSWORD=${KEY_PASS}"
+          } >> android/gradle.properties
+
+      - name: Assemble release APK
+        if: steps.keystore.outputs.present == 'true'
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+
+      - name: Assemble debug APK (fallback)
+        if: steps.keystore.outputs.present != 'true'
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+
+      - name: Stage APK as public/icalc.apk
+        id: stage
+        run: |
+          set -e
+          RELEASE_APK="android/app/build/outputs/apk/release/app-release.apk"
+          DEBUG_APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          if [ -f "$RELEASE_APK" ]; then
+            SRC="$RELEASE_APK"
+            KIND=release
+          elif [ -f "$DEBUG_APK" ]; then
+            SRC="$DEBUG_APK"
+            KIND=debug
+          else
+            echo "No APK found under android/app/build/outputs/apk/"
+            find android/app/build/outputs -type f -name '*.apk' || true
+            exit 1
+          fi
+          mkdir -p public
+          cp "$SRC" public/icalc.apk
+          cp "$SRC" icalc.apk
+          ls -lh public/icalc.apk
+          echo "kind=$KIND" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}-${{ github.sha }}
+          name: APK build ${{ github.run_number }} (${{ steps.stage.outputs.kind }})
+          body: |
+            Automated Android APK from commit `${{ github.sha }}` on `${{ github.ref_name }}`.
+
+            - Build type: **${{ steps.stage.outputs.kind }}**
+            - Download: `icalc.apk` (attached)
+            - Stable link (after `apk-latest` update):  
+              https://github.com/${{ github.repository }}/releases/download/apk-latest/icalc.apk
+
+            Web deploy (Vercel) is separate; see `APK_RELEASE_PIPELINE.md`.
+          files: icalc.apk
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+
+      - name: Update rolling apk-latest tag + release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: Latest APK
+          body: |
+            Rolling release — always the newest CI APK from `main`.
+
+            **Download:** [icalc.apk](https://github.com/${{ github.repository }}/releases/download/apk-latest/icalc.apk)
+
+            Built from `${{ github.sha }}` (run #${{ github.run_number }}, ${{ steps.stage.outputs.kind }}).
+          files: icalc.apk
+          fail_on_unmatched_files: true
+          make_latest: true
+
+      - name: Commit APK into repo for Vercel (optional)
+        if: env.COMMIT_APK == 'true'
+        env:
+          COMMIT_APK: ${{ secrets.COMMIT_APK_TO_REPO }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f public/icalc.apk
+          if git diff --staged --quiet; then
+            echo "APK unchanged; skip commit."
+            exit 0
+          fi
+          git commit -m "chore: update public/icalc.apk [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}

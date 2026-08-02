@@ -18,6 +18,7 @@
     "mobile:android:build:debug": "npm run mobile:build && cd android && gradlew.bat assembleDebug"
   },
   "dependencies": {
+    "@capacitor-community/bluetooth-le": "^6.1.0",
     "@capacitor/android": "^6.2.1",
     "@capacitor/app": "^6.0.0",
     "@capacitor/camera": "^6.1.3",

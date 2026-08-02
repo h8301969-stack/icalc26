@@ -1,5 +1,67 @@
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Minimal WebUSB typings (not always present in TS lib DOM) */
+interface USBDeviceFilter {
+  vendorId?: number;
+  productId?: number;
+  classCode?: number;
+  subclassCode?: number;
+  protocolCode?: number;
+  serialNumber?: string;
+}
+
+interface USBEndpoint {
+  endpointNumber: number;
+  direction: 'in' | 'out';
+  type: 'bulk' | 'interrupt' | 'isochronous' | 'control';
+}
+
+interface USBAlternateInterface {
+  interfaceClass: number;
+  endpoints: USBEndpoint[];
+}
+
+interface USBInterface {
+  interfaceNumber: number;
+  alternates: USBAlternateInterface[];
+}
+
+interface USBConfiguration {
+  configurationValue: number;
+  interfaces: USBInterface[];
+}
+
+interface USBDevice {
+  opened: boolean;
+  vendorId: number;
+  productId: number;
+  productName?: string;
+  serialNumber?: string;
+  configuration: USBConfiguration | null;
+  configurations: USBConfiguration[];
+  open(): Promise<void>;
+  close(): Promise<void>;
+  selectConfiguration(configurationValue: number): Promise<void>;
+  claimInterface(interfaceNumber: number): Promise<void>;
+  releaseInterface(interfaceNumber: number): Promise<void>;
+  transferOut(
+    endpointNumber: number,
+    data: BufferSource
+  ): Promise<{ status: 'ok' | 'stall' | 'babble' }>;
+}
+
+interface USB {
+  getDevices(): Promise<USBDevice[]>;
+  requestDevice(options: { filters: USBDeviceFilter[] }): Promise<USBDevice>;
+}
+
+type NavigatorWithUSB = Navigator & { usb?: USB };
+
+const getUSB = (): USB | undefined => {
+  if (typeof navigator === 'undefined') return undefined;
+  return (navigator as NavigatorWithUSB).usb;
+};
+
 export interface UsbSupportInfo {
   supported: boolean;
   secureContext: boolean;
@@ -8,7 +70,7 @@ export interface UsbSupportInfo {
 
 export const getUsbSupport = (): UsbSupportInfo => {
   const secureContext = typeof window !== 'undefined' && window.isSecureContext;
-  const hasApi = typeof navigator !== 'undefined' && 'usb' in navigator;
+  const hasApi = !!getUSB();
 
   if (!hasApi) {
     return {
@@ -60,9 +122,10 @@ export class UsbPrinterTransport {
   }
 
   async getAuthorizedDevices(): Promise<USBDevice[]> {
-    if (!navigator.usb?.getDevices) return [];
+    const usb = getUSB();
+    if (!usb?.getDevices) return [];
     try {
-      return await navigator.usb.getDevices();
+      return await usb.getDevices();
     } catch {
       return [];
     }
@@ -123,7 +186,9 @@ export class UsbPrinterTransport {
     const support = getUsbSupport();
     if (!support.supported) throw new Error(support.message ?? 'WebUSB not supported.');
 
-    const device = await navigator.usb!.requestDevice({ filters: USB_PRINTER_FILTERS });
+    const usb = getUSB();
+    if (!usb) throw new Error('WebUSB not supported.');
+    const device = await usb.requestDevice({ filters: USB_PRINTER_FILTERS });
     await this.openDevice(device);
     return usbDeviceLabel(device);
   }

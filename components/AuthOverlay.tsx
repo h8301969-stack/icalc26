@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import icalcLogo from '../assets/logo/icalc-logo.png';
 import { Icons } from '../constants';
@@ -11,6 +11,8 @@ import {
   type AccessBusinessInfo,
 } from '../utils/accessControl';
 import BusinessInfoReceiptCard from './BusinessInfoReceiptCard';
+import FluidSegmentControl from './FluidSegmentControl';
+import { MorphCrossfade } from './MorphCrossfade';
 import PasswordField from './PasswordField';
 import { supabase } from '../utils/supabase';
 import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
@@ -22,6 +24,7 @@ const AUTH_MIN_LOADING_MS = 1200;
 const AUTH_SIGNUP_LOADING_MS = 15000;
 const AUTH_ADMIN_PORTAL_LOADING_MS = 3000;
 const AUTH_SUCCESS_HOLD_MS = 700;
+const AUTH_MODE_MS = 200;
 const EDGE_ZONE_PX = 56;
 const EDGE_SWIPE_MIN = 48;
 const TAP_THRESHOLD = 14;
@@ -69,7 +72,7 @@ interface AuthOverlayProps {
   onAuthComplete: (account: AppAccount) => void;
   onAdminPortal?: () => void;
   onFinalizeAccess?: (accessCode: string, username: string) => Promise<AuthResult>;
-  onDevSkip?: () => Promise<{ adminPortal?: true; error?: string } | void>;
+  onDevSkip?: () => Promise<{ adminPortal?: true; error?: string } | null | undefined>;
   onQuickUnlock?: () => void;
   onExitComplete?: () => void;
 }
@@ -113,6 +116,13 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const pendingUnsubscribeRef = useRef<(() => void) | null>(null);
   const pausedPollRef = useRef<number | null>(null);
   const pointerStart = useRef<{ x: number; y: number; edge: 'left' | 'right' | null } | null>(null);
+  const authBodyShellRef = useRef<HTMLDivElement>(null);
+  const authBodyMeasureRef = useRef<HTMLDivElement>(null);
+  const authHeightAnimRef = useRef<number | null>(null);
+  const settledBodyHeightRef = useRef(0);
+  const prevErrorRef = useRef<string | null>(null);
+  const [modeFieldsOut, setModeFieldsOut] = useState(false);
+  const [cardModePulse, setCardModePulse] = useState(false);
 
   const isLoading = isSubmitting || isEntering;
   const showSignupInsight = signupConfirmation !== null;
@@ -191,6 +201,119 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   useEffect(() => {
     setMode(initialMode);
   }, [initialMode]);
+
+  /** Smoothly animate auth form shell height to match measured content. */
+  const animateAuthBodyHeight = useCallback((fromHeight?: number) => {
+    const shell = authBodyShellRef.current;
+    const measure = authBodyMeasureRef.current;
+    if (!shell || !measure) return;
+
+    if (authHeightAnimRef.current !== null) {
+      window.clearTimeout(authHeightAnimRef.current);
+      authHeightAnimRef.current = null;
+    }
+
+    const measuredFrom = measure.getBoundingClientRect().height;
+    const lockedHeight =
+      shell.style.height && shell.style.height !== 'auto'
+        ? parseFloat(shell.style.height)
+        : NaN;
+    const from =
+      fromHeight ??
+      (settledBodyHeightRef.current > 0
+        ? settledBodyHeightRef.current
+        : Number.isFinite(lockedHeight)
+          ? lockedHeight
+          : measuredFrom);
+    const to = measure.scrollHeight;
+
+    if (Math.abs(to - from) < 1) {
+      shell.style.height = 'auto';
+      shell.style.overflow = '';
+      shell.classList.remove('auth-mode-shell--animating');
+      settledBodyHeightRef.current = to;
+      return;
+    }
+
+    shell.style.overflow = 'hidden';
+    shell.style.height = `${from}px`;
+    shell.classList.remove('auth-mode-shell--animating');
+
+    // Force reflow so the browser registers the start height before transitioning.
+    void shell.offsetHeight;
+
+    shell.classList.add('auth-mode-shell--animating');
+    shell.style.height = `${to}px`;
+
+    authHeightAnimRef.current = window.setTimeout(() => {
+      shell.classList.remove('auth-mode-shell--animating');
+      shell.style.height = 'auto';
+      shell.style.overflow = '';
+      settledBodyHeightRef.current = measure.scrollHeight;
+      authHeightAnimRef.current = null;
+    }, AUTH_MODE_MS + 40);
+  }, []);
+
+  const handleAuthModeChange = useCallback(
+    (next: AuthMode) => {
+      if (next === mode) return;
+
+      const shell = authBodyShellRef.current;
+      const measure = authBodyMeasureRef.current;
+      const fromHeight =
+        measure?.getBoundingClientRect().height ?? settledBodyHeightRef.current;
+
+      if (shell && fromHeight > 0) {
+        shell.style.overflow = 'hidden';
+        shell.style.height = `${fromHeight}px`;
+        settledBodyHeightRef.current = fromHeight;
+      }
+
+      setModeFieldsOut(true);
+      setCardModePulse(true);
+      setError(null);
+      setSecret('');
+      setEmail('');
+      setMode(next);
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          animateAuthBodyHeight(fromHeight);
+          // Brief settle so the content ease-in is visible after the mode swap.
+          window.setTimeout(() => setModeFieldsOut(false), 50);
+          window.setTimeout(() => setCardModePulse(false), AUTH_MODE_MS);
+        });
+      });
+    },
+    [mode, animateAuthBodyHeight]
+  );
+
+  // Record settled height when the auth form first mounts / becomes visible.
+  useLayoutEffect(() => {
+    if (!showAuthForm) return;
+    const measure = authBodyMeasureRef.current;
+    if (!measure || authHeightAnimRef.current !== null) return;
+    settledBodyHeightRef.current = measure.scrollHeight;
+  }, [showAuthForm]);
+
+  // Smooth card resize when error text appears/clears.
+  useLayoutEffect(() => {
+    if (!showAuthForm) return;
+    const hadError = Boolean(prevErrorRef.current);
+    const hasError = Boolean(error);
+    if (prevErrorRef.current === error) return;
+    prevErrorRef.current = error;
+    if (hadError === hasError) return;
+    animateAuthBodyHeight(settledBodyHeightRef.current);
+  }, [error, showAuthForm, animateAuthBodyHeight]);
+
+  useEffect(() => {
+    return () => {
+      if (authHeightAnimRef.current !== null) {
+        window.clearTimeout(authHeightAnimRef.current);
+      }
+    };
+  }, []);
 
   const textColor = isLight ? '#000' : '#fff';
   const panelClass = isLight
@@ -311,7 +434,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
     try {
       const result = await onDevSkip();
-      if (result?.adminPortal) {
+      if (result && result.adminPortal) {
         setLoadingPhase('admin_breached');
         if ('vibrate' in navigator) navigator.vibrate([20, 40, 20]);
         await wait(AUTH_ADMIN_PORTAL_LOADING_MS);
@@ -320,7 +443,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         onAdminPortal?.();
         return;
       }
-      if (result?.error) {
+      if (result && result.error) {
         setIsSubmitting(false);
         setError(result.error);
         return;
@@ -390,7 +513,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
     void fetchAccessCodeBusinessInfo(businessSetup.accessCode).then((result) => {
       if (cancelled) return;
-      if (result.ok) {
+      if (result.ok === true) {
         setReceivedBusinessInfo(result.info);
       } else {
         setReceivedBusinessInfo({
@@ -641,21 +764,18 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
     if (settingsSection === 'appearance') {
       return (
-        <div className="flex rounded-full overflow-hidden border text-xs font-black uppercase tracking-widest mx-auto w-fit">
-          {(['light', 'dark', 'system'] as const).map((theme) => (
-            <button
-              key={theme}
-              type="button"
-              onClick={() => updateSettings({ themeMode: theme })}
-              className={`px-4 py-2 transition-all ${
-                settings.themeMode === theme
-                  ? isLight ? 'bg-black text-white' : 'bg-white text-black'
-                  : 'opacity-50'
-              }`}
-            >
-              {theme}
-            </button>
-          ))}
+        <div className="flex justify-center">
+          <FluidSegmentControl
+            isLight={isLight}
+            ariaLabel="Theme mode"
+            value={settings.themeMode}
+            onChange={(themeMode) => updateSettings({ themeMode })}
+            options={[
+              { id: 'light', label: 'Light' },
+              { id: 'dark', label: 'Dark' },
+              { id: 'system', label: 'Auto' },
+            ]}
+          />
         </div>
       );
     }
@@ -664,19 +784,16 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     return (
       <div className="flex flex-col items-center gap-3">
         <p className="app-subtext text-[10px] opacity-50">Calculator orientation</p>
-        <button
-          type="button"
-          onClick={() =>
-            updateSettings({
-              layoutMode: layout === 'portrait' ? 'landscape' : 'portrait',
-            })
-          }
-          className={`app-subtext px-5 py-3 rounded-xl text-xs font-black border transition-all active:scale-95 ${
-            isLight ? 'bg-zinc-100 border-zinc-200 text-black' : 'bg-white/10 border-white/10 text-white'
-          }`}
-        >
-          {layout === 'portrait' ? 'Portrait' : 'Landscape'}
-        </button>
+        <FluidSegmentControl
+          isLight={isLight}
+          ariaLabel="Layout orientation"
+          value={layout}
+          onChange={(layoutMode) => updateSettings({ layoutMode })}
+          options={[
+            { id: 'portrait', label: 'Portrait' },
+            { id: 'landscape', label: 'Landscape' },
+          ]}
+        />
       </div>
     );
   };
@@ -763,114 +880,165 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         {showAuthForm && (
           <div
             key={authCardAnimKey}
-            className={`relative w-full rounded-2xl p-6 border shadow-2xl animate-auth-card-enter ${panelClass} ${isLoading && !showBusinessSetup ? 'opacity-40 pointer-events-none' : ''}`}
+            className={`auth-card-mode relative w-full rounded-2xl p-6 border shadow-2xl animate-auth-card-enter ${
+              cardModePulse ? 'auth-card-mode--pulse' : ''
+            } ${panelClass} ${isLoading && !showBusinessSetup ? 'opacity-40 pointer-events-none' : ''}`}
           >
-            <div className="flex rounded-full overflow-hidden border mb-5 text-[10px] font-black uppercase tracking-widest">
-              <button
-                type="button"
-                disabled={isLoading}
-                onClick={() => { setMode('signup'); setError(null); setSecret(''); setEmail(''); }}
-                className={`flex-1 py-2 transition-all ${mode === 'signup' ? (isLight ? 'bg-black text-white' : 'bg-white text-black') : 'opacity-50'}`}
-              >
-                Sign up
-              </button>
-              <button
-                type="button"
-                disabled={isLoading}
-                onClick={() => { setMode('login'); setError(null); setSecret(''); setEmail(''); }}
-                className={`flex-1 py-2 transition-all ${mode === 'login' ? (isLight ? 'bg-black text-white' : 'bg-white text-black') : 'opacity-50'}`}
-              >
-                Sign in
-              </button>
-            </div>
+            <FluidSegmentControl
+              fullWidth
+              isLight={isLight}
+              disabled={isLoading || showSignupInsight || showBusinessSetup}
+              ariaLabel="Authentication mode"
+              className="mb-5 text-[10px] font-black uppercase tracking-widest"
+              value={mode}
+              onChange={handleAuthModeChange}
+              options={[
+                { id: 'signup', label: 'Sign up' },
+                { id: 'login', label: 'Sign in' },
+              ]}
+            />
 
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <label className="block">
-                <span className={FORM_FIELD_LABEL}>
-                  {mode === 'signup' ? 'Username' : 'Username or email'}
-                </span>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  autoComplete="username"
-                  disabled={isLoading || showSignupInsight || showBusinessSetup}
-                  className={formInputClass(isLight)}
-                  placeholder={mode === 'signup' ? 'Choose a username' : 'Username or email'}
-                />
-              </label>
+            <div ref={authBodyShellRef} className="auth-mode-shell">
+              <div
+                ref={authBodyMeasureRef}
+                className={`auth-mode-fields ${modeFieldsOut ? 'auth-mode-fields--out' : ''}`}
+              >
+                <form onSubmit={handleSubmit} className="space-y-3">
+                  <label className="block">
+                    <span className={FORM_FIELD_LABEL}>
+                      <MorphCrossfade
+                        active={mode}
+                        options={[
+                          { id: 'signup', label: 'Username' },
+                          { id: 'login', label: 'Username or email' },
+                        ]}
+                      />
+                    </span>
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      autoComplete="username"
+                      disabled={isLoading || showSignupInsight || showBusinessSetup}
+                      className={`${formInputClass(isLight)} transition-all duration-300`}
+                      placeholder={mode === 'signup' ? 'Choose a username' : 'Username or email'}
+                    />
+                  </label>
 
-              {mode === 'signup' && (
-                <label className="block">
-                  <span className={FORM_FIELD_LABEL}>Email</span>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    autoComplete="email"
+                  <div
+                    className={`auth-mode-collapse ${
+                      mode === 'signup' ? 'auth-mode-collapse--open' : 'auth-mode-collapse--closed'
+                    }`}
+                  >
+                    <div className="auth-mode-collapse__inner">
+                      <label className="block">
+                        <span className={FORM_FIELD_LABEL}>Email</span>
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          autoComplete="email"
+                          tabIndex={mode === 'signup' ? 0 : -1}
+                          disabled={isLoading || showSignupInsight || mode !== 'signup'}
+                          className={formInputClass(isLight)}
+                          placeholder="you@example.com"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <label className="block">
+                    <span className={FORM_FIELD_LABEL}>
+                      <MorphCrossfade
+                        active={mode}
+                        options={[
+                          { id: 'signup', label: 'Signup code' },
+                          { id: 'login', label: 'Password' },
+                        ]}
+                      />
+                    </span>
+                    <PasswordField
+                      isLight={isLight}
+                      value={secret}
+                      onChange={(value) =>
+                        setSecret(mode === 'signup' ? value.toUpperCase() : value)
+                      }
+                      onKeyDown={(e) => e.stopPropagation()}
+                      autoComplete={mode === 'signup' ? 'one-time-code' : 'current-password'}
+                      spellCheck={false}
+                      maxLength={mode === 'signup' ? 7 : 64}
+                      disabled={isLoading || showSignupInsight}
+                      mono={mode === 'signup'}
+                      inputClassName={`transition-all duration-300 ${mode === 'signup' ? 'tracking-widest' : ''}`}
+                      placeholder={mode === 'signup' ? '7-character code' : 'Your password'}
+                    />
+                  </label>
+
+                  <div
+                    className={`auth-mode-collapse ${
+                      mode === 'signup' ? 'auth-mode-collapse--open' : 'auth-mode-collapse--closed'
+                    }`}
+                  >
+                    <div className="auth-mode-collapse__inner">
+                      <p
+                        className={`app-subtext text-[10px] leading-relaxed opacity-50 ${
+                          isLight ? 'text-black' : 'text-white'
+                        }`}
+                      >
+                        Enter your username, email, and one-time signup code. After confirming your
+                        email, sign in with your username or email.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`auth-mode-collapse ${
+                      error ? 'auth-mode-collapse--open' : 'auth-mode-collapse--closed'
+                    }`}
+                  >
+                    <div className="auth-mode-collapse__inner">
+                      <p className="text-xs font-bold text-red-500" role="alert">
+                        {error ?? '\u00a0'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
                     disabled={isLoading || showSignupInsight}
-                    className={formInputClass(isLight)}
-                    placeholder="you@example.com"
-                  />
-                </label>
-              )}
+                    className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all duration-300 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2.5 min-h-[46px] ${
+                      isLight ? 'bg-black text-white' : 'bg-white text-black'
+                    }`}
+                  >
+                    <MorphCrossfade
+                      center
+                      active={mode}
+                      options={[
+                        { id: 'signup', label: 'Create account' },
+                        { id: 'login', label: 'Sign in' },
+                      ]}
+                    />
+                  </button>
 
-              <label className="block">
-                <span className={FORM_FIELD_LABEL}>
-                  {mode === 'signup' ? 'Signup code' : 'Password'}
-                </span>
-                <PasswordField
-                  isLight={isLight}
-                  value={secret}
-                  onChange={(value) =>
-                    setSecret(mode === 'signup' ? value.toUpperCase() : value)
-                  }
-                  onKeyDown={(e) => e.stopPropagation()}
-                  autoComplete={mode === 'signup' ? 'one-time-code' : 'current-password'}
-                  spellCheck={false}
-                  maxLength={mode === 'signup' ? 7 : 64}
-                  disabled={isLoading || showSignupInsight}
-                  mono={mode === 'signup'}
-                  inputClassName={mode === 'signup' ? 'tracking-widest' : ''}
-                  placeholder={mode === 'signup' ? '7-character code' : 'Your password'}
-                />
-              </label>
-
-              {mode === 'signup' && (
-                <p className={`app-subtext text-[10px] leading-relaxed opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
-                  Enter your username, email, and one-time signup code. After confirming your email, sign in with your username or email.
-                </p>
-              )}
-
-              {error && (
-                <p className="text-xs font-bold text-red-500" role="alert">{error}</p>
-              )}
-
-              <button
-                type="submit"
-                disabled={isLoading || showSignupInsight}
-                className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2.5 min-h-[46px] ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
-              >
-                {mode === 'signup' ? 'Create account' : 'Sign in'}
-              </button>
-
-              {isDev && onDevSkip && !existingAccount && (
-                <button
-                  type="button"
-                  onClick={handleDevSkip}
-                  disabled={isLoading || showSignupInsight}
-                  className={`w-full py-3 rounded-xl font-black text-[10px] uppercase tracking-[0.3em] transition-all active:scale-[0.98] disabled:opacity-40 border border-dashed ${
-                    isLight
-                      ? 'border-black/20 text-black/50 hover:text-black/70'
-                      : 'border-white/20 text-white/50 hover:text-white/70'
-                  }`}
-                >
-                  Skip (dev)
-                </button>
-              )}
-            </form>
+                  {isDev && onDevSkip && !existingAccount && (
+                    <button
+                      type="button"
+                      onClick={handleDevSkip}
+                      disabled={isLoading || showSignupInsight}
+                      className={`w-full py-3 rounded-xl font-black text-[10px] uppercase tracking-[0.3em] transition-all active:scale-[0.98] disabled:opacity-40 border border-dashed ${
+                        isLight
+                          ? 'border-black/20 text-black/50 hover:text-black/70'
+                          : 'border-white/20 text-white/50 hover:text-white/70'
+                      }`}
+                    >
+                      Skip (dev)
+                    </button>
+                  )}
+                </form>
+              </div>
+            </div>
 
             {showBusinessSetup && businessSetup && (
               <div

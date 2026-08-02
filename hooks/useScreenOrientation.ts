@@ -12,8 +12,18 @@ export const useScreenOrientation = (
     if (!enabled || typeof window === 'undefined') return;
     if (getDeviceClass() !== 'mobile') return;
 
+    type OrientationLock =
+      | 'any'
+      | 'natural'
+      | 'landscape'
+      | 'portrait'
+      | 'portrait-primary'
+      | 'portrait-secondary'
+      | 'landscape-primary'
+      | 'landscape-secondary';
+
     const orientation = screen.orientation as ScreenOrientation & {
-      lock?: (orientation: OrientationLockType) => Promise<void>;
+      lock?: (orientation: OrientationLock) => Promise<void>;
       unlock?: () => void;
     };
 
@@ -33,7 +43,7 @@ export const useScreenOrientation = (
           await orientation.lock('portrait-primary');
         }
       } catch {
-        // Orientation lock requires installed PWA / fullscreen on many browsers.
+        // Orientation lock often requires fullscreen / native shell (Capacitor).
       }
     };
 

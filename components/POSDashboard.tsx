@@ -24,6 +24,7 @@ import {
 } from '../utils/notepadSnapshot';
 import { DEFAULT_INVENTORY_IMAGE, resolveInventoryImage, WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
 import { formInputClass } from '../utils/formFields';
+import { MorphPresence } from './MorphCrossfade';
 
 interface POSDashboardProps {
   history: HistoryItem[];
@@ -56,7 +57,9 @@ interface POSDashboardProps {
     profiles?: import('../types').UserProfile[];
     activeProfileId?: string;
     currency?: string;
-
+    businessName?: string;
+    businessPhone?: string;
+    businessAddress?: string;
   };
   updateSettings: (keyOrPatch: string | Record<string, unknown>, value?: unknown) => void;
   onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
@@ -66,10 +69,6 @@ interface POSDashboardProps {
   onChangePassword?: (current: string, newPassword: string) => Promise<{ error?: string; ok?: boolean }>;
   onLogout?: () => void;
   onVerifyAdminPassword?: (password: string) => Promise<{ error?: string; ok?: boolean }>;
-  canInstallApp?: boolean;
-  isAppInstalled?: boolean;
-  onInstallApp?: () => void;
-  installAppMode?: 'chromium' | 'ios-safari' | 'ios-other' | null;
 }
 
 type DashboardLogFilter = 'all' | 'restock' | 'sale' | 'invoice' | 'unidentified' | 'updates' | '24h' | '48h' | '7d';
@@ -221,10 +220,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   onChangePassword,
   onLogout,
   onVerifyAdminPassword,
-  canInstallApp = false,
-  isAppInstalled = false,
-  onInstallApp,
-  installAppMode = null,
 }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -958,7 +953,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     setRestocks,
   ]);
 
-  const restockGridCols = 3;
+  const restockGridCols = 3 as 3 | 4;
   const lowStockItems = useMemo(() => items.filter((i) => i.stock < i.threshold), [items]);
 
   const getRestockTotalQty = useCallback(
@@ -1396,7 +1391,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   };
 
   const renderRestockingView = () => (
-    <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Restocking">
+    <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Restocking">
       <div className="flex items-center justify-between gap-3">
         <button
           onClick={() => setRestockExpanded(false)}
@@ -1675,7 +1670,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   };
 
   const renderActionLogsPage = () => (
-    <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Action logs">
+    <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Action logs">
       <div className="flex items-center justify-between gap-3">
         <button
           onClick={() => {
@@ -1741,7 +1736,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   );
 
   const renderNamingUnidentifiedPage = () => (
-    <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Name unidentified item">
+    <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Name unidentified item">
       <button
         onClick={() => setNamingUnidentified(null)}
         aria-label="Back to action logs"
@@ -1854,7 +1849,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     }));
 
     return (
-      <div className="animate-fade-in space-y-8" role="tabpanel" aria-label={`${item.name} details`}>
+      <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label={`${item.name} details`}>
         <button
           onClick={() => setSelectedItem(null)}
           aria-label="Back to Asset Hub"
@@ -2108,7 +2103,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           ) : actionLogsExpanded ? (
             renderActionLogsPage()
           ) : canViewTransactions && monthlyRevExpanded ? (
-            <div className={`animate-fade-in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Monthly revenue">
+            <div className={`morph-panel-content morph-panel-content--in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Monthly revenue">
               <button
                 onClick={() => setMonthlyRevExpanded(false)}
                 aria-label="Back to Vision Hub"
@@ -2160,7 +2155,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
             </div>
           ) : canViewTransactions && dailySalesExpanded ? (
-            <div className={`animate-fade-in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Daily sales">
+            <div className={`morph-panel-content morph-panel-content--in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Daily sales">
               <button
                 onClick={() => setDailySalesExpanded(false)}
                 aria-label="Back to Vision Hub"
@@ -2212,7 +2207,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
             </div>
           ) : canViewTransactions && avgCustomerExpanded ? (
-            <div className={`animate-fade-in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Customer print history">
+            <div className={`morph-panel-content morph-panel-content--in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Customer print history">
               <button
                 onClick={() => setAvgCustomerExpanded(false)}
                 aria-label="Back to Vision Hub"
@@ -2247,7 +2242,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
             </div>
           ) : canViewTransactions && invoicesTodayExpanded ? (
-            <div className={`animate-fade-in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Invoices today">
+            <div className={`morph-panel-content morph-panel-content--in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Invoices today">
               <button
                 onClick={() => setInvoicesTodayExpanded(false)}
                 aria-label="Back to Vision Hub"
@@ -2303,7 +2298,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             </div>
           ) : inventoryExpanded ? (
             selectedItem ? renderInventoryItemPage() : (
-            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Asset Hub inventory">
+            <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Asset Hub inventory">
               {/* Original inventory expanded view is preserved here */}
               <div className="sticky top-0 z-50 py-4 backdrop-blur-3xl bg-current/5 rounded-3xl -mx-4 px-6 mb-6">
                 <div className="flex flex-col gap-5">
@@ -2370,7 +2365,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             )
           ) : requestsExpanded ? (
             /* REQUESTS EXPANDED VIEW */
-            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Requests screen">
+            <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Requests screen">
               {/* HEADER: Back + Green floating "+ Add more" (shadow light, glow dark) */}
               <div className="flex items-center justify-between">
                 <button 
@@ -2421,7 +2416,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           ) : restockExpanded ? (
             renderRestockingView()
           ) : canViewTransactions && purchasesExpanded ? (
-            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Transaction Archive">
+            <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Transaction Archive">
               <button 
                 onClick={() => setPurchasesExpanded(false)} 
                 aria-label="Back to Vision Hub"
@@ -2468,7 +2463,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             </div>
           ) : inventoryExpanded ? (
             selectedItem ? renderInventoryItemPage() : (
-            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Asset Hub inventory">
+            <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Asset Hub inventory">
               {/* HUB CONTROLS BAR (original inventory view) */}
               <div className="sticky top-0 z-50 py-4 backdrop-blur-3xl bg-current/5 rounded-3xl -mx-4 px-6 mb-6">
                 <div className="flex flex-col gap-5">
@@ -2538,7 +2533,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             )
           ) : requestsExpanded ? (
             /* REQUESTS SCREEN */
-            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Requests screen">
+            <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Requests screen">
               {/* HEADER */}
               <div className="flex items-center justify-between">
                 <button 
@@ -2591,7 +2586,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             renderRestockingView()
           ) : canViewTransactions ? (
             /* PURCHASES / TRANSACTION ARCHIVE (original) */
-            <div className="animate-fade-in space-y-8" role="tabpanel" aria-label="Transaction Archive">
+            <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Transaction Archive">
               <button 
                 onClick={() => setPurchasesExpanded(false)} 
                 aria-label="Back to Vision Hub"
@@ -2643,11 +2638,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       </div>
 
       {/* PLUS / QUICK ACTIONS MENU */}
-      {showPlusMenu && (
-        <div className="fixed inset-0 z-300 flex items-end justify-center p-6" role="presentation" aria-hidden={!showPlusMenu}>
-          <div className={`absolute inset-0 cursor-pointer ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`} onClick={() => setShowPlusMenu(false)} aria-hidden="true" />
+      <MorphPresence show={showPlusMenu}>
+        {(visible) => (
+        <div className={`fixed inset-0 z-300 flex items-end justify-center p-6 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} role="presentation" aria-hidden={!visible}>
+          <div className={`absolute inset-0 cursor-pointer morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`} onClick={() => setShowPlusMenu(false)} aria-hidden="true" />
           <div 
-            className={`relative w-full max-w-xs rounded-2xl p-6 transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${levitateClass} shadow-[0_100px_200px_rgba(0,0,0,0.8)]`}
+            className={`relative w-full max-w-xs rounded-2xl p-6 morph-panel ${visible ? 'morph-panel--in' : 'morph-panel--out'} ${levitateClass} shadow-[0_100px_200px_rgba(0,0,0,0.8)]`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="plus-menu-title"
@@ -2678,19 +2674,21 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             </div>
           </div>
         </div>
-      )}
+        )}
+      </MorphPresence>
 
       {/* REQUESTS ADD MORE POPUP — matches invoice switcher motion + notepad shell */}
-      {showAddRequestPopup && (
-        <div className="fixed inset-0 z-[400] flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 pointer-events-auto" role="presentation">
+      <MorphPresence show={showAddRequestPopup}>
+        {(visible) => (
+        <div className={`fixed inset-0 z-[400] flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} role="presentation">
           <div
-            className={`absolute inset-0 opacity-100 transition-opacity duration-280 ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
+            className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
             onClick={closeRequestPopup}
             aria-hidden="true"
           />
 
           <div
-            className="relative modal-portrait-6-13 opacity-100 scale-100 translate-y-0 transition-all duration-500"
+            className={`relative modal-portrait-6-13 morph-panel ${visible ? 'morph-panel--in' : 'morph-panel--out'}`}
           >
             <div
               className={`absolute inset-0 flex flex-col rounded-[32px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.55)] ${
@@ -2785,17 +2783,19 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             </div>
           </div>
         </div>
-      )}
+        )}
+      </MorphPresence>
 
       {/* SUPPLIERS LIST */}
-      {showSuppliersPanel && (
-        <div className="fixed inset-0 z-[410] flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 pointer-events-auto" role="presentation">
+      <MorphPresence show={showSuppliersPanel}>
+        {(visible) => (
+        <div className={`fixed inset-0 z-[410] flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} role="presentation">
           <div
-            className={`absolute inset-0 opacity-100 transition-opacity duration-280 ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
+            className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
             onClick={() => setShowSuppliersPanel(false)}
             aria-hidden="true"
           />
-          <div className="relative w-full max-w-md opacity-100 scale-100 translate-y-0 transition-all duration-500">
+          <div className={`relative w-full max-w-md morph-panel ${visible ? 'morph-panel--in' : 'morph-panel--out'}`}>
             <div
               className={`rounded-[28px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.55)] ${levitateClass}`}
               role="dialog"
@@ -2839,18 +2839,20 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             </div>
           </div>
         </div>
-      )}
+        )}
+      </MorphPresence>
 
       {/* RESTOCK NOTEPAD — same shell as request popup */}
-      {showAddRestockPopup && (
-        <div className="fixed inset-0 z-[400] flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 pointer-events-auto" role="presentation">
+      <MorphPresence show={showAddRestockPopup}>
+        {(visible) => (
+        <div className={`fixed inset-0 z-[400] flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} role="presentation">
           <div
-            className={`absolute inset-0 opacity-100 transition-opacity duration-280 ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
+            className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
             onClick={closeRestockPopup}
             aria-hidden="true"
           />
 
-          <div className="relative modal-portrait-6-13 opacity-100 scale-100 translate-y-0 transition-all duration-500">
+          <div className={`relative modal-portrait-6-13 morph-panel ${visible ? 'morph-panel--in' : 'morph-panel--out'}`}>
             <div
               className={`absolute inset-0 flex flex-col rounded-[32px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.55)] ${
                 isLight ? 'bg-[#faf8f2] text-zinc-900' : 'bg-[#171614] text-zinc-100'
@@ -2944,19 +2946,20 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             </div>
           </div>
         </div>
-      )}
+        )}
+      </MorphPresence>
 
       {/* ADD ITEM MODAL */}
-      {isAddingItem && (
-        <div className="fixed inset-0 z-350 flex items-center justify-center p-6" role="presentation" aria-hidden={!isAddingItem}>
-          <div className={`absolute inset-0 cursor-pointer ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`} onClick={() => setIsAddingItem(false)} aria-hidden="true" />
+      <MorphPresence show={isAddingItem}>
+        {(visible) => (
+        <div className={`fixed inset-0 z-350 flex items-center justify-center p-6 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} role="presentation" aria-hidden={!visible}>
+          <div className={`absolute inset-0 cursor-pointer morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`} onClick={() => setIsAddingItem(false)} aria-hidden="true" />
           <div 
-            className={`relative w-full max-w-sm rounded-2xl p-12 transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${levitateClass} shadow-[0_128px_256px_rgba(0,0,0,1)]`}
+            className={`relative w-full max-w-sm rounded-2xl p-12 morph-panel ${visible ? 'morph-panel--in' : 'morph-panel--out'} ${levitateClass} shadow-[0_128px_256px_rgba(0,0,0,1)]`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="add-item-title"
           >
-             {isAddingItem && (
                <div className={`space-y-10 ${textColorClass}`}>
                  <h3 id="add-item-title" className="pos-dashboard-section-title text-5xl tracking-tighter">New Asset</h3>
                  <div className="space-y-6">
@@ -2968,10 +2971,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                  </div>
                  <button onClick={handleAddItem} aria-label="Manifest new asset" className="w-full py-8 rounded-[26px] text-black font-black uppercase tracking-[0.5em] text-[12px] active:scale-95 shadow-2xl transition-all" style={{ backgroundColor: accentColor }}>Create Asset</button>
                </div>
-             )}
           </div>
         </div>
-      )}
+        )}
+      </MorphPresence>
 
       <SettingsPanel
         isOpen={isSettingsOpen}
@@ -2986,10 +2989,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         onChangePassword={onChangePassword}
         onLogout={onLogout}
         onVerifyAdminPassword={onVerifyAdminPassword}
-        canInstallApp={canInstallApp}
-        isAppInstalled={isAppInstalled}
-        onInstallApp={onInstallApp}
-        installAppMode={installAppMode}
       />
 
     </div>

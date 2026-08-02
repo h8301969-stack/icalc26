@@ -17,8 +17,11 @@ import InvoiceReceiptPreview from './InvoiceReceiptPreview';
 import BusinessReceiptIdentity from './BusinessReceiptIdentity';
 import PrinterConnectModal from './PrinterConnectModal';
 import { shareInvoiceAsImage, type ShareReceiptSettings } from '../utils/invoiceShareImage';
+import { MORPH_EXIT_MS, MorphPresence, useMorphModeSwap } from './MorphCrossfade';
 
 const ATTENDANT_NAMES_KEY = 'invoice_attendant_names';
+
+type SwitcherMode = 'horizontal' | 'grid' | 'vertical' | 'list';
 
 interface HistoryPanelProps {
   isOpen: boolean;
@@ -35,8 +38,8 @@ interface HistoryPanelProps {
   activeProfileId: string;
   onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
   onSelectInvoice?: (name: string, items: CartLineItem[], options?: { keepOpen?: boolean }) => void;
-  switcherMode?: 'horizontal' | 'grid' | 'vertical' | 'list';
-  onSwitcherModeChange?: (mode: 'horizontal' | 'grid' | 'vertical' | 'list') => void;
+  switcherMode?: SwitcherMode;
+  onSwitcherModeChange?: (mode: SwitcherMode) => void;
   onActiveChange?: (active: boolean) => void;
   wallpapers?: { image: string }[];
   shareReceiptSettings?: ShareReceiptSettings;
@@ -54,6 +57,8 @@ const SWITCHER_LAYOUT_OPTIONS = [
 
 const LONG_PRESS_MS = 480;
 const INVOICE_LOAD_MS = 400;
+/** Match invoice-switcher-enter duration (+ settle buffer for exit unmount). */
+const SWITCHER_SHEET_MS = 240;
 const SWITCHER_DISPLAY_PAPER_WIDTH: PaperWidth = '58mm';
 const INVOICE_SWITCHER_RADIUS = 'rounded-2xl';
 const SCATTERED_GRID_MIN_TILE = 'min(100%, 168px)';
@@ -407,8 +412,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const listLongPressFired = useRef(false);
   const listLongPressIdx = useRef<number | null>(null);
 
-  const isBrowseMode = switcherMode === 'grid' || switcherMode === 'list';
-
   const activeReceiptValidation = useMemo(() => {
     const card = cards[activeIdx];
     if (!card) return null;
@@ -437,7 +440,13 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const closeRef = useRef<HTMLButtonElement>(null);
   const lastFocusedRef = useRef<HTMLElement | null>(null);
   const [mounted, setMounted] = useState(isOpen);
+  /** Drives sheet enter after first paint at the "below" pose. */
+  const [sheetIn, setSheetIn] = useState(false);
+  /** True after a full enter so close can run the exit animation. */
+  const [sheetExiting, setSheetExiting] = useState(false);
   const prevCardCountRef = useRef(cards.length);
+  const { renderMode, contentIn } = useMorphModeSwap(switcherMode);
+  const isBrowseMode = renderMode === 'grid' || renderMode === 'list';
 
   const clearInvoiceLoadTimer = useCallback(() => {
     if (invoiceLoadTimerRef.current !== null) {
@@ -460,14 +469,35 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   useEffect(() => {
     if (isOpen) {
       setMounted(true);
+      // Start at static "out" pose, then insight-pop enter.
+      setSheetExiting(false);
+      setSheetIn(false);
       setActiveIdx(Math.max(0, cards.length - 1));
       setFocusZoomed(false);
       setLoadingInvoiceIdx(null);
       clearInvoiceLoadTimer();
       lastFocusedRef.current = document.activeElement as HTMLElement | null;
-      const id = requestAnimationFrame(() => closeRef.current?.focus({ preventScroll: true }));
-      return () => cancelAnimationFrame(id);
+
+      let raf1 = 0;
+      let raf2 = 0;
+      let focusId = 0;
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          setSheetIn(true);
+          focusId = requestAnimationFrame(() => closeRef.current?.focus({ preventScroll: true }));
+        });
+      });
+
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+        cancelAnimationFrame(focusId);
+      };
     }
+
+    // Close: play exit, then unmount
+    setSheetIn(false);
+    setSheetExiting(true);
 
     const root = rootRef.current;
     const active = document.activeElement as HTMLElement | null;
@@ -478,7 +508,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
     clearInvoiceLoadTimer();
     setLoadingInvoiceIdx(null);
-    const timer = window.setTimeout(() => setMounted(false), 500);
+    const timer = window.setTimeout(() => {
+      setMounted(false);
+      setSheetExiting(false);
+    }, SWITCHER_SHEET_MS + 40);
     return () => {
       window.clearTimeout(timer);
       clearInvoiceLoadTimer();
@@ -554,18 +587,18 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         }
         handleClose();
       }
-      if (switcherMode === 'horizontal') {
+      if (renderMode === 'horizontal') {
         if (e.key === 'ArrowRight') previewInvoice(Math.min(activeIdx + 1, cards.length - 1));
         if (e.key === 'ArrowLeft') previewInvoice(Math.max(activeIdx - 1, 0));
       }
-      if (switcherMode === 'vertical') {
+      if (renderMode === 'vertical') {
         if (e.key === 'ArrowDown') previewInvoice(Math.min(activeIdx + 1, cards.length - 1));
         if (e.key === 'ArrowUp') previewInvoice(Math.max(activeIdx - 1, 0));
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, handleClose, cards.length, switcherMode, activeIdx, previewInvoice, focusZoomed, isBrowseMode]);
+  }, [isOpen, handleClose, cards.length, renderMode, activeIdx, previewInvoice, focusZoomed, isBrowseMode]);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (isBrowseMode) return;
@@ -583,7 +616,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     if (!isDragging || isBrowseMode) return;
     const dx = e.clientX - dragStartX.current;
     const dy = e.clientY - dragStartY.current;
-    const primaryAxis = switcherMode === 'vertical' ? 'y' : 'x';
+    const primaryAxis = renderMode === 'vertical' ? 'y' : 'x';
 
     if (dragAxis.current === 'none' && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
       dragAxis.current = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
@@ -591,12 +624,12 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     if (dragAxis.current !== primaryAxis) return;
 
     setDragDelta((primaryAxis === 'x' ? dx : dy) * DRAG_FACTOR);
-  }, [isDragging, switcherMode, isBrowseMode]);
+  }, [isDragging, renderMode, isBrowseMode]);
 
   const onPointerUp = useCallback(() => {
     if (!isDragging || isBrowseMode) return;
     setIsDragging(false);
-    const primaryAxis = switcherMode === 'vertical' ? 'y' : 'x';
+    const primaryAxis = renderMode === 'vertical' ? 'y' : 'x';
     if (dragAxis.current === primaryAxis) {
       const absDelta = Math.abs(dragDelta);
       let nextIdx = activeIdx;
@@ -614,7 +647,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     }
     dragAxis.current = 'none';
     setDragDelta(0);
-  }, [isDragging, isBrowseMode, dragDelta, cards.length, switcherMode, activeIdx, previewInvoice]);
+  }, [isDragging, isBrowseMode, dragDelta, cards.length, renderMode, activeIdx, previewInvoice]);
 
   const handleCardSelectClick = useCallback((idx: number) => {
     if (suppressClickSelectRef.current) {
@@ -625,7 +658,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   }, [beginInvoiceLoad]);
 
   const handleSwitcherModeChange = useCallback(
-    (mode: 'horizontal' | 'grid' | 'vertical' | 'list') => {
+    (mode: SwitcherMode) => {
       if (mode !== 'grid' && mode !== 'list') setFocusZoomed(false);
       setDragDelta(0);
       setIsDragging(false);
@@ -637,21 +670,24 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   const textMuted = isLight ? 'text-zinc-400' : 'text-zinc-500';
 
-  const renderInvoiceLoadingOverlay = (idx: number, roundedClass = INVOICE_SWITCHER_RADIUS) => {
-    if (loadingInvoiceIdx !== idx) return null;
-    return (
-      <div
-        className={`invoice-switcher-loading absolute inset-0 z-30 flex flex-col items-center justify-center bg-white/88 backdrop-blur-[2px] ${roundedClass}`}
-        aria-live="polite"
-        aria-busy="true"
-      >
-        <span className="auth-spinner invoice-switcher-loading__spinner" aria-hidden="true" />
-        <span className="app-subtext text-[10px] font-black uppercase tracking-[0.2em] mt-3 text-black/50">
-          Loading
-        </span>
-      </div>
-    );
-  };
+  const renderInvoiceLoadingOverlay = (idx: number, roundedClass = INVOICE_SWITCHER_RADIUS) => (
+    <MorphPresence show={loadingInvoiceIdx === idx} exitMs={220}>
+      {(visible) => (
+        <div
+          className={`invoice-switcher-loading absolute inset-0 z-30 flex flex-col items-center justify-center bg-white/88 backdrop-blur-[2px] morph-scrim ${
+            visible ? 'morph-scrim--in' : 'morph-scrim--out'
+          } ${roundedClass}`}
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <span className="auth-spinner invoice-switcher-loading__spinner" aria-hidden="true" />
+          <span className="app-subtext text-[10px] font-black uppercase tracking-[0.2em] mt-3 text-black/50">
+            Loading
+          </span>
+        </div>
+      )}
+    </MorphPresence>
+  );
 
   if (!mounted) return null;
 
@@ -790,7 +826,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   );
 
   const renderSwitcherLayoutToolbar = () => {
-    if (!isOpen || !onSwitcherModeChange) return null;
+    if (!mounted || !onSwitcherModeChange) return null;
 
     const modeBtnClass = (active: boolean) =>
       `w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-90 border ${
@@ -805,8 +841,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
     return (
       <div
-        className={`absolute top-0 left-0 right-0 z-30 pt-5 px-4 sm:px-5 flex items-center justify-between gap-3 pointer-events-none transition-opacity duration-280 ${
-          isOpen ? 'opacity-100' : 'opacity-0'
+        className={`absolute top-0 left-0 right-0 z-30 pt-5 px-4 sm:px-5 flex items-center justify-between gap-3 pointer-events-none invoice-switcher-toolbar ${
+          sheetIn ? 'invoice-switcher-toolbar--in' : 'invoice-switcher-toolbar--out'
         }`}
         role="toolbar"
         aria-label="Invoice switcher layout"
@@ -814,7 +850,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       >
         <div className="w-11 shrink-0" aria-hidden="true" />
 
-        <div className="pointer-events-auto flex items-center gap-2">
+        <div className={`flex items-center gap-2 ${sheetIn ? 'pointer-events-auto' : 'pointer-events-none'}`}>
           {SWITCHER_LAYOUT_OPTIONS.map(({ id, label, icon: Icon }) => {
             const active = switcherMode === id;
             return (
@@ -1014,38 +1050,47 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   };
 
   const renderFocusOverlay = () => {
-    if (!focusZoomed || !cards[activeIdx]) return null;
+    if (!cards[activeIdx]) return null;
 
     return (
-      <div
-        className={`absolute inset-0 z-20 transition-all duration-500 ${
-          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        }`}
-        onClick={() => setFocusZoomed(false)}
-        role="presentation"
-      >
-        <div className="absolute inset-0 bg-black/35 backdrop-blur-md" aria-hidden="true" />
-
-        <div className="relative z-10 flex items-center justify-center h-full p-4 pb-6 sm:pb-4 pt-[4.75rem] sm:pt-20 pointer-events-none">
+      <MorphPresence show={focusZoomed && isOpen} exitMs={MORPH_EXIT_MS}>
+        {(visible) => (
           <div
-            className={`relative ${receiptStageClass} select-none pointer-events-auto transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer ${
-              isOpen ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-[0.88] translate-y-6'
-            }`}
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Invoice card: ${cards[activeIdx].name}. Tap to load in calculator.`}
-            onClick={(e) => {
-              e.stopPropagation();
-              beginInvoiceLoad(activeIdx);
-            }}
+            className={`absolute inset-0 z-20 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`}
+            onClick={() => setFocusZoomed(false)}
+            role="presentation"
           >
-            <div className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_32px_96px_rgba(0,0,0,0.65)] ring-1 ring-white/20`}>
-              {renderCardBody(cards[activeIdx], true)}
-              {renderInvoiceLoadingOverlay(activeIdx)}
+            <div
+              className={`absolute inset-0 bg-black/35 backdrop-blur-md morph-scrim ${
+                visible ? 'morph-scrim--in' : 'morph-scrim--out'
+              }`}
+              aria-hidden="true"
+            />
+
+            <div className="relative z-10 flex items-center justify-center h-full p-4 pb-6 sm:pb-4 pt-[4.75rem] sm:pt-20 pointer-events-none">
+              <div
+                className={`relative ${receiptStageClass} select-none pointer-events-auto cursor-pointer morph-panel ${
+                  visible ? 'morph-panel--in' : 'morph-panel--out'
+                }`}
+                role="dialog"
+                aria-modal="true"
+                aria-label={`Invoice card: ${cards[activeIdx].name}. Tap to load in calculator.`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  beginInvoiceLoad(activeIdx);
+                }}
+              >
+                <div
+                  className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_32px_96px_rgba(0,0,0,0.65)] ring-1 ring-white/20`}
+                >
+                  {renderCardBody(cards[activeIdx], true)}
+                  {renderInvoiceLoadingOverlay(activeIdx)}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        )}
+      </MorphPresence>
     );
   };
 
@@ -1220,7 +1265,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
       {renderCardFooter(card, isActive)}
 
-      {isActive && switcherMode === 'horizontal' && cards.length > 1 && (
+      {isActive && renderMode === 'horizontal' && cards.length > 1 && (
         <div
           className="invoice-switcher-shell__dots"
           style={{
@@ -1261,19 +1306,30 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     );
   };
 
+  const modeContentClass = `morph-panel-content ${
+    sheetIn && contentIn ? 'morph-panel-content--in' : 'morph-panel-content--out'
+  }`;
+  const sheetPose = sheetIn
+    ? 'invoice-switcher-sheet--in'
+    : sheetExiting
+      ? 'invoice-switcher-sheet--out invoice-switcher-sheet--exiting'
+      : 'invoice-switcher-sheet--out';
+  const sheetClass = `invoice-switcher-sheet ${sheetPose}`;
+  const browseSheetClass = `invoice-switcher-sheet invoice-switcher-sheet--browse ${sheetPose}`;
+
   return (
     <div
       ref={rootRef}
       inert={!isOpen ? true : undefined}
-      className={`fixed inset-0 z-120 transition-all duration-280 ${
+      className={`fixed inset-0 z-120 ${
         isBrowseMode
           ? ''
           : 'flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 pt-[4.75rem] sm:pt-20'
       } ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
     >
       <div
-        className={`absolute inset-0 overflow-hidden transition-opacity duration-280 ${
-          isOpen ? 'opacity-100' : 'opacity-0'
+        className={`absolute inset-0 overflow-hidden invoice-switcher-scrim ${
+          sheetIn ? 'invoice-switcher-scrim--in' : 'invoice-switcher-scrim--out'
         }`}
         onClick={() => {
           if (isBrowseMode && focusZoomed) setFocusZoomed(false);
@@ -1310,162 +1366,184 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
       {renderSwitcherLayoutToolbar()}
 
-      {switcherMode === 'grid' ? (
+      {renderMode === 'grid' ? (
         <>
           <div
-            className={`absolute inset-0 z-10 flex flex-col transition-all duration-500 ${
-              isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-            } ${focusZoomed ? 'pointer-events-none' : ''}`}
+            className={`absolute inset-0 z-10 flex flex-col ${browseSheetClass} ${
+              focusZoomed ? 'pointer-events-none' : ''
+            }`}
             role="region"
             aria-label="Invoice scattered grid"
           >
-            <div className={`shrink-0 px-5 pt-[4.5rem] pb-3 transition-all duration-500 ${focusZoomed ? 'blur-md opacity-40' : ''}`}>
-              <div className="text-sm font-black tracking-tight text-white drop-shadow-sm">
-                Invoices
-              </div>
-            </div>
-
-            <div
-              className={`invoice-receipt-stage flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-6 sm:px-5 sm:pb-8 transition-all duration-500 ${
-                focusZoomed ? 'blur-xl brightness-[0.45] scale-[0.96]' : ''
-              }`}
-            >
+            <div className={`${modeContentClass} flex flex-col flex-1 min-h-0`}>
               <div
-                className="grid min-h-full content-start justify-items-center"
-                style={{
-                  gridTemplateColumns: `repeat(auto-fill, minmax(${SCATTERED_GRID_MIN_TILE}, 1fr))`,
-                  gap: SCATTERED_GRID_GAP,
-                }}
+                className={`shrink-0 px-5 pt-[4.5rem] pb-3 transition-[filter,opacity] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                  focusZoomed ? 'blur-md opacity-40' : ''
+                }`}
               >
-                {cards.map((card, idx) => renderGridTile(card, idx))}
+                <div className="text-sm font-black tracking-tight text-white drop-shadow-sm">
+                  Invoices
+                </div>
+              </div>
+
+              <div
+                className={`invoice-receipt-stage flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-6 sm:px-5 sm:pb-8 transition-[filter,opacity,transform] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                  focusZoomed ? 'blur-xl brightness-[0.45] scale-[0.96]' : ''
+                }`}
+              >
+                <div
+                  className="grid min-h-full content-start justify-items-center"
+                  style={{
+                    gridTemplateColumns: `repeat(auto-fill, minmax(${SCATTERED_GRID_MIN_TILE}, 1fr))`,
+                    gap: SCATTERED_GRID_GAP,
+                  }}
+                >
+                  {cards.map((card, idx) => renderGridTile(card, idx))}
+                </div>
               </div>
             </div>
           </div>
           {renderFocusOverlay()}
         </>
-      ) : switcherMode === 'list' ? (
+      ) : renderMode === 'list' ? (
         <>
           <div
-            className={`absolute inset-0 z-10 flex flex-col transition-all duration-500 ${
-              isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-            } ${focusZoomed ? 'pointer-events-none' : ''}`}
+            className={`absolute inset-0 z-10 flex flex-col ${browseSheetClass} ${
+              focusZoomed ? 'pointer-events-none' : ''
+            }`}
             role="region"
             aria-label="Invoice list"
           >
-            <div className={`shrink-0 px-5 pt-[4.5rem] pb-3 transition-all duration-500 ${focusZoomed ? 'blur-md opacity-40' : ''}`}>
-              <div className="text-sm font-black tracking-tight text-white drop-shadow-sm">
-                Invoices
+            <div className={`${modeContentClass} flex flex-col flex-1 min-h-0`}>
+              <div
+                className={`shrink-0 px-5 pt-[4.5rem] pb-3 transition-[filter,opacity] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                  focusZoomed ? 'blur-md opacity-40' : ''
+                }`}
+              >
+                <div className="text-sm font-black tracking-tight text-white drop-shadow-sm">
+                  Invoices
+                </div>
+                <p className="app-subtext text-[10px] opacity-45 text-white/50 mt-1">
+                  Tap to load · Hold to preview
+                </p>
               </div>
-              <p className="app-subtext text-[10px] opacity-45 text-white/50 mt-1">Tap to load · Hold to preview</p>
-            </div>
 
-            <div
-              className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-6 sm:px-5 sm:pb-8 transition-all duration-500 ${
-                focusZoomed ? 'blur-xl brightness-[0.45] scale-[0.96]' : ''
-              }`}
-            >
-              <div className="flex flex-col gap-2.5 min-h-full">
-                {cards.map((card, idx) => renderListRow(card, idx))}
+              <div
+                className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-6 sm:px-5 sm:pb-8 transition-[filter,opacity,transform] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                  focusZoomed ? 'blur-xl brightness-[0.45] scale-[0.96]' : ''
+                }`}
+              >
+                <div className="flex flex-col gap-2.5 min-h-full">
+                  {cards.map((card, idx) => renderListRow(card, idx))}
+                </div>
               </div>
             </div>
           </div>
           {renderFocusOverlay()}
         </>
       ) : (
-      <div
-        ref={stageRef}
-        className={`relative z-20 ${receiptStageClass} select-none transition-all duration-500 overflow-visible ${
-          isOpen ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-[calc(100%+2rem)]'
-        }`}
-        style={{
-          touchAction:
-            switcherMode === 'horizontal' ? 'pan-x' : switcherMode === 'vertical' ? 'pan-y' : 'auto',
-        }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        aria-label="Invoice switcher"
-        role="region"
-      >
-        {switcherMode === 'vertical' ? (
-          cards.map((card, idx) => {
-            const {
-              translateX,
-              translateY,
-              scale,
-              opacity,
-              blurPx,
-              zIndex,
-              transformOrigin,
-              isActive,
-              hidden,
-            } = getVerticalCardStyle(idx);
+        <div
+          ref={stageRef}
+          className={`relative z-20 ${receiptStageClass} select-none overflow-visible ${sheetClass}`}
+          style={{
+            touchAction:
+              renderMode === 'horizontal' ? 'pan-x' : renderMode === 'vertical' ? 'pan-y' : 'auto',
+          }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          aria-label="Invoice switcher"
+          role="region"
+        >
+          <div className={`absolute inset-0 ${modeContentClass}`}>
+            {renderMode === 'vertical'
+              ? cards.map((card, idx) => {
+                  const {
+                    translateX,
+                    translateY,
+                    scale,
+                    opacity,
+                    blurPx,
+                    zIndex,
+                    transformOrigin,
+                    isActive,
+                    hidden,
+                  } = getVerticalCardStyle(idx);
 
-            if (hidden) return null;
+                  if (hidden) return null;
 
-            return (
-              <div
-                key={card.id}
-                aria-label={`Invoice card: ${card.name}`}
-                inert={!isActive || !isOpen ? true : undefined}
-                role={isActive ? 'dialog' : undefined}
-                aria-modal={isActive ? true : undefined}
-                className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]`}
-                style={{
-                  transform: `translateX(${translateX}) translateY(${translateY}) scale(${scale})`,
-                  transformOrigin,
-                  opacity,
-                  zIndex,
-                  filter: blurPx > 0 ? `blur(${blurPx}px)` : 'none',
-                  transition: isDragging
-                    ? 'none'
-                    : 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease, filter 0.22s ease',
-                  pointerEvents: 'auto',
-                  cursor: isActive ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
-                }}
-                onClick={() => handleCardSelectClick(idx)}
-              >
-                {renderCardBody(card, isActive)}
-                {renderInvoiceLoadingOverlay(idx)}
-              </div>
-            );
-          })
-        ) : (
-          cards.map((card, idx) => {
-            const { translateX, translateY, scale, opacity, blurPx, zIndex, transformOrigin, isActive, hidden } = getCardStyle(idx);
+                  return (
+                    <div
+                      key={card.id}
+                      aria-label={`Invoice card: ${card.name}`}
+                      inert={!isActive || !isOpen ? true : undefined}
+                      role={isActive ? 'dialog' : undefined}
+                      aria-modal={isActive ? true : undefined}
+                      className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]`}
+                      style={{
+                        transform: `translateX(${translateX}) translateY(${translateY}) scale(${scale})`,
+                        transformOrigin,
+                        opacity,
+                        zIndex,
+                        filter: blurPx > 0 ? `blur(${blurPx}px)` : 'none',
+                        transition: isDragging
+                          ? 'none'
+                          : 'transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1), filter 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
+                        pointerEvents: 'auto',
+                        cursor: isActive ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
+                      }}
+                      onClick={() => handleCardSelectClick(idx)}
+                    >
+                      {renderCardBody(card, isActive)}
+                      {renderInvoiceLoadingOverlay(idx)}
+                    </div>
+                  );
+                })
+              : cards.map((card, idx) => {
+                  const {
+                    translateX,
+                    translateY,
+                    scale,
+                    opacity,
+                    blurPx,
+                    zIndex,
+                    transformOrigin,
+                    isActive,
+                    hidden,
+                  } = getCardStyle(idx);
 
-            if (hidden) return null;
+                  if (hidden) return null;
 
-            return (
-              <div
-                key={card.id}
-                aria-label={`Invoice card: ${card.name}`}
-                inert={!isActive || !isOpen ? true : undefined}
-                role={isActive ? 'dialog' : undefined}
-                aria-modal={isActive ? true : undefined}
-                className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]`}
-                style={{
-                  transform: `translateX(${translateX}) translateY(${translateY}px) scale(${scale})`,
-                  transformOrigin,
-                  opacity,
-                  zIndex,
-                  filter: blurPx > 0 ? `blur(${blurPx}px)` : 'none',
-                  transition: isDragging
-                    ? 'none'
-                    : 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease, filter 0.22s ease',
-                  pointerEvents: 'auto',
-                  cursor: isActive ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
-                }}
-                onClick={() => handleCardSelectClick(idx)}
-              >
-                {renderCardBody(card, isActive)}
-                {renderInvoiceLoadingOverlay(idx)}
-              </div>
-            );
-          })
-        )}
-      </div>
+                  return (
+                    <div
+                      key={card.id}
+                      aria-label={`Invoice card: ${card.name}`}
+                      inert={!isActive || !isOpen ? true : undefined}
+                      role={isActive ? 'dialog' : undefined}
+                      aria-modal={isActive ? true : undefined}
+                      className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]`}
+                      style={{
+                        transform: `translateX(${translateX}) translateY(${translateY}px) scale(${scale})`,
+                        transformOrigin,
+                        opacity,
+                        zIndex,
+                        filter: blurPx > 0 ? `blur(${blurPx}px)` : 'none',
+                        transition: isDragging
+                          ? 'none'
+                          : 'transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1), filter 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
+                        pointerEvents: 'auto',
+                        cursor: isActive ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
+                      }}
+                      onClick={() => handleCardSelectClick(idx)}
+                    >
+                      {renderCardBody(card, isActive)}
+                      {renderInvoiceLoadingOverlay(idx)}
+                    </div>
+                  );
+                })}
+          </div>
+        </div>
       )}
 
       <InvoiceAttendantPicker

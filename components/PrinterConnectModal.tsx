@@ -7,6 +7,7 @@ import {
   getUsbSupport,
   normalizeBluetoothError,
 } from '../utils/bluetoothPrinter';
+import { MorphPresence } from './MorphCrossfade';
 
 
 interface PrinterConnectModalProps {
@@ -136,20 +137,20 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
   const panelBg = isLight ? 'bg-[#f2f2f7] text-zinc-900' : 'bg-[#1c1c1e] text-white';
   const rowBg = isLight ? 'bg-white border-zinc-200' : 'bg-white/5 border-white/5';
 
   return (
-    <div className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center p-4 pointer-events-auto">
+    <MorphPresence show={isOpen}>
+      {(visible) => (
+    <div className={`fixed inset-0 z-[130] flex items-end sm:items-center justify-center p-4 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`}>
       <div
-        className={`absolute inset-0 ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
+        className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
         onClick={onClose}
         aria-hidden="true"
       />
       <div
-        className={`relative w-full max-w-sm rounded-[28px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.45)] ${panelBg}`}
+        className={`relative w-full max-w-sm rounded-[28px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.45)] morph-panel ${visible ? 'morph-panel--in' : 'morph-panel--out'} ${panelBg}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="printer-connect-title"
@@ -286,6 +287,8 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
         </div>
       </div>
     </div>
+      )}
+    </MorphPresence>
   );
 };
 

@@ -4,7 +4,7 @@
  * Enhanced alternative to web vibration API with more granular control
  */
 
-import { Haptics, ImpactStyle } from '@capacitor/haptics';
+import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 
 export type HapticIntensity = 'light' | 'medium' | 'heavy';
 
@@ -27,7 +27,7 @@ export const hapticImpact = async (intensity: HapticIntensity = 'medium'): Promi
     const style: ImpactStyle = {
       light: ImpactStyle.Light,
       medium: ImpactStyle.Medium,
-      heavy: ImpactStyle.Heavy
+      heavy: ImpactStyle.Heavy,
     }[intensity];
 
     await Haptics.impact({ style });
@@ -44,10 +44,10 @@ export const hapticNotification = async (
 ): Promise<void> => {
   try {
     const notificationType = {
-      success: 'SUCCESS',
-      warning: 'WARNING',
-      error: 'ERROR'
-    }[type] as 'SUCCESS' | 'WARNING' | 'ERROR';
+      success: NotificationType.Success,
+      warning: NotificationType.Warning,
+      error: NotificationType.Error,
+    }[type];
 
     await Haptics.notification({ type: notificationType });
   } catch (error) {
@@ -72,7 +72,7 @@ export const hapticSelection = async (): Promise<void> => {
 export const hapticDoubleTap = async (): Promise<void> => {
   try {
     await Haptics.impact({ style: ImpactStyle.Light });
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     await Haptics.impact({ style: ImpactStyle.Light });
   } catch (error) {
     console.warn('Haptics not available:', error);
@@ -84,7 +84,7 @@ export const hapticDoubleTap = async (): Promise<void> => {
  */
 export const hapticSuccess = async (): Promise<void> => {
   try {
-    await Haptics.notification({ type: 'SUCCESS' });
+    await Haptics.notification({ type: NotificationType.Success });
   } catch (error) {
     console.warn('Haptics not available:', error);
   }
@@ -95,7 +95,7 @@ export const hapticSuccess = async (): Promise<void> => {
  */
 export const hapticError = async (): Promise<void> => {
   try {
-    await Haptics.notification({ type: 'ERROR' });
+    await Haptics.notification({ type: NotificationType.Error });
   } catch (error) {
     console.warn('Haptics not available:', error);
   }
@@ -106,7 +106,7 @@ export const hapticError = async (): Promise<void> => {
  */
 export const hapticWarning = async (): Promise<void> => {
   try {
-    await Haptics.notification({ type: 'WARNING' });
+    await Haptics.notification({ type: NotificationType.Warning });
   } catch (error) {
     console.warn('Haptics not available:', error);
   }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Icons } from '../constants';
 import {
@@ -41,6 +41,29 @@ interface SettingsSlice {
   ghsCalculatorStyle?: 'ghs' | 'cedis';
 }
 
+const cloneSettings = (s: SettingsSlice): SettingsSlice =>
+  JSON.parse(JSON.stringify(s)) as SettingsSlice;
+
+const settingsFingerprint = (s: SettingsSlice): string =>
+  JSON.stringify({
+    themeMode: s.themeMode,
+    disableCalculatorCard: !!s.disableCalculatorCard,
+    layoutMode: s.layoutMode ?? 'portrait',
+    layoutModeAuto: s.layoutModeAuto !== false,
+    invoiceSwitcherMode: s.invoiceSwitcherMode ?? 'horizontal',
+    expressionViewMode: s.expressionViewMode ?? 'auto',
+    receiptLayoutMode: s.receiptLayoutMode ?? 'summary',
+    visionHubDrawerMode: s.visionHubDrawerMode ?? 'drag',
+    standbyTimerSeconds: s.standbyTimerSeconds ?? 0,
+    profiles: s.profiles ?? [],
+    activeProfileId: s.activeProfileId ?? '',
+    businessName: s.businessName ?? '',
+    businessPhone: s.businessPhone ?? '',
+    businessAddress: s.businessAddress ?? '',
+    currency: s.currency,
+    ghsCalculatorStyle: s.ghsCalculatorStyle ?? 'ghs',
+  });
+
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -58,10 +81,6 @@ interface SettingsPanelProps {
   onChangePassword?: (current: string, newPassword: string) => Promise<{ error?: string; ok?: boolean }>;
   onLogout?: () => void;
   onVerifyAdminPassword?: (password: string) => Promise<{ error?: string; ok?: boolean }>;
-  canInstallApp?: boolean;
-  isAppInstalled?: boolean;
-  onInstallApp?: () => void;
-  installAppMode?: 'chromium' | 'ios-safari' | 'ios-other' | null;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
@@ -81,13 +100,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onChangePassword,
   onLogout,
   onVerifyAdminPassword,
-  canInstallApp = false,
-  isAppInstalled = false,
-  onInstallApp,
-  installAppMode = null,
 }) => {
-  const isIOSInstall = installAppMode === 'ios-safari' || installAppMode === 'ios-other';
-  const isLight = isLightProp ?? settings.themeMode === 'light';
+  // Draft settings — edits stay local until Save
+  const [draft, setDraft] = useState<SettingsSlice>(() => cloneSettings(settings));
+  const baselineRef = useRef<SettingsSlice>(cloneSettings(settings));
+  /** State so Save/Discard hide immediately (ref-only baseline never re-renders). */
+  const [baselineFp, setBaselineFp] = useState(() => settingsFingerprint(settings));
+  const [isSaving, setIsSaving] = useState(false);
+  const [businessSyncError, setBusinessSyncError] = useState<string | null>(null);
+
+  const isDirty = useMemo(
+    () => settingsFingerprint(draft) !== baselineFp,
+    [draft, baselineFp]
+  );
+
+  // Preview theme from draft when not "system"
+  const isLight =
+    draft.themeMode === 'system'
+      ? (isLightProp ?? false)
+      : draft.themeMode === 'light';
 
   // Bluetooth states
   const [printerName, setPrinterName] = useState<string | null>(null);
@@ -113,31 +144,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
   const closeRef = useRef<HTMLButtonElement>(null);
   const lastFocusedRef = useRef<HTMLElement | null>(null);
-  const businessDraftRef = useRef({
-    businessName: settings.businessName ?? '',
-    businessPhone: settings.businessPhone ?? '',
-    businessAddress: settings.businessAddress ?? '',
-  });
-  const savedBusinessRef = useRef({
-    businessName: settings.businessName ?? '',
-    businessPhone: settings.businessPhone ?? '',
-    businessAddress: settings.businessAddress ?? '',
-  });
-  const [businessDirty, setBusinessDirty] = useState(false);
-  const [businessSaving, setBusinessSaving] = useState(false);
-  const [businessSyncError, setBusinessSyncError] = useState<string | null>(null);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const wasOpenRef = useRef(false);
 
+  // Snapshot committed settings into draft when panel opens
   useEffect(() => {
-    const next = {
-      businessName: settings.businessName ?? '',
-      businessPhone: settings.businessPhone ?? '',
-      businessAddress: settings.businessAddress ?? '',
-    };
-    businessDraftRef.current = next;
-    savedBusinessRef.current = next;
-    setBusinessDirty(false);
-  }, [settings.businessName, settings.businessPhone, settings.businessAddress]);
+    if (isOpen && !wasOpenRef.current) {
+      const snap = cloneSettings(settings);
+      baselineRef.current = snap;
+      setBaselineFp(settingsFingerprint(snap));
+      setDraft(snap);
+      setBusinessSyncError(null);
+    }
+    wasOpenRef.current = isOpen;
+  }, [isOpen, settings]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -146,23 +166,71 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     section.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [focusSectionIndex, isOpen]);
 
+  const patchDraft = useCallback((patch: Partial<SettingsSlice>) => {
+    setDraft((prev) => ({ ...prev, ...patch }));
+    setBusinessSyncError(null);
+  }, []);
+
+  const handleDiscard = useCallback(() => {
+    // Hide Save/Discard immediately by aligning draft to baseline
+    const snap = cloneSettings(baselineRef.current);
+    setDraft(snap);
+    setBaselineFp(settingsFingerprint(snap));
+    setBusinessSyncError(null);
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    // Hide Save/Discard immediately on click (optimistic clean state)
+    const savedSnap = cloneSettings(draft);
+    const prevBaseline = baselineRef.current;
+    baselineRef.current = savedSnap;
+    setBaselineFp(settingsFingerprint(savedSnap));
+    setBusinessSyncError(null);
+    setIsSaving(true);
+
+    try {
+      _updateSettings(savedSnap);
+
+      const businessChanged =
+        (savedSnap.businessName ?? '') !== (prevBaseline.businessName ?? '') ||
+        (savedSnap.businessPhone ?? '') !== (prevBaseline.businessPhone ?? '') ||
+        (savedSnap.businessAddress ?? '') !== (prevBaseline.businessAddress ?? '');
+
+      if (businessChanged) {
+        const result = await updateUserBusinessInfo({
+          businessName: savedSnap.businessName ?? '',
+          businessPhone: savedSnap.businessPhone ?? '',
+          businessAddress: savedSnap.businessAddress ?? '',
+        });
+        if (result.ok === false) {
+          setBusinessSyncError(result.error);
+          // Re-surface dirty so user can fix / retry Save
+          baselineRef.current = prevBaseline;
+          setBaselineFp(settingsFingerprint(prevBaseline));
+          return;
+        }
+      }
+
+      onApplyAppearance?.();
+    } finally {
+      setIsSaving(false);
+    }
+  }, [draft, _updateSettings, onApplyAppearance]);
+
   const handleClose = useCallback(() => {
+    // Closing discards unsaved edits
+    if (isDirty) {
+      const snap = cloneSettings(baselineRef.current);
+      setDraft(snap);
+      setBaselineFp(settingsFingerprint(snap));
+    }
     const panel = panelRef.current;
     const active = document.activeElement as HTMLElement | null;
     if (panel?.contains(active)) {
       active.blur();
     }
     onClose();
-  }, [onClose]);
-
-  const applyAppearance = useCallback((keyOrPatch: string | Partial<SettingsSlice>, value?: unknown) => {
-    if (typeof keyOrPatch === 'string') {
-      _updateSettings({ [keyOrPatch]: value } as Partial<SettingsSlice>);
-    } else {
-      _updateSettings(keyOrPatch);
-    }
-    onApplyAppearance?.();
-  }, [_updateSettings, onApplyAppearance]);
+  }, [onClose, isDirty]);
 
   useEffect(() => {
     if (isOpen) {
@@ -258,13 +326,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     void refreshPrinterState();
   };
 
-  const profiles = settings.profiles ?? [];
+  const profiles = draft.profiles ?? [];
   const activeProfile =
-    profiles.find((p) => p.id === settings.activeProfileId) ?? profiles[0] ?? null;
+    profiles.find((p) => p.id === draft.activeProfileId) ?? profiles[0] ?? null;
   const canEditBusinessInfo = isAdminProfile(activeProfile);
 
   const handleSelectProfile = (profileId: string) => {
-    _updateSettings({ activeProfileId: profileId });
+    patchDraft({ activeProfileId: profileId });
   };
 
   const handleAddProfile = async ({ name, avatarUrl, email, phone, sellerType }: NewProfileInput) => {
@@ -278,7 +346,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       phone: phone.trim(),
       sellerType,
     };
-    _updateSettings({
+    patchDraft({
       profiles: ensureAdminProfile([...profiles, profile]),
       activeProfileId: profile.id,
     });
@@ -313,38 +381,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const handleUpdateProfileAvatar = (profileId: string, avatarUrl: string) => {
-    _updateSettings({
+    patchDraft({
       profiles: profiles.map((p) => (p.id === profileId ? { ...p, avatarUrl } : p)),
     });
   };
 
-  const handleBusinessFieldChange = useCallback((patch: Partial<typeof businessDraftRef.current>) => {
-    businessDraftRef.current = { ...businessDraftRef.current, ...patch };
-    _updateSettings(patch);
-    setBusinessDirty(true);
-    setBusinessSyncError(null);
-  }, [_updateSettings]);
-
-  const confirmBusinessChanges = useCallback(async () => {
-    setBusinessSaving(true);
-    setBusinessSyncError(null);
-    try {
-      const draft = businessDraftRef.current;
-      const result = await updateUserBusinessInfo({
-        businessName: draft.businessName,
-        businessPhone: draft.businessPhone,
-        businessAddress: draft.businessAddress,
-      });
-      if (!result.ok) {
-        setBusinessSyncError(result.error);
-        return;
-      }
-      savedBusinessRef.current = { ...draft };
-      setBusinessDirty(false);
-    } finally {
-      setBusinessSaving(false);
-    }
-  }, []);
+  const handleBusinessFieldChange = useCallback(
+    (patch: Partial<Pick<SettingsSlice, 'businessName' | 'businessPhone' | 'businessAddress'>>) => {
+      patchDraft(patch);
+    },
+    [patchDraft]
+  );
 
   const closePasswordPanel = useCallback(() => {
     setShowPasswordPanel(false);
@@ -463,15 +510,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       const totalToPrint = cartItems.length > 0 ? runningTotal : 54.99;
       const titleToPrint = cartItems.length > 0 ? invoiceName : 'Demo Invoice';
 
-      const activeProfile =
-        profiles.find((p) => p.id === settings.activeProfileId) ?? profiles[0] ?? null;
+      const printProfile =
+        profiles.find((p) => p.id === draft.activeProfileId) ?? profiles[0] ?? null;
       const ok = await printerInstance.printInvoice(
         titleToPrint,
         itemsToPrint,
         totalToPrint,
         currency,
-        activeProfile?.name,
-        settings.receiptLayoutMode ?? 'summary'
+        printProfile?.name,
+        draft.receiptLayoutMode ?? 'summary'
       );
       if (!ok) return;
       setPrintSuccess(true);
@@ -486,40 +533,72 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       ref={panelRef}
       inert={!isOpen ? true : undefined}
       className={`
-        absolute inset-0 z-50 flex flex-col transition-transform duration-300 cubic-bezier(0.16, 1, 0.3, 1)
-        ${isOpen ? 'translate-x-0 pointer-events-auto' : 'translate-x-full pointer-events-none'}
+        fixed inset-0 z-[60] flex flex-col morph-panel
+        ${isOpen ? 'morph-panel--in pointer-events-auto' : 'morph-panel--out pointer-events-none'}
         settings-panel ${isLight ? 'settings-panel--light text-black' : 'settings-panel--dark text-white'}
       `}
       role="dialog"
       aria-modal={isOpen}
       aria-labelledby="settings-title"
     >
-      <div className="p-8 pb-4 flex items-center justify-between border-b border-white/10">
-        <h2 id="settings-title" className="settings-panel-title text-2xl font-black tracking-tight">Settings</h2>
-        <button 
-          ref={closeRef}
-          onClick={handleClose} 
-          aria-label="Close settings panel"
-          className={`p-2.5 rounded-full ${isLight ? 'bg-zinc-200 hover:bg-zinc-300' : 'bg-white/10 hover:bg-white/20'}`}
-        >
-          <Icons.X size={24} />
-        </button>
+      <div
+        className="settings-panel-header shrink-0 flex items-center justify-between gap-3"
+        style={{
+          paddingTop: 'max(1.25rem, env(safe-area-inset-top))',
+          paddingLeft: 'max(1.25rem, env(safe-area-inset-left))',
+          paddingRight: 'max(1.25rem, env(safe-area-inset-right))',
+          paddingBottom: '0.75rem',
+        }}
+      >
+        <h2 id="settings-title" className="settings-panel-title text-2xl font-black tracking-tight drop-shadow-sm min-w-0">
+          Settings
+        </h2>
+        <div className="flex items-center gap-2 shrink-0">
+          {isDirty && (
+            <>
+              <button
+                type="button"
+                onClick={handleDiscard}
+                disabled={isSaving}
+                className="settings-panel-action settings-panel-action--discard"
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={isSaving}
+                className="settings-panel-action settings-panel-action--save"
+              >
+                {isSaving ? 'Saving…' : 'Save'}
+              </button>
+            </>
+          )}
+          <button 
+            ref={closeRef}
+            onClick={handleClose} 
+            aria-label="Close settings panel"
+            className="settings-panel-close p-2.5 rounded-full transition-all active:scale-90"
+          >
+            <Icons.X size={24} />
+          </button>
+        </div>
       </div>
       
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 pb-8 space-y-5 custom-scrollbar">
 
         {/* Profile */}
         <div
           ref={(el) => { sectionRefs.current[0] = el; }}
-          className={`settings-card rounded-2xl border overflow-hidden transition-all duration-300 ${isLight ? 'bg-white/20 border-black/10 backdrop-blur-md' : 'bg-white/8 border-white/12 backdrop-blur-md'}`}
+          className="settings-card overflow-hidden shadow-2xl"
         >
-          {(accountUsername || settings.businessName?.trim()) && (
+          {(accountUsername || draft.businessName?.trim()) && (
             <BusinessInfoReceiptCard
               variant="settings"
               badgeLabel="Business"
-              businessName={settings.businessName?.trim() || ''}
-              businessPhone={settings.businessPhone}
-              businessAddress={settings.businessAddress}
+              businessName={draft.businessName?.trim() || ''}
+              businessPhone={draft.businessPhone}
+              businessAddress={draft.businessAddress}
               className="w-full"
               editable={canEditBusinessInfo}
               isLight={isLight}
@@ -528,29 +607,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               onBusinessAddressChange={(value) => handleBusinessFieldChange({ businessAddress: value })}
             />
           )}
-          {canEditBusinessInfo && businessDirty && (
-            <div className="px-6 pb-3">
-              <button
-                type="button"
-                onClick={() => void confirmBusinessChanges()}
-                disabled={businessSaving}
-                className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
-                  isLight ? 'bg-blue-500 text-white' : 'bg-blue-500 text-white'
-                }`}
-              >
-                {businessSaving ? (
-                  <>
-                    <span className="auth-spinner" aria-hidden="true" />
-                    Saving…
-                  </>
-                ) : (
-                  'Confirm changes'
-                )}
-              </button>
-            </div>
-          )}
           {businessSyncError && (
-            <p className="px-4 pt-2 text-red-500 text-[11px] font-bold">{businessSyncError}</p>
+            <p className="px-4 py-2 text-red-500 text-[11px] font-bold">{businessSyncError}</p>
           )}
           <input
             ref={avatarFileInputRef}
@@ -585,7 +643,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onClose={() => setIsProfilePickerOpen(false)}
           isLight={isLight}
           profiles={profiles}
-          activeProfileId={settings.activeProfileId ?? activeProfile?.id ?? ''}
+          activeProfileId={draft.activeProfileId ?? activeProfile?.id ?? ''}
           onSelectProfile={handleSelectProfile}
           onAddProfile={handleAddProfile}
           onUpdateProfileAvatar={handleUpdateProfileAvatar}
@@ -595,7 +653,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* Appearance Settings */}
         <div
           ref={(el) => { sectionRefs.current[1] = el; }}
-          className={`settings-card p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white/20 border-black/10 backdrop-blur-md' : 'bg-white/8 border-white/12 backdrop-blur-md'}`}
+          className="settings-card p-6 shadow-2xl"
         >
           {renderSettingsCardHeader('Appearance', isLight ? <Icons.Sun size={22} /> : <Icons.Moon size={22} />)}
 
@@ -605,8 +663,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <FluidSegmentControl
                 isLight={isLight}
                 ariaLabel="Theme mode"
-                value={settings.themeMode}
-                onChange={(themeMode) => _updateSettings({ themeMode })}
+                value={draft.themeMode}
+                onChange={(themeMode) => patchDraft({ themeMode })}
                 options={[
                   { id: 'light', label: 'Light', icon: <Icons.Sun size={14} /> },
                   { id: 'dark', label: 'Dark', icon: <Icons.Moon size={14} /> },
@@ -619,14 +677,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <div className="flex flex-col min-w-0">
                 <span className="text-sm font-black">Layout</span>
                 <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                  {settings.layoutModeAuto !== false ? 'Auto from device orientation' : 'Manual layout override'}
+                  {draft.layoutModeAuto !== false ? 'Auto from device orientation' : 'Manual layout override'}
                 </span>
               </div>
               <FluidSegmentControl
                 isLight={isLight}
                 ariaLabel="Layout orientation"
-                value={settings.layoutMode ?? 'portrait'}
-                onChange={(layoutMode) => applyAppearance({ layoutMode, layoutModeAuto: false })}
+                value={draft.layoutMode ?? 'portrait'}
+                onChange={(layoutMode) => patchDraft({ layoutMode, layoutModeAuto: false })}
                 options={[
                   { id: 'portrait', label: 'Portrait', icon: <Icons.Portrait size={14} /> },
                   { id: 'landscape', label: 'Landscape', icon: <Icons.Landscape size={14} /> },
@@ -647,8 +705,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 size="sm"
                 isLight={isLight}
                 ariaLabel="Invoice switcher layout"
-                value={settings.invoiceSwitcherMode ?? 'horizontal'}
-                onChange={(invoiceSwitcherMode) => applyAppearance({ invoiceSwitcherMode })}
+                value={draft.invoiceSwitcherMode ?? 'horizontal'}
+                onChange={(invoiceSwitcherMode) => patchDraft({ invoiceSwitcherMode })}
                 options={[
                   { id: 'horizontal', label: 'Horizontal', icon: <Icons.Carousel size={14} /> },
                   { id: 'vertical', label: 'Vertical', icon: <Icons.Stack size={14} /> },
@@ -670,8 +728,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 isLight={isLight}
                 className="w-full"
                 ariaLabel="Expression view mode"
-                value={settings.expressionViewMode ?? 'auto'}
-                onChange={(expressionViewMode) => applyAppearance({ expressionViewMode })}
+                value={draft.expressionViewMode ?? 'auto'}
+                onChange={(expressionViewMode) => patchDraft({ expressionViewMode })}
                 options={EXPRESSION_VIEW_OPTIONS.map(({ id, label }) => ({ id, label }))}
               />
             </div>
@@ -688,8 +746,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 isLight={isLight}
                 className="w-full"
                 ariaLabel="Vision Hub drawer mode"
-                value={settings.visionHubDrawerMode ?? 'drag'}
-                onChange={(visionHubDrawerMode) => applyAppearance({ visionHubDrawerMode })}
+                value={draft.visionHubDrawerMode ?? 'drag'}
+                onChange={(visionHubDrawerMode) => patchDraft({ visionHubDrawerMode })}
                 options={[
                   { id: 'drag', label: 'Drag', icon: <Icons.Printer size={14} /> },
                   { id: 'click', label: 'Click', icon: <Icons.List size={14} /> },
@@ -709,13 +767,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 isLight={isLight}
                 className="w-full"
                 ariaLabel="Invoice print style"
-                value={settings.receiptLayoutMode ?? 'summary'}
-                onChange={(receiptLayoutMode) => applyAppearance({ receiptLayoutMode })}
+                value={draft.receiptLayoutMode ?? 'summary'}
+                onChange={(receiptLayoutMode) => patchDraft({ receiptLayoutMode })}
                 options={RECEIPT_LAYOUT_OPTIONS.map(({ id, label }) => ({ id, label }))}
               />
             </div>
 
-            {(settings.currency ?? 'GHS') === 'GHS' && (
+            {(draft.currency ?? currency ?? 'GHS') === 'GHS' && (
               <div className="pt-2 border-t border-white/10 space-y-3">
                 <div className="flex flex-col gap-1">
                   <span className="text-sm font-black">Calculator currency style</span>
@@ -727,8 +785,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   isLight={isLight}
                   className="w-full"
                   ariaLabel="Calculator GHS display style"
-                  value={settings.ghsCalculatorStyle ?? 'ghs'}
-                  onChange={(ghsCalculatorStyle) => _updateSettings({ ghsCalculatorStyle })}
+                  value={draft.ghsCalculatorStyle ?? 'ghs'}
+                  onChange={(ghsCalculatorStyle) => patchDraft({ ghsCalculatorStyle })}
                   options={[
                     { id: 'ghs', label: 'ghs' },
                     { id: 'cedis', label: '¢ cedis' },
@@ -749,8 +807,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 size="sm"
                 isLight={isLight}
                 ariaLabel="Idle screen timer"
-                value={String(settings.standbyTimerSeconds ?? 0)}
-                onChange={(id) => _updateSettings({ standbyTimerSeconds: Number(id) })}
+                value={String(draft.standbyTimerSeconds ?? 0)}
+                onChange={(id) => patchDraft({ standbyTimerSeconds: Number(id) })}
                 options={STANDBY_TIMER_OPTIONS.map((option) => ({
                   id: String(option.value),
                   label: option.label,
@@ -767,68 +825,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </div>
               <FluidToggle
                 isLight={isLight}
-                checked={!!settings.disableCalculatorCard}
-                onChange={(disableCalculatorCard) => applyAppearance('disableCalculatorCard', disableCalculatorCard)}
+                checked={!!draft.disableCalculatorCard}
+                onChange={(disableCalculatorCard) => patchDraft({ disableCalculatorCard })}
                 ariaLabel="Calculator on background"
                 offLabel="Card"
                 onLabel="Background"
               />
             </div>
 
-            {canInstallApp && !isAppInstalled && onInstallApp && (
-              <div className="pt-2 border-t border-white/10">
-                <div className="flex flex-col gap-1 mb-3">
-                  <span className="text-sm font-black">
-                    {isIOSInstall ? 'Add to Home Screen' : 'Install app'}
-                  </span>
-                  <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                    {isIOSInstall
-                      ? installAppMode === 'ios-other'
-                        ? 'Open in Safari, then Share → Add to Home Screen'
-                        : 'Tap Share in Safari, then Add to Home Screen'
-                      : 'Add iCalc to your home screen for offline access'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void onInstallApp()}
-                  className={`w-full py-3.5 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
-                    isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
-                  }`}
-                >
-                  {isIOSInstall ? <Icons.Share size={16} /> : <Icons.Download size={16} />}
-                  {isIOSInstall ? 'How to add' : 'Install app'}
-                </button>
-              </div>
-            )}
-
-            {!Capacitor.isNativePlatform() && (
-              <div className="pt-2 border-t border-white/10">
-                <div className="flex flex-col gap-1 mb-3">
-                  <span className="text-sm font-black">Get app on your phone</span>
-                  <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                    Download the Android app and share it with others
-                  </span>
-                </div>
-                <a
-                  href="/icalc.apk"
-                  download="iCalc.apk"
-                  className={`w-full py-3.5 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
-                    isLight ? 'bg-blue-500 text-white' : 'bg-blue-500/90 text-white'
-                  }`}
-                >
-                  <Icons.Download size={16} />
-                  Download Android app
-                </a>
-              </div>
-            )}
           </div>
         </div>
 
         {/* Bluetooth and connectivity */}
         <div
           ref={(el) => { sectionRefs.current[2] = el; }}
-          className={`settings-card p-6 rounded-2xl border transition-all duration-300 ${isLight ? 'bg-white/20 border-black/10 backdrop-blur-md' : 'bg-white/8 border-white/12 backdrop-blur-md'}`}
+          className="settings-card p-6 shadow-2xl"
         >
           {renderSettingsCardHeader('Bluetooth and connectivity', <Icons.Printer size={22} />)}
 
@@ -994,6 +1005,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             )}
           </div>
         </div>
+
+        {/* Get app on phone — separate card under the rest (web only) */}
+        {!Capacitor.isNativePlatform() && (
+          <div className="settings-card p-6 shadow-2xl">
+            {renderSettingsCardHeader('Get app on phone', <Icons.Download size={22} />)}
+            <p className={`app-subtext text-[10px] mb-4 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+              Click to download app for free
+            </p>
+            <a
+              href="https://github.com/h8301969-stack/icalc26/releases/download/apk-latest/icalc.apk"
+              className={`w-full py-3.5 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
+                isLight ? 'bg-blue-500 text-white' : 'bg-blue-500/90 text-white'
+              }`}
+            >
+              <Icons.Download size={16} />
+              Download iCalc.apk
+            </a>
+          </div>
+        )}
 
       </div>
 

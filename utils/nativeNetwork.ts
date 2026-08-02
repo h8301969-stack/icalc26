@@ -5,6 +5,7 @@
  */
 
 import { Network } from '@capacitor/network';
+import type { PluginListenerHandle } from '@capacitor/core';
 
 export interface NetworkStatus {
   isConnected: boolean;
@@ -14,7 +15,7 @@ export interface NetworkStatus {
 
 export type NetworkStatusCallback = (status: NetworkStatus) => void;
 
-let statusListeners: Set<NetworkStatusCallback> = new Set();
+const statusListeners: Set<NetworkStatusCallback> = new Set();
 let currentStatus: NetworkStatus | null = null;
 
 /**
@@ -26,14 +27,14 @@ export const getNetworkStatus = async (): Promise<NetworkStatus> => {
     currentStatus = {
       isConnected: status.connected,
       connectionType: status.connectionType as 'none' | 'wifi' | 'cellular' | 'unknown',
-      isMetered: status.connectionType === 'cellular'
+      isMetered: status.connectionType === 'cellular',
     };
     return currentStatus;
   } catch (error) {
     console.error('Failed to get network status:', error);
     return {
       isConnected: false,
-      connectionType: 'unknown'
+      connectionType: 'unknown',
     };
   }
 };
@@ -52,35 +53,35 @@ export const onNetworkStatusChange = (callback: NetworkStatusCallback): (() => v
 
   // Set up listener if not already set
   if (statusListeners.size === 1) {
-    setupNetworkListener();
+    void setupNetworkListener();
   }
 
   // Return unsubscribe function
   return () => {
     statusListeners.delete(callback);
     if (statusListeners.size === 0) {
-      teardownNetworkListener();
+      void teardownNetworkListener();
     }
   };
 };
 
-let unsubscribe: (() => void) | null = null;
+let listenerHandle: PluginListenerHandle | null = null;
 
 const setupNetworkListener = async () => {
   try {
     // Get initial status
-    const initialStatus = await getNetworkStatus();
+    await getNetworkStatus();
 
     // Set up listener for changes
-    unsubscribe = Network.addListener('networkStatusChange', (status) => {
+    listenerHandle = await Network.addListener('networkStatusChange', (status) => {
       currentStatus = {
         isConnected: status.connected,
         connectionType: status.connectionType as 'none' | 'wifi' | 'cellular' | 'unknown',
-        isMetered: status.connectionType === 'cellular'
+        isMetered: status.connectionType === 'cellular',
       };
 
       // Notify all listeners
-      statusListeners.forEach(callback => {
+      statusListeners.forEach((callback) => {
         if (currentStatus) callback(currentStatus);
       });
     });
@@ -89,10 +90,10 @@ const setupNetworkListener = async () => {
   }
 };
 
-const teardownNetworkListener = () => {
-  if (unsubscribe) {
-    unsubscribe();
-    unsubscribe = null;
+const teardownNetworkListener = async () => {
+  if (listenerHandle) {
+    await listenerHandle.remove();
+    listenerHandle = null;
   }
 };
 

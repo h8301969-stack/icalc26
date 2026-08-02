@@ -131,7 +131,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       if (showLoading) setLoading(true);
       setError(null);
       const result = await adminListCodes(adminToken, tab);
-      if (!result.ok) {
+      if (result.ok === false) {
         setError(result.error);
         setCodes([]);
         if (showLoading) setLoading(false);
@@ -240,7 +240,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     setActionCode(grantTarget.code);
     setError(null);
     const result = await adminGrantAccess(adminToken, grantTarget.code);
-    if (!result.ok) {
+    if (result.ok === false) {
       setActionCode(null);
       setError(result.error ?? 'Grant access failed.');
       return;
@@ -251,7 +251,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       businessAddress: approveBusinessAddress.trim(),
     });
     setActionCode(null);
-    if (!businessResult.ok) {
+    if (businessResult.ok === false) {
       setError(businessResult.error ?? 'Access granted but business info could not be saved.');
       return;
     }
@@ -283,7 +283,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     }
     setActionCode(approveTarget.code);
     const result = await adminApproveCode(adminToken, approveTarget.code, approveMemo);
-    if (!result.ok) {
+    if (result.ok === false) {
       setActionCode(null);
       setError(result.error ?? 'Approve failed.');
       return;
@@ -294,7 +294,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       businessAddress: approveBusinessAddress.trim(),
     });
     setActionCode(null);
-    if (!businessResult.ok) {
+    if (businessResult.ok === false) {
       setError(businessResult.error ?? 'Approved but business info could not be saved.');
       return;
     }
@@ -308,7 +308,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     async (userId: string) => {
       setPasswordHistoryLoading(true);
       const result = await adminListPasswordHistory(adminToken, userId);
-      if (!result.ok) {
+      if (result.ok === false) {
         setPasswordHistory([]);
         setError(result.error);
       } else {

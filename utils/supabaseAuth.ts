@@ -139,7 +139,7 @@ export const attemptBackdoorLogin = async (
     return { admin: false, error: 'Supabase is not configured on this deployment.' };
   }
   const result = await tryOpenAdminSession(password);
-  if (!result.ok) return { admin: false, error: result.error };
+  if (result.ok === false) return { admin: false, error: result.error };
   return { admin: true, token: result.token };
 };
 
@@ -166,7 +166,7 @@ export const signupWithSupabase = async (
 
   if (isAccessControlEnabled()) {
     const reserve = await requestAccessCode(code, trimmedName, trimmedEmail);
-    if (!reserve.ok) return { error: reserve.error };
+    if (reserve.ok === false) return { error: reserve.error };
   }
 
   const { data, error } = await supabase.auth.signUp({
@@ -225,7 +225,7 @@ export const loginWithSupabase = async (
 
   if (resolvedEmail && isAccessControlEnabled()) {
     const access = await validateLoginAccess(resolvedEmail);
-    if (access.ok && !access.allowed) {
+    if (access.ok === true && access.allowed === false) {
       if (access.status === 'pending' && access.code) {
         return { pendingApproval: true, accessCode: access.code };
       }

@@ -9,10 +9,8 @@ import BlurredBackground from './components/BlurredBackground';
 import POSDashboard from './components/POSDashboard';
 import AuthOverlay from './components/AuthOverlay';
 import AdminCodeDashboard from './components/AdminCodeDashboard';
-import PWAInstallPrompt from './components/PWAInstallPrompt';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Icons } from './constants';
-import { usePWAPrompt } from './hooks/usePWAPrompt';
 import { useSettings } from './hooks/useSettings';
 import { useHistory } from './hooks/useHistory';
 import { useCalculator } from './hooks/useCalculator';
@@ -364,7 +362,6 @@ const AppContent: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const plusNewInvoicePendingRef = useRef(false);
   
-  const { showPrompt, canInstall, isInstalled, installMode, handleInstall, handleDismiss } = usePWAPrompt();
   const displayContentRef = useRef<HTMLPreElement>(null);
   const expressionScrollRef = useRef<HTMLDivElement>(null);
   const expressionAreaRef = useRef<HTMLDivElement>(null);
@@ -614,7 +611,8 @@ const AppContent: React.FC = () => {
   
   const isCalculatorActive = isUnlocked && !isPOSOpen && !isSettingsOpen;
   const isAnyModalOpen = isHistoryOpen || isPOSOpen || isSearchOpen || isSettingsOpen;
-  const isCalculatorHidden = isHistoryPanelActive || isPOSOpen;
+  // Settings sits on the blurred autoswipe wallpaper — hide the calculator chrome.
+  const isCalculatorHidden = isHistoryPanelActive || isPOSOpen || isSettingsOpen;
 
   const calcEdgeSwipeEnabled =
     isUnlocked && !isPOSOpen && !isHistoryPanelActive && !isSearchOpen && !isHistoryOpen;
@@ -856,11 +854,25 @@ const AppContent: React.FC = () => {
       {isUnlocked && (
       <>
       <div
-        className={`fixed inset-0 z-20 flex items-center justify-center transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) opacity-100 scale-100 ${isCalculatorHidden ? 'opacity-0 invisible pointer-events-none' : ''} ${isCalculatorEntering ? 'animate-auth-calc-enter' : ''} ${forceLandscapeRotate ? 'calc-force-landscape' : ''}`}
+        className={`fixed inset-0 z-20 flex items-center justify-center transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) opacity-100 scale-100 ${isCalculatorHidden ? 'opacity-0 invisible pointer-events-none' : ''} ${isCalculatorEntering ? 'animate-auth-calc-enter' : ''} ${isPlusAnimating ? 'animate-insight-pop-screen' : ''} ${forceLandscapeRotate ? 'calc-force-landscape' : ''}`}
         onPointerDown={calcEdgeSwipe.onPointerDown}
         onPointerUp={calcEdgeSwipe.onPointerUp}
         onPointerCancel={calcEdgeSwipe.onPointerCancel}
-        onAnimationEnd={() => setIsCalculatorEntering(false)}
+        onAnimationEnd={(e) => {
+          // Only handle animations on this layer (not bubbling from children)
+          if (e.target !== e.currentTarget) return;
+          const name = e.animationName || '';
+          if (name.includes('auth-calc-enter') || isCalculatorEntering) {
+            setIsCalculatorEntering(false);
+          }
+          if (name.includes('insight-pop-screen') || isPlusAnimating) {
+            setIsPlusAnimating(false);
+            if (plusNewInvoicePendingRef.current) {
+              plusNewInvoicePendingRef.current = false;
+              handleNewInvoice();
+            }
+          }
+        }}
       >
         <div 
           className={`relative flex flex-col overflow-hidden transition-all duration-500 ${
@@ -872,11 +884,9 @@ const AppContent: React.FC = () => {
                 ? 'w-[97%] h-[98%] sm:w-[95vw] sm:h-[96vh]'
                 : 'w-[94%] h-[96%] sm:w-[90vw] sm:h-[90vh] max-w-[430px] max-h-[932px] rounded-[26px]'
           } ${
-            isSettingsOpen
-              ? `${isLight ? 'bg-white text-black' : 'bg-black text-white'}`
-              : disableCard
-                ? `bg-transparent ${isLight ? 'text-black' : 'text-white'}`
-                : `${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px)`
+            disableCard
+              ? `bg-transparent ${isLight ? 'text-black' : 'text-white'}`
+              : `${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px)`
           }`}
           style={{
             paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
@@ -904,18 +914,12 @@ const AppContent: React.FC = () => {
           >
             <button
               onClick={() => {
+                if (isPlusAnimating) return;
                 triggerHaptic(1);
                 plusNewInvoicePendingRef.current = true;
                 setIsPlusAnimating(true);
               }}
-              onAnimationEnd={() => {
-                setIsPlusAnimating(false);
-                if (plusNewInvoicePendingRef.current) {
-                  plusNewInvoicePendingRef.current = false;
-                  handleNewInvoice();
-                }
-              }}
-              className={`pointer-events-auto h-8 w-8 shrink-0 rounded-full flex items-center justify-center transition-all duration-300 ${isPlusAnimating ? 'animate-plus-trigger' : ''} ${isSearchOpen ? 'blur-[2px] opacity-35' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`}
+              className={`pointer-events-auto h-8 w-8 shrink-0 rounded-full flex items-center justify-center transition-all duration-300 ${isSearchOpen ? 'blur-[2px] opacity-35' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`}
               style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 0 12px rgba(255,255,255,0.6), 0 0 4px rgba(255,255,255,0.3)' }}
               title="New Invoice"
               aria-label="Start new invoice"
@@ -1279,32 +1283,26 @@ const AppContent: React.FC = () => {
             }}
           />
 
-          <SettingsPanel
-            isOpen={isSettingsOpen} 
-            onClose={closeSettings}
-            focusSectionIndex={settingsSectionIndex}
-            settings={settings}
-            isLight={isLight}
-            updateSettings={handleUpdateSettings}
-            onApplyAppearance={() => {
-              triggerHaptic();
-              closeSettings();
-            }}
-            cartItems={cartItems}
-            runningTotal={parseFloat(runningTotal) || 0}
-            invoiceName={invoiceName}
-            currency={settings.currency}
-            accountUsername={account?.username}
-            onChangePassword={handleChangePassword}
-            onLogout={handleLogout}
-            onVerifyAdminPassword={handleVerifyAdminPassword}
-            canInstallApp={canInstall}
-            isAppInstalled={isInstalled}
-            onInstallApp={handleInstall}
-            installAppMode={installMode}
-          />
         </div>
       </div>
+
+      {/* Full-screen over blurred idle/autoswipe wallpaper */}
+      <SettingsPanel
+        isOpen={isSettingsOpen}
+        onClose={closeSettings}
+        focusSectionIndex={settingsSectionIndex}
+        settings={settings}
+        isLight={isLight}
+        updateSettings={handleUpdateSettings}
+        cartItems={cartItems}
+        runningTotal={parseFloat(runningTotal) || 0}
+        invoiceName={invoiceName}
+        currency={settings.currency}
+        accountUsername={account?.username}
+        onChangePassword={handleChangePassword}
+        onLogout={handleLogout}
+        onVerifyAdminPassword={handleVerifyAdminPassword}
+      />
 
       <HistoryPanel
         isOpen={isHistoryOpen && isCalculatorActive}
@@ -1363,16 +1361,6 @@ const AppContent: React.FC = () => {
         onChangePassword={handleChangePassword}
         onLogout={handleLogout}
         onVerifyAdminPassword={handleVerifyAdminPassword}
-        canInstallApp={canInstall}
-        isAppInstalled={isInstalled}
-        onInstallApp={handleInstall}
-        installAppMode={installMode}
-      />
-      <PWAInstallPrompt
-        showPrompt={showPrompt}
-        installMode={installMode}
-        onInstall={handleInstall}
-        onDismiss={handleDismiss}
       />
       <SyncStatusIndicator
         syncState={syncStatus.syncState}

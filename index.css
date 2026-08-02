@@ -20,17 +20,27 @@
     100% { transform: scale(4); opacity: 0; }
   }
   @keyframes fade-in {
-    from { opacity: 0; transform: translateY(16px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(10px) scale(0.98); filter: blur(4px); }
+    to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
   }
   @keyframes insight-pop {
     from { opacity: 0; transform: scale(0.96) translate3d(0, 32px, 0); }
     to { opacity: 1; transform: scale(1) translate3d(0, 0, 0); }
   }
+  @keyframes insight-pop-out {
+    from { opacity: 1; transform: scale(1) translate3d(0, 0, 0); filter: blur(0); }
+    to { opacity: 0; transform: scale(0.96) translate3d(0, 36px, 0); filter: blur(3px); }
+  }
   @keyframes plus-trigger {
     0% { transform: scale(1) rotate(0deg); }
     50% { transform: scale(1.35) rotate(90deg); }
     100% { transform: scale(1) rotate(180deg); }
+  }
+  /* + button: insight-pop style without staying invisible */
+  @keyframes insight-pop-press {
+    0% { transform: scale(1) translate3d(0, 0, 0); }
+    40% { transform: scale(0.88) translate3d(0, 8px, 0); opacity: 0.85; }
+    100% { transform: scale(1) translate3d(0, 0, 0); opacity: 1; }
   }
 
   @keyframes blink {
@@ -108,6 +118,318 @@
 
 .animate-auth-card-enter {
   animation: auth-card-enter 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ── Shared morph / crossfade motion (auth, invoice switcher, panels) ── */
+.morph-scrim {
+  transition: opacity 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.morph-scrim--in {
+  opacity: 1;
+}
+
+.morph-scrim--out {
+  opacity: 0;
+}
+
+.morph-panel {
+  transition:
+    opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform, filter;
+}
+
+.morph-panel--in {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  filter: blur(0);
+}
+
+.morph-panel--out {
+  opacity: 0;
+  transform: scale(0.96) translateY(12px);
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+/* Invoice switcher — enter/exit (insight-pop motion) */
+.invoice-switcher-sheet {
+  will-change: opacity, transform, filter;
+}
+
+/* Static resting pose when closed (no anim on first mount) */
+.invoice-switcher-sheet--out {
+  opacity: 0;
+  transform: scale(0.96) translate3d(0, 40px, 0);
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+.invoice-switcher-sheet--in {
+  animation: invoice-switcher-enter 0.22s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+/* Only applied while closing after a successful enter */
+.invoice-switcher-sheet--exiting {
+  animation: invoice-switcher-exit 0.18s cubic-bezier(0.32, 0.72, 0, 1) both;
+  pointer-events: none;
+}
+
+@keyframes invoice-switcher-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translate3d(0, 28px, 0);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+}
+
+@keyframes invoice-switcher-exit {
+  from {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97) translate3d(0, 24px, 0);
+    filter: blur(3px);
+  }
+}
+
+/* Grid / list: same motion, slightly larger travel */
+.invoice-switcher-sheet--browse.invoice-switcher-sheet--out {
+  transform: scale(0.97) translate3d(0, 12%, 0);
+  filter: blur(5px);
+}
+.invoice-switcher-sheet--browse.invoice-switcher-sheet--in {
+  animation-name: invoice-switcher-browse-enter;
+}
+.invoice-switcher-sheet--browse.invoice-switcher-sheet--exiting {
+  animation-name: invoice-switcher-browse-exit;
+}
+
+@keyframes invoice-switcher-browse-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translate3d(0, 12%, 0);
+    filter: blur(5px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+}
+
+@keyframes invoice-switcher-browse-exit {
+  from {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97) translate3d(0, 10%, 0);
+    filter: blur(5px);
+  }
+}
+
+.invoice-switcher-scrim {
+  transition: opacity 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.invoice-switcher-scrim--in {
+  opacity: 1;
+}
+
+.invoice-switcher-scrim--out {
+  opacity: 0;
+}
+
+.invoice-switcher-toolbar {
+  transition:
+    opacity 0.16s cubic-bezier(0.32, 0.72, 0, 1) 20ms,
+    transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.invoice-switcher-toolbar--in {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.invoice-switcher-toolbar--out {
+  opacity: 0;
+  transform: translate3d(0, -8px, 0);
+  pointer-events: none;
+}
+
+/* Utility: insight-pop (panels / whole-screen + ) */
+.animate-insight-pop {
+  animation: insight-pop 0.42s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+/* Slightly snappier full-screen pop for new invoice */
+.animate-insight-pop-screen {
+  animation: insight-pop-screen 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes insight-pop-screen {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translate3d(0, 28px, 0);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+}
+
+.animate-insight-pop-press {
+  animation: insight-pop-press 0.28s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.morph-panel-content {
+  transition:
+    opacity 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.morph-panel-content--in {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+}
+
+.morph-panel-content--out {
+  opacity: 0;
+  transform: translateY(6px) scale(0.99);
+  filter: blur(2px);
+  pointer-events: none;
+}
+
+.morph-crossfade {
+  display: inline-grid;
+  align-items: center;
+  justify-items: start;
+}
+
+.morph-crossfade--center {
+  justify-items: center;
+  width: 100%;
+}
+
+.morph-crossfade > span {
+  grid-area: 1 / 1;
+  transition:
+    opacity 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.morph-crossfade > span[data-active='false'] {
+  opacity: 0;
+  transform: translateY(3px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.morph-crossfade > span[data-active='true'] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Auth mode switch — card body height + content crossfade */
+.auth-mode-shell {
+  overflow: hidden;
+  will-change: height;
+}
+
+.auth-mode-shell--animating {
+  transition: height 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.auth-card-mode {
+  transition:
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.auth-card-mode--pulse {
+  transform: scale(1.006);
+}
+
+.auth-mode-fields {
+  transition:
+    opacity 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.auth-mode-fields--out {
+  opacity: 0.55;
+  transform: translateY(4px);
+}
+
+/* Prefer shared morph-crossfade; keep auth aliases */
+.auth-crossfade {
+  display: inline-grid;
+  align-items: center;
+  justify-items: start;
+}
+
+.auth-crossfade--center {
+  justify-items: center;
+  width: 100%;
+}
+
+.auth-crossfade > span {
+  grid-area: 1 / 1;
+  transition:
+    opacity 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.auth-crossfade > span[data-active='false'] {
+  opacity: 0;
+  transform: translateY(3px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.auth-crossfade > span[data-active='true'] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Height is driven by .auth-mode-shell FLIP; rows swap instantly so measure is exact */
+.auth-mode-collapse {
+  display: grid;
+  transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.auth-mode-collapse--open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.auth-mode-collapse--closed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-top: 0 !important;
+  pointer-events: none;
+}
+
+.auth-mode-collapse__inner {
+  overflow: hidden;
+  min-height: 0;
 }
 
 @keyframes auth-settings-enter {
@@ -1651,6 +1973,16 @@ select.app-input--dark {
 }
 .settings-panel-title {
   font-size: 1.8rem;
+  background: transparent;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    0 6px 20px rgba(0, 0, 0, 0.22);
+}
+
+.settings-panel--dark .settings-panel-title {
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 8px 24px rgba(0, 0, 0, 0.45);
 }
 .settings-card-header {
   display: flex;
@@ -2217,10 +2549,15 @@ select.app-input--dark {
   box-shadow:
     0 2px 10px rgba(34, 211, 238, 0.35),
     0 0 0 1px rgba(255, 255, 255, 0.12) inset;
-  transition:
-    transform 180ms cubic-bezier(0.34, 1.25, 0.64, 1),
-    width 180ms cubic-bezier(0.34, 1.25, 0.64, 1);
+  transition: none;
   will-change: transform, width;
+}
+
+/* Avoid a first-paint slide from 0; animate only after measured */
+.fluid-segment-thumb--ready {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .fluid-segment-btn--active {
@@ -2354,31 +2691,153 @@ select.app-input--dark {
   transform: scale(0.96);
 }
 
-/* ---------- Settings panel: solid theme background + corner containment ---------- */
+/* ---------- Settings panel: transparent over idle/calc background ---------- */
 .settings-panel {
   border-radius: inherit;
   overflow: hidden;
+  background: transparent !important;
 }
 
-.settings-panel--light {
-  background: #ffffff;
-}
-
+.settings-panel--light,
 .settings-panel--dark {
-  background: #000000;
+  background: transparent !important;
 }
 
-/* Settings cards: hover lift with black shadow (light mode) / white shadow (dark mode) */
+.settings-panel-header {
+  background: transparent;
+  border-bottom: none;
+}
+
+.settings-panel-close {
+  background: transparent !important;
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+
+.settings-panel--light .settings-panel-close {
+  color: rgba(0, 0, 0, 0.72);
+  border-color: rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.22) !important;
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+}
+
+.settings-panel--light .settings-panel-close:hover {
+  background: rgba(255, 255, 255, 0.38) !important;
+  border-color: rgba(0, 0, 0, 0.18);
+}
+
+.settings-panel--dark .settings-panel-close {
+  color: rgba(255, 255, 255, 0.88);
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(14px) saturate(1.5);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+}
+
+.settings-panel--dark .settings-panel-close:hover {
+  background: rgba(255, 255, 255, 0.14) !important;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+/* Dirty-state Discard / Save (top-right) */
+.settings-panel-action {
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.55rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  transition:
+    background-color 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.16s ease,
+    transform 0.12s ease;
+}
+
+.settings-panel-action:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.settings-panel-action:active {
+  transform: scale(0.96);
+}
+
+.settings-panel-action--discard {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.settings-panel--light .settings-panel-action--discard {
+  color: rgba(0, 0, 0, 0.72);
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+.settings-panel-action--save {
+  color: #fff;
+  background: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.9);
+  box-shadow: 0 8px 22px rgba(59, 130, 246, 0.4);
+}
+
+.settings-panel--dark .settings-panel-action--save {
+  box-shadow: 0 10px 28px rgba(59, 130, 246, 0.35);
+}
+
+/* Match Auth sign-in/up card surface (panelClass in AuthOverlay) */
 .settings-card {
-  will-change: box-shadow;
+  border-radius: 1rem; /* rounded-2xl */
+  border-width: 1px;
+  border-style: solid;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.55); /* shadow-2xl */
+  transition:
+    box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Light: bg-white/80 border-black/10 */
+.settings-panel--light .settings-card {
+  color: #000;
+  border-color: rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
 }
 
 .settings-panel--light .settings-card:hover {
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18), 0 3px 10px rgba(0, 0, 0, 0.10);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 28px 56px -12px rgba(0, 0, 0, 0.3);
+}
+
+/* Dark: pos-dashboard-card-glass + border-white/12 */
+.settings-panel--dark .settings-card {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px) saturate(1.65);
+  -webkit-backdrop-filter: blur(24px) saturate(1.65);
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.65),
+    0 10px 36px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .settings-panel--dark .settings-card:hover {
-  box-shadow: 0 14px 34px rgba(255, 255, 255, 0.16), 0 3px 10px rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 28px 56px -12px rgba(0, 0, 0, 0.7),
+    0 16px 44px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 /* ---------- Global fluid spring press feedback ---------- */

@@ -138,7 +138,7 @@ export const tryOpenDevAdminSession = async (): Promise<
   let lastError = 'Invalid credentials.';
   for (const { password, clock } of attempts) {
     const result = await tryOpenAdminSession(password, clock);
-    if (result.ok) return result;
+    if (result.ok === true) return result;
     lastError = result.error;
   }
 

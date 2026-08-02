@@ -4,7 +4,7 @@
  * Better UX than browser alerts
  */
 
-import { Toast, ToastShowOptions } from '@capacitor/toast';
+import { Toast, type ToastShowOptions } from '@capacitor/toast';
 
 export type ToastDuration = 'short' | 'long';
 export type ToastPosition = 'top' | 'center' | 'bottom';
@@ -19,8 +19,8 @@ export const showToast = async (
   try {
     await Toast.show({
       text: message,
-      duration: duration === 'short' ? 2000 : 3500,
-      position: 'bottom'
+      duration,
+      position: 'bottom',
     });
   } catch (error) {
     console.warn('Toast not available:', error);
@@ -62,7 +62,7 @@ export const showSyncToast = async (status: 'syncing' | 'success' | 'error'): Pr
   const messages = {
     syncing: '⟳ Syncing data...',
     success: '✓ Synced successfully',
-    error: '✗ Sync failed'
+    error: '✗ Sync failed',
   };
   await showToast(messages[status], status === 'error' ? 'long' : 'short');
 };
@@ -78,7 +78,7 @@ export const showInvoiceToast = async (
     updated: '✓ Invoice updated',
     saved: '✓ Invoice saved',
     printed: '✓ Sent to printer',
-    shared: '✓ Shared successfully'
+    shared: '✓ Shared successfully',
   };
   await showToast(messages[action], 'short');
 };
@@ -93,7 +93,7 @@ export const showInventoryToast = async (
     added: '✓ Item added',
     updated: '✓ Item updated',
     deleted: '✓ Item removed',
-    restocked: '✓ Stock updated'
+    restocked: '✓ Stock updated',
   };
   await showToast(messages[action], 'short');
 };
@@ -116,8 +116,8 @@ export const showCustomToast = async (options: Partial<ToastShowOptions>): Promi
   try {
     const defaults: ToastShowOptions = {
       text: 'Notification',
-      duration: 2000,
-      position: 'bottom'
+      duration: 'short',
+      position: 'bottom',
     };
 
     await Toast.show({ ...defaults, ...options });
