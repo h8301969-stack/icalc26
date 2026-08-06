@@ -140,7 +140,7 @@ export const attemptBackdoorLogin = async (
     return {
       admin: false,
       error:
-        'Admin portal needs Supabase. Rebuild the app with VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY set (same as Vercel), then reinstall the APK.',
+        'Admin portal is offline (Supabase not configured in this build). Install the latest APK from apk-latest, or rebuild with VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.',
     };
   }
 

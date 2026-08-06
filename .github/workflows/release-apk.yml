@@ -77,9 +77,27 @@ jobs:
         env:
           VITE_APP_BUILD: ${{ github.run_number }}
           VITE_APP_VERSION: ${{ steps.ver.outputs.version }}
+          # Prefer GitHub secrets; fall back to public publishable keys (same as .env.example)
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         run: |
+          set -e
+          export VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-https://ttwgosajvcdyybkwdgdo.supabase.co}"
+          export VITE_SUPABASE_PUBLISHABLE_KEY="${VITE_SUPABASE_PUBLISHABLE_KEY:-sb_publishable_kUALsINgJKZ3DJkeszUTeQ_KAaWuKjL}"
+          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ]; then
+            echo "ERROR: Supabase env missing — admin portal / auth will not work in the APK."
+            exit 1
+          fi
           echo "Building as ordered tag ${{ steps.ver.outputs.version }} (build ${{ github.run_number }})"
+          echo "Supabase URL: $VITE_SUPABASE_URL"
+          echo "Supabase key set: yes (${#VITE_SUPABASE_PUBLISHABLE_KEY} chars)"
           npm run build
+          # Fail fast if Vite dropped the env (admin portal depends on this)
+          if ! grep -Rql "ttwgosajvcdyybkwdgdo\|${VITE_SUPABASE_URL#https://}" dist/ 2>/dev/null; then
+            echo "WARN: Supabase URL not found in dist/ — check Vite env injection."
+          else
+            echo "OK: Supabase URL present in production bundle."
+          fi
           npx cap sync android
 
       - name: Decode release keystore (if provided)

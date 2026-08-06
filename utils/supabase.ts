@@ -1,12 +1,28 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+/**
+ * Public publishable project defaults (same as `.env.example`).
+ * Used when VITE_* was not baked into the build (common APK CI miss).
+ * Publishable keys are safe to ship in the client; never put service_role here.
+ */
+const DEFAULT_SUPABASE_URL = 'https://ttwgosajvcdyybkwdgdo.supabase.co';
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY =
+  'sb_publishable_kUALsINgJKZ3DJkeszUTeQ_KAaWuKjL';
+
+const envUrl = String(import.meta.env.VITE_SUPABASE_URL ?? '').trim();
+const envKey = String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? '').trim();
+
+const supabaseUrl =
+  envUrl && !envUrl.includes('your-project') ? envUrl : DEFAULT_SUPABASE_URL;
+const supabaseKey = envKey || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 
 export const isSupabaseConfigured = (): boolean =>
-  !!supabaseUrl && !!supabaseKey && !supabaseUrl.includes('your-project');
+  !!supabaseUrl &&
+  !!supabaseKey &&
+  !supabaseUrl.includes('your-project') &&
+  !supabaseUrl.includes('placeholder');
 
-/** Cloud auth + data sync only on production builds (Vercel, Netlify, etc.). Local `npm run dev` uses browser storage. */
+/** Cloud data sync on production builds (Vercel, Netlify, APK). Auth works whenever configured. */
 export const isCloudBackendEnabled = (): boolean =>
   isSupabaseConfigured() && import.meta.env.PROD;
 
@@ -19,7 +35,7 @@ export const supabase: SupabaseClient = (() => {
     });
   }
   if (!client) {
-    client = createClient(supabaseUrl!, supabaseKey!, {
+    client = createClient(supabaseUrl, supabaseKey, {
       auth: { persistSession: true, autoRefreshToken: true },
     });
   }
