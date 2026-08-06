@@ -218,6 +218,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setBaselineFp(settingsFingerprint(savedSnap));
     setBusinessSyncError(null);
     setIsSaving(true);
+    const startedAt = Date.now();
 
     try {
       _updateSettings(savedSnap);
@@ -244,6 +245,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
       onApplyAppearance?.();
     } finally {
+      // Keep "Saving…" on the button for at least 1s so the action is visible
+      const elapsed = Date.now() - startedAt;
+      const remaining = Math.max(0, 1000 - elapsed);
+      if (remaining > 0) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, remaining));
+      }
       setIsSaving(false);
     }
   }, [draft, _updateSettings, onApplyAppearance]);
@@ -585,7 +592,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           Settings
         </h2>
         <div className="flex items-center gap-2 shrink-0">
-          {isDirty && (
+          {(isDirty || isSaving) && (
             <>
               <button
                 type="button"
@@ -600,6 +607,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 onClick={() => void handleSave()}
                 disabled={isSaving}
                 className="settings-panel-action settings-panel-action--save"
+                aria-busy={isSaving}
               >
                 {isSaving ? 'Saving…' : 'Save'}
               </button>

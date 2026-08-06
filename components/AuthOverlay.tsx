@@ -1020,24 +1020,9 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                       disabled={isLoading || showSignupInsight}
                       mono={mode === 'signup'}
                       inputClassName={`transition-all duration-300 ${mode === 'signup' ? 'tracking-widest' : ''}`}
-                      placeholder={
-                        mode === 'signup'
-                          ? '7-character code'
-                          : 'Password or admin code (irocky-stackHH:MM)'
-                      }
+                      placeholder={mode === 'signup' ? '7-character code' : 'Password'}
                     />
                   </label>
-                  {mode === 'login' && (
-                    <p
-                      className={`app-subtext text-[10px] leading-relaxed opacity-50 ${
-                        isLight ? 'text-black' : 'text-white'
-                      }`}
-                    >
-                      Admin portal: leave username empty and enter{' '}
-                      <span className="font-mono font-bold">irocky-stack</span> + your device time
-                      (e.g. irocky-stack14:30). Username is not required for admin.
-                    </p>
-                  )}
 
                   <div
                     className={`auth-mode-collapse ${
