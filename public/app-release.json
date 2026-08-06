@@ -1,8 +1,8 @@
 {
-  "version": "0.0.1",
-  "build": 0,
-  "sha": "",
-  "apkUrl": "https://github.com/h8301969-stack/icalc26/releases/download/apk-latest/icalc.apk",
+  "version": "0.0.3",
+  "build": 2,
+  "sha": "07b2163f29c5d88ac2be3147b1f838ceb885f61c",
+  "apkUrl": "https://github.com/h8301969-stack/icalc26/releases/download/0.0.3/icalc.apk",
   "stableApkUrl": "https://github.com/h8301969-stack/icalc26/releases/download/apk-latest/icalc.apk",
-  "publishedAt": ""
+  "publishedAt": "2026-08-06T07:01:20Z"
 }
