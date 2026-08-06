@@ -11,7 +11,7 @@ import {
 } from '../types';
 import { formatPosLineItemDisplay, formatPriceLabel } from '../utils/posExpression';
 import { Icons } from '../constants';
-import { InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS';
+import { InventoryItem, ActivityLogEntry, PurchaseRecord, PriceHistoryEntry } from '../hooks/usePOS';
 import { isAdminProfile } from '../utils/auth';
 
 import SettingsPanel from './SettingsPanel';
@@ -23,8 +23,9 @@ import {
   parseNotepadSnapshot,
 } from '../utils/notepadSnapshot';
 import { DEFAULT_INVENTORY_IMAGE, resolveInventoryImage, WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
-import { formInputClass } from '../utils/formFields';
+import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
 import { MorphPresence } from './MorphCrossfade';
+import { boxFractionLabel, formatBoxQuantity } from '../utils/inventoryUnits';
 
 interface POSDashboardProps {
   history: HistoryItem[];
@@ -273,7 +274,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('0');
+  const [newItemQtyReceived, setNewItemQtyReceived] = useState('1');
+  const [newItemUnitsPerBox, setNewItemUnitsPerBox] = useState('');
   const [newItemTag, setNewItemTag] = useState('');
+  const [showPricingsHistory, setShowPricingsHistory] = useState(false);
   // Requests feature states
   const [requestTab, setRequestTab] = useState<'pending' | 'delivered' | 'outofstock'>('pending');
   const [showAddRequestPopup, setShowAddRequestPopup] = useState(false);
@@ -316,6 +320,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           setShowSuppliersPanel(false);
         } else if (showAddRestockPopup) {
           closeRestockPopup();
+        } else if (showPricingsHistory) {
+          setShowPricingsHistory(false);
         } else if (namingUnidentified) {
           setNamingUnidentified(null);
         } else if (actionLogsExpanded) {
@@ -354,7 +360,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     return () => window.removeEventListener('keydown', onKey);
     // closeRestockPopup is stable (useCallback below); omit to avoid TDZ — handler calls it by reference at runtime
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, onClose, showAddRequestPopup, showAddRestockPopup, showSuppliersPanel, namingUnidentified, actionLogsExpanded, selectedItem, requestsExpanded, restockExpanded, restockGridZoomed, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded]);
+  }, [isOpen, onClose, showAddRequestPopup, showAddRestockPopup, showPricingsHistory, showSuppliersPanel, namingUnidentified, actionLogsExpanded, selectedItem, requestsExpanded, restockExpanded, restockGridZoomed, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded]);
 
   useEffect(() => {
     if (!canViewTransactions) {
@@ -941,6 +947,32 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         },
         ...prev,
       ]);
+      // Apply received packs to inventory stock (qty = packs; unitsPerBox → box fraction in log)
+      setItems((prev) =>
+        prev.map((row) => {
+          const line = restockLineItems.find((l) => l.itemId === row.id || l.name === row.name);
+          if (!line || line.qty <= 0) return row;
+          const nextStock = row.stock + line.qty;
+          const label = formatBoxQuantity(line.qty, row.unitsPerBox);
+          const frac = boxFractionLabel(line.qty, row.unitsPerBox);
+          return {
+            ...row,
+            stock: nextStock,
+            lastStocked: new Date(now).toISOString(),
+            activities: [
+              {
+                id: `restock-${now}-${row.id}`,
+                type: 'restock' as const,
+                action: `Restocked +${label}${frac ? ` (${frac})` : ''} · now ${formatBoxQuantity(nextStock, row.unitsPerBox)}`,
+                time: 'Just now',
+                timestamp: now,
+                profileName: activeProfileName,
+              },
+              ...row.activities,
+            ],
+          };
+        })
+      );
     }
 
     closeRestockPopup();
@@ -951,6 +983,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     editingRestockId,
     closeRestockPopup,
     setRestocks,
+    setItems,
+    activeProfileName,
   ]);
 
   const restockGridCols = 3 as 3 | 4;
@@ -1390,23 +1424,105 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     );
   };
 
-  const renderRestockingView = () => (
-    <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Restocking">
+  const renderPricingsHistoryView = () => (
+    <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Pricings history">
       <div className="flex items-center justify-between gap-3">
         <button
-          onClick={() => setRestockExpanded(false)}
+          onClick={() => setShowPricingsHistory(false)}
+          aria-label="Back to Restocking"
+          className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Restock
+        </button>
+      </div>
+      <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Pricings history</h3>
+      <p className={`app-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>
+        Time elapsed for every price change on every item
+      </p>
+      <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
+        {allPricingsHistory.length > 0 ? (
+          allPricingsHistory.map((row, idx) => (
+            <div
+              key={row.id}
+              className={`px-6 py-4 flex items-start justify-between gap-3 ${
+                idx !== allPricingsHistory.length - 1 ? 'border-b border-white/10' : ''
+              }`}
+            >
+              <div className="min-w-0">
+                <p className={`app-subtext text-[10px] font-black truncate ${textColorClass}`}>{row.itemName}</p>
+                <p className={`app-subtext text-[10px] mt-1 ${cardSubtextMutedClass}`}>
+                  {row.previousPrice != null
+                    ? `${formatCurrency(String(row.previousPrice))} → ${formatCurrency(String(row.price))}`
+                    : formatCurrency(String(row.price))}
+                  {row.source === 'create' ? ' · listed' : row.source === 'update' ? ' · updated' : ''}
+                </p>
+                {row.profileName ? (
+                  <p className={`app-subtext text-[10px] mt-0.5 opacity-50 ${cardSubtextMutedClass}`}>
+                    by {row.profileName}
+                  </p>
+                ) : null}
+              </div>
+              <div className="text-right shrink-0">
+                <p className={`app-subtext text-[10px] font-black tabular-nums ${textColorClass}`}>
+                  {formatRequestElapsed(row.timestamp, currentTime)} ago
+                </p>
+                <p className={`app-subtext text-[10px] opacity-45 mt-0.5 ${cardSubtextMutedClass}`}>
+                  {new Date(row.timestamp).toLocaleString([], {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </p>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="p-12 text-center">
+            <p className={`app-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No price changes yet</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderRestockingView = () => {
+    if (showPricingsHistory) return renderPricingsHistoryView();
+
+    return (
+    <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Restocking">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <button
+          onClick={() => {
+            setShowPricingsHistory(false);
+            setRestockExpanded(false);
+          }}
           aria-label="Back to Vision Hub"
           className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
         </button>
-        <button
-          onClick={() => openRestockPopup()}
-          className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 active:scale-95 transition-all shrink-0 ${isLight ? 'bg-amber-500 text-white shadow-lg' : 'bg-amber-500 text-white shadow-[0_0_16px_rgb(245,158,11)]'}`}
-          aria-label="Add restock note"
-        >
-          + Add more
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowPricingsHistory(true)}
+            className={`px-4 py-2.5 rounded-full font-black text-[10px] uppercase tracking-widest flex items-center gap-2 active:scale-95 transition-all border ${
+              isLight
+                ? 'bg-white text-black border-black/10 shadow-sm'
+                : 'bg-white/10 text-white border-white/15'
+            }`}
+            aria-label="Open pricings history"
+          >
+            Pricings history
+          </button>
+          <button
+            onClick={() => openRestockPopup()}
+            className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 active:scale-95 transition-all ${isLight ? 'bg-amber-500 text-white shadow-lg' : 'bg-amber-500 text-white shadow-[0_0_16px_rgb(245,158,11)]'}`}
+            aria-label="Add restock note"
+          >
+            + Add more
+          </button>
+        </div>
       </div>
       <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Restocking</h3>
 
@@ -1428,39 +1544,60 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           )
         ) : (
           <div className="p-12 text-center">
-            <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No restock notes yet</p>
+            <p className={`app-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No restock notes yet</p>
           </div>
         )}
       </div>
     </div>
-  );
+    );
+  };
 
   const handleAddItem = () => {
     if (!newItemName.trim()) return;
-    const now = new Date();
-    const newItem: InventoryItem = {
-      id: Date.now().toString(),
-      name: newItemName,
-      stock: 50,
-      price: parseFloat(newItemPrice) || 0,
-      threshold: 20,
-      category: newItemTag.trim(),
-      dateAdded: now.toLocaleDateString(),
-      supplier: 'Generic Systems',
-      lastStocked: now.toISOString(),
-      image: DEFAULT_INVENTORY_IMAGE,
-      activities: [{
-        id: Math.random().toString(),
-        type: 'restock',
-        action: 'Initial entry created',
-        time: 'Just now',
-        timestamp: Date.now(),
-        profileName: activeProfileName,
-      }]
+    const now = Date.now();
+    const price = parseFloat(newItemPrice) || 0;
+    const qtyReceived = Math.max(0, Math.floor(parseFloat(newItemQtyReceived) || 0));
+    const unitsPerBoxRaw = Math.floor(parseFloat(newItemUnitsPerBox) || 0);
+    const unitsPerBox = unitsPerBoxRaw > 0 ? unitsPerBoxRaw : undefined;
+    const stockLabel = formatBoxQuantity(qtyReceived, unitsPerBox);
+    const fraction = boxFractionLabel(qtyReceived, unitsPerBox);
+    const id = now.toString();
+    const priceEntry: PriceHistoryEntry = {
+      id: `price-${now}`,
+      itemId: id,
+      itemName: newItemName.trim(),
+      price,
+      timestamp: now,
+      profileName: activeProfileName,
+      source: 'create',
     };
-    setItems(prev => [newItem, ...prev]);
+    const newItem: InventoryItem = {
+      id,
+      name: newItemName.trim(),
+      stock: qtyReceived,
+      price,
+      threshold: Math.max(1, Math.floor(qtyReceived * 0.2) || 1),
+      category: newItemTag.trim(),
+      dateAdded: new Date(now).toLocaleDateString(),
+      supplier: 'Generic Systems',
+      lastStocked: new Date(now).toISOString(),
+      image: DEFAULT_INVENTORY_IMAGE,
+      unitsPerBox,
+      priceHistory: [priceEntry],
+      activities: [{
+        id: `${now}-restock`,
+        type: 'restock',
+        action: `Initial stock ${stockLabel}${fraction ? ` (${fraction})` : ''} @ ${formatCurrency(String(price))}`,
+        time: 'Just now',
+        timestamp: now,
+        profileName: activeProfileName,
+      }],
+    };
+    setItems((prev) => [newItem, ...prev]);
     setNewItemName('');
     setNewItemPrice('0');
+    setNewItemQtyReceived('1');
+    setNewItemUnitsPerBox('');
     setNewItemTag('');
     setIsAddingItem(false);
   };
@@ -1549,13 +1686,16 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         return;
       }
       const now = Date.now();
-      const action = `${item.name} updated from ${item.stock} to ${parsed}`;
+      const fromLabel = formatBoxQuantity(item.stock, item.unitsPerBox);
+      const toLabel = formatBoxQuantity(parsed, item.unitsPerBox);
+      const action = `${item.name} stock ${fromLabel} → ${toLabel}`;
       setItems((prev) =>
         prev.map((row) => {
           if (row.id !== item.id) return row;
           return {
             ...row,
             stock: parsed,
+            lastStocked: new Date(now).toISOString(),
             activities: [
               {
                 id: `stock-update-${now}`,
@@ -1586,12 +1726,23 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       const oldLabel = formatCurrency(String(item.price));
       const newLabel = formatCurrency(String(parsed));
       const action = `${item.name} changed from ${oldLabel} to ${newLabel}`;
+      const historyEntry: PriceHistoryEntry = {
+        id: `price-${now}`,
+        itemId: item.id,
+        itemName: item.name,
+        price: parsed,
+        previousPrice: item.price,
+        timestamp: now,
+        profileName: activeProfileName,
+        source: 'update',
+      };
       setItems((prev) =>
         prev.map((row) => {
           if (row.id !== item.id) return row;
           return {
             ...row,
             price: parsed,
+            priceHistory: [historyEntry, ...(row.priceHistory ?? [])],
             activities: [
               {
                 id: `price-update-${now}`,
@@ -1610,6 +1761,27 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     },
     [activeProfileName, formatCurrency, setItems]
   );
+
+  /** All price changes across inventory, newest first. */
+  const allPricingsHistory = useMemo((): PriceHistoryEntry[] => {
+    const rows: PriceHistoryEntry[] = [];
+    for (const item of items) {
+      if (item.priceHistory?.length) {
+        rows.push(...item.priceHistory);
+      } else {
+        // Backfill a synthetic “current” entry for older items without history
+        rows.push({
+          id: `price-seed-${item.id}`,
+          itemId: item.id,
+          itemName: item.name,
+          price: item.price,
+          timestamp: Date.parse(item.lastStocked) || Date.now(),
+          source: 'create',
+        });
+      }
+    }
+    return rows.sort((a, b) => b.timestamp - a.timestamp);
+  }, [items]);
 
   const getItemActivityLogs = (item: InventoryItem) => {
     const dayAgo = Date.now() - 86400000;
@@ -1630,7 +1802,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     const slice = limit ? logs.slice(0, limit) : logs;
     if (slice.length === 0) {
       return (
-        <p className={`pos-subtext text-[9px] font-black ${cardSubtextMutedClass}`}>No recent activity</p>
+        <p className={`app-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No recent activity</p>
       );
     }
     return slice.map((log) => {
@@ -1642,17 +1814,17 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           <div className="flex items-center gap-2 min-w-0">
             {getLogIcon(log.type)}
             <div className="flex flex-col min-w-0">
-              <span className={`text-[10px] font-black tracking-tight truncate ${log.isUnidentified ? 'text-red-500' : isUpdateLog ? 'text-blue-500' : textColorClass}`}>
+              <span className={`app-subtext text-[10px] font-black tracking-tight truncate ${log.isUnidentified ? 'text-red-500' : isUpdateLog ? 'text-blue-500' : textColorClass}`}>
                 {log.action}
               </span>
               {log.itemName && !isUpdateLog && (
-                <span className={`pos-subtext text-[8px] font-bold truncate ${log.isUnidentified ? 'text-red-400' : cardSubtextMutedClass}`}>
+                <span className={`app-subtext text-[10px] font-bold truncate opacity-60 ${log.isUnidentified ? 'text-red-400' : cardSubtextMutedClass}`}>
                   {log.itemName}
                 </span>
               )}
             </div>
           </div>
-          <span className={`pos-subtext font-num-medium text-[9px] tabular-nums shrink-0 text-right italic ${cardSubtextMutedClass}`}>
+          <span className={`app-subtext text-[10px] font-num-medium tabular-nums shrink-0 text-right opacity-55 ${cardSubtextMutedClass}`}>
             by:{actorName}{' '}
             {formatRequestElapsed(log.timestamp, currentTime)} ago
           </span>
@@ -1693,7 +1865,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         </button>
       </div>
       <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-1 ${textColorClass}`}>Action Logs</h3>
-      <p className={`app-subtext px-1 -mt-4 ${cardSubtextMutedClass}`}>Neural Ledger • 24h</p>
+      <p className={`app-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>Neural Ledger • 24h</p>
 
       {showActionLogSearch && (
         <input
@@ -1722,13 +1894,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
         {filteredActionLogs.length > 0 ? (
           filteredActionLogs.map((log, idx) => (
-            <div key={log.id} className={`px-8 py-5 ${idx !== filteredActionLogs.length - 1 ? 'border-b border-white/10' : ''}`}>
+            <div key={log.id} className={`px-5 py-3 ${idx !== filteredActionLogs.length - 1 ? 'border-b border-white/10' : ''}`}>
               {renderActivityLogRows([log], undefined, true)}
             </div>
           ))
         ) : (
           <div className="p-12 text-center">
-            <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No matching logs</p>
+            <p className={`app-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No matching logs</p>
           </div>
         )}
       </div>
@@ -1823,8 +1995,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
             </div>
             <div className="absolute top-2 right-2" aria-hidden="true">
-              <div className={`pos-subtext px-2 py-1 rounded-lg text-[9px] font-black backdrop-blur-3xl shadow-xl ${item.stock < item.threshold ? 'bg-red-500 text-white' : 'bg-black/60 text-white'}`}>
-                {item.stock}u
+              <div className={`app-subtext px-2 py-1 rounded-lg text-[10px] font-black backdrop-blur-3xl shadow-xl ${item.stock < item.threshold ? 'bg-red-500 text-white' : 'bg-black/60 text-white'}`}>
+                {item.unitsPerBox
+                  ? (boxFractionLabel(item.stock, item.unitsPerBox) ?? `${item.stock}pk`)
+                  : `${item.stock}pk`}
               </div>
             </div>
           </div>
@@ -1872,34 +2046,51 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             </div>
             <div className="grid grid-cols-2 gap-8">
               <div>
-                <p className={`pos-subtext text-[10px] font-black mb-2 ${cardSubtextMutedClass}`}>Inventory</p>
+                <p className={`app-subtext text-[10px] font-black mb-2 ${cardSubtextMutedClass}`}>
+                  Inventory (packs)
+                </p>
                 {canEditStock ? (
-                  <div className="flex items-baseline gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      value={stockEditValue}
-                      onChange={(e) => setStockEditValue(e.target.value)}
-                      onBlur={() => commitStockUpdate(item, stockEditValue)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.currentTarget.blur();
-                        }
-                      }}
-                      className={`w-full max-w-[8rem] text-3xl font-black bg-transparent border-b-2 outline-none tabular-nums ${
-                        item.stock < item.threshold ? 'text-red-500 border-red-500/40' : `${textColorClass} ${isLight ? 'border-black/15' : 'border-white/20'}`
-                      }`}
-                      aria-label={`Edit stock for ${item.name}`}
-                    />
-                    <span className={`text-xl font-black ${cardSubtextMutedClass}`}>U</span>
+                  <div className="space-y-1">
+                    <div className="flex items-baseline gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={stockEditValue}
+                        onChange={(e) => setStockEditValue(e.target.value)}
+                        onBlur={() => commitStockUpdate(item, stockEditValue)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.currentTarget.blur();
+                          }
+                        }}
+                        className={`w-full max-w-[8rem] text-3xl font-black bg-transparent border-b-2 outline-none tabular-nums ${
+                          item.stock < item.threshold ? 'text-red-500 border-red-500/40' : `${textColorClass} ${isLight ? 'border-black/15' : 'border-white/20'}`
+                        }`}
+                        aria-label={`Edit stock for ${item.name}`}
+                      />
+                      <span className={`text-xl font-black ${cardSubtextMutedClass}`}>pk</span>
+                    </div>
+                    {item.unitsPerBox ? (
+                      <p className={`app-subtext text-[10px] ${cardSubtextMutedClass}`}>
+                        {formatBoxQuantity(item.stock, item.unitsPerBox)}
+                        {item.unitsPerBox ? ` · ${item.unitsPerBox}/box` : ''}
+                      </p>
+                    ) : null}
                   </div>
                 ) : (
-                  <p className={`text-3xl font-black ${item.stock < item.threshold ? 'text-red-500' : ''}`}>{item.stock} U</p>
+                  <div>
+                    <p className={`text-3xl font-black ${item.stock < item.threshold ? 'text-red-500' : ''}`}>{item.stock} pk</p>
+                    {item.unitsPerBox ? (
+                      <p className={`app-subtext text-[10px] mt-1 ${cardSubtextMutedClass}`}>
+                        {formatBoxQuantity(item.stock, item.unitsPerBox)}
+                      </p>
+                    ) : null}
+                  </div>
                 )}
               </div>
               <div>
-                <p className={`pos-subtext text-[10px] font-black mb-2 ${cardSubtextMutedClass}`}>Credit Rate</p>
+                <p className={`app-subtext text-[10px] font-black mb-2 ${cardSubtextMutedClass}`}>Credit Rate</p>
                 {canEditPrice ? (
                   <input
                     type="number"
@@ -1925,8 +2116,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         </div>
 
         <div className={`rounded-2xl p-8 ${levitateClass}`}>
-          <h4 className={`pos-dashboard-section-title text-xl tracking-tighter mb-5 ${textColorClass}`}>Action Logs</h4>
-          <div className="space-y-4">
+          <h4 className={`app-subtext text-[10px] font-black uppercase tracking-widest mb-4 ${cardSubtextMutedClass}`}>
+            Action Logs
+          </h4>
+          <div className="space-y-3">
             {renderActivityLogRows(logs, undefined, true)}
           </div>
         </div>
@@ -2079,19 +2272,19 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 className={`col-span-2 p-10 rounded-2xl ${levitateClass} text-left cursor-pointer active:scale-[0.99] transition-all`}
                 aria-label="Open all action logs"
               >
-                <div className="flex justify-between items-center mb-8">
+                <div className="flex justify-between items-center mb-6">
                    <div className="space-y-1">
                       <h3 className={`pos-dashboard-section-title text-2xl tracking-tighter ${textColorClass}`}>Action Logs</h3>
-                      <p className={`app-subtext ${cardSubtextMutedClass}`}>Neural Ledger • 24h</p>
+                      <p className={`app-subtext text-[10px] ${cardSubtextMutedClass}`}>Neural Ledger • 24h</p>
                    </div>
                    <div className={`p-3.5 rounded-full bg-blue-500/10 text-blue-500 ${iconLiftLight}`}><Icons.Trends size={24} /></div>
                 </div>
-                <div className="space-y-4" onClick={(e) => e.stopPropagation()}>
+                <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
                   {systemLogs.length > 0 ? (
                     renderActivityLogRows(systemLogs, 8, true)
                   ) : (
                     <div className="py-16 text-center space-y-3">
-                       <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No Log Data</p>
+                       <p className={`app-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No Log Data</p>
                     </div>
                   )}
                 </div>
@@ -2949,27 +3142,48 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         )}
       </MorphPresence>
 
-      {/* ADD ITEM MODAL */}
+      {/* ADD ITEM MODAL — name, price, qty received, qty per box/carton */}
       <MorphPresence show={isAddingItem}>
         {(visible) => (
         <div className={`fixed inset-0 z-350 flex items-center justify-center p-6 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} role="presentation" aria-hidden={!visible}>
           <div className={`absolute inset-0 cursor-pointer morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`} onClick={() => setIsAddingItem(false)} aria-hidden="true" />
           <div 
-            className={`relative w-full max-w-sm rounded-2xl p-12 morph-panel ${visible ? 'morph-panel--in' : 'morph-panel--out'} ${levitateClass} shadow-[0_128px_256px_rgba(0,0,0,1)]`}
+            className={`relative w-full max-w-sm rounded-2xl p-8 sm:p-10 morph-panel max-h-[90dvh] overflow-y-auto ${visible ? 'morph-panel--in' : 'morph-panel--out'} ${levitateClass} shadow-[0_128px_256px_rgba(0,0,0,1)]`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="add-item-title"
           >
-               <div className={`space-y-10 ${textColorClass}`}>
-                 <h3 id="add-item-title" className="pos-dashboard-section-title text-5xl tracking-tighter">New Asset</h3>
-                 <div className="space-y-6">
-                   <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="Item name" aria-label="Item name" className={formInputClass(isLight, { size: 'lg' })} />
-                   <div className="grid grid-cols-2 gap-5">
-                     <input type="number" value={newItemPrice} onChange={(e) => setNewItemPrice(e.target.value)} placeholder="Price" aria-label="Item price" className={formInputClass(isLight, { size: 'lg' })} />
-                     <input type="text" value={newItemTag} onChange={(e) => setNewItemTag(e.target.value)} placeholder="Tag (optional)" aria-label="Item tag for identification" className={formInputClass(isLight, { size: 'lg' })} />
-                   </div>
+               <div className={`space-y-6 ${textColorClass}`}>
+                 <h3 id="add-item-title" className="pos-dashboard-section-title text-3xl tracking-tighter">New Asset</h3>
+                 <div className="space-y-4">
+                   <label className="block">
+                     <span className={FORM_FIELD_LABEL}>Item name</span>
+                     <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="Item name" aria-label="Item name" className={formInputClass(isLight, { size: 'lg' })} />
+                   </label>
+                   <label className="block">
+                     <span className={FORM_FIELD_LABEL}>Price</span>
+                     <input type="number" min={0} step="0.01" value={newItemPrice} onChange={(e) => setNewItemPrice(e.target.value)} placeholder="Price" aria-label="Item price" className={formInputClass(isLight, { size: 'lg' })} />
+                   </label>
+                   <label className="block">
+                     <span className={FORM_FIELD_LABEL}>Quantity received</span>
+                     <input type="number" min={0} step={1} value={newItemQtyReceived} onChange={(e) => setNewItemQtyReceived(e.target.value)} placeholder="Packs / units received" aria-label="Quantity received" className={formInputClass(isLight, { size: 'lg' })} />
+                   </label>
+                   <label className="block">
+                     <span className={FORM_FIELD_LABEL}>Quantity per box / carton</span>
+                     <input type="number" min={0} step={1} value={newItemUnitsPerBox} onChange={(e) => setNewItemUnitsPerBox(e.target.value)} placeholder="e.g. 8 packs = 1 box" aria-label="Quantity per box or carton" className={formInputClass(isLight, { size: 'lg' })} />
+                     <p className={`app-subtext text-[10px] mt-2 opacity-50 ${cardSubtextMutedClass}`}>
+                       Example: 8 per box → calculator qty 4 means ½ box of stock.
+                       {newItemUnitsPerBox && Number(newItemQtyReceived) > 0
+                         ? ` Preview: ${formatBoxQuantity(Math.floor(Number(newItemQtyReceived) || 0), Math.floor(Number(newItemUnitsPerBox) || 0) || undefined)}`
+                         : ''}
+                     </p>
+                   </label>
+                   <label className="block">
+                     <span className={FORM_FIELD_LABEL}>Tag (optional)</span>
+                     <input type="text" value={newItemTag} onChange={(e) => setNewItemTag(e.target.value)} placeholder="Tag" aria-label="Item tag for identification" className={formInputClass(isLight, { size: 'lg' })} />
+                   </label>
                  </div>
-                 <button onClick={handleAddItem} aria-label="Manifest new asset" className="w-full py-8 rounded-[26px] text-black font-black uppercase tracking-[0.5em] text-[12px] active:scale-95 shadow-2xl transition-all" style={{ backgroundColor: accentColor }}>Create Asset</button>
+                 <button onClick={handleAddItem} disabled={!newItemName.trim()} aria-label="Create new asset" className="w-full py-5 rounded-2xl text-black font-black uppercase tracking-[0.35em] text-[11px] active:scale-95 shadow-2xl transition-all disabled:opacity-40" style={{ backgroundColor: accentColor }}>Create Asset</button>
                </div>
           </div>
         </div>

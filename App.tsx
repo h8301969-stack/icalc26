@@ -9,6 +9,7 @@ import BlurredBackground from './components/BlurredBackground';
 import POSDashboard from './components/POSDashboard';
 import AuthOverlay from './components/AuthOverlay';
 import AdminCodeDashboard from './components/AdminCodeDashboard';
+import UpdatePromptModal from './components/UpdatePromptModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Icons } from './constants';
 import { useSettings } from './hooks/useSettings';
@@ -34,7 +35,7 @@ const SETTINGS_SECTION_COUNT = 3;
 import { useAuth } from './hooks/useAuth';
 import { useSupabaseDataSync } from './hooks/useSupabaseDataSync';
 import { useSyncStatus } from './hooks/useSyncStatus';
-import { ensureAdminProfile, getAccounts, isAdminProfile } from './utils/auth';
+import { ensureAdminProfile, getAccounts, getAuthSession, isAdminProfile } from './utils/auth';
 import { SyncStatusIndicator } from './components/SyncStatusIndicator';
 
 import { usePOS, InventoryItem } from './hooks/usePOS';
@@ -55,6 +56,7 @@ const AppContent: React.FC = () => {
   const {
     account,
     authReady,
+    isAuthenticated,
     adminSessionToken,
     isAdminPortal,
     signup,
@@ -837,8 +839,10 @@ const AppContent: React.FC = () => {
         <AuthOverlay
           isLight={isLight}
           mode={authMode}
-          defaultUsername={account?.username ?? ''}
+          defaultUsername={account?.username ?? getAuthSession()?.username ?? ''}
           existingAccount={account}
+          authReady={authReady}
+          isAuthenticated={isAuthenticated}
           settings={settings}
           updateSettings={updateSettings}
           onSignup={handleSignup}
@@ -1303,6 +1307,9 @@ const AppContent: React.FC = () => {
         onLogout={handleLogout}
         onVerifyAdminPassword={handleVerifyAdminPassword}
       />
+
+      {/* Update prompt after first 2h active or re-entry after inactivity */}
+      <UpdatePromptModal isLight={isLight} enabled={isUnlocked} />
 
       <HistoryPanel
         isOpen={isHistoryOpen && isCalculatorActive}

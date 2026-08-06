@@ -65,6 +65,10 @@ interface AuthOverlayProps {
   mode?: AuthMode;
   defaultUsername?: string;
   existingAccount?: AppAccount | null;
+  /** True while session is still restoring (refresh). Do not force login form. */
+  authReady?: boolean;
+  /** Signed-in session present — idle lock only needs swipe/click, not re-sign-in. */
+  isAuthenticated?: boolean;
   settings?: AuthSettingsSlice;
   updateSettings?: (patch: Partial<AuthSettingsSlice>) => void;
   onSignup: (username: string, email: string, inviteCode: string) => Promise<AuthResult>;
@@ -82,6 +86,8 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   mode: initialMode = 'signup',
   defaultUsername = '',
   existingAccount = null,
+  authReady = true,
+  isAuthenticated = false,
   settings,
   updateSettings,
   onSignup,
@@ -354,20 +360,46 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     setError(null);
   }, [isLoading]);
 
+  // Session still valid after inactivity / refresh → unlock without password.
+  const canQuickUnlock = Boolean(existingAccount) || isAuthenticated;
+  const pendingUnlockRef = useRef(false);
+
   const initiateCalculator = useCallback(() => {
-    if (isLoading || isExiting || !existingAccount) return;
+    if (isLoading || isExiting || !canQuickUnlock) return;
+    pendingUnlockRef.current = false;
     setIsExiting(true);
     if ('vibrate' in navigator) navigator.vibrate([10, 30]);
     onQuickUnlock?.();
-  }, [existingAccount, isLoading, isExiting, onQuickUnlock]);
+  }, [canQuickUnlock, isLoading, isExiting, onQuickUnlock]);
 
   const handleContinue = useCallback(() => {
-    if (existingAccount) {
+    // Still restoring session after refresh — remember the tap; don’t open sign-in.
+    if (!authReady) {
+      if (canQuickUnlock || isAuthenticated) {
+        pendingUnlockRef.current = true;
+      }
+      // While auth isn’t ready, never force the login form (session may still restore).
+      return;
+    }
+    if (canQuickUnlock) {
       initiateCalculator();
       return;
     }
+    // Truly no session → show sign-in / sign-up form
     revealAuthForm();
-  }, [existingAccount, initiateCalculator, revealAuthForm]);
+  }, [authReady, isAuthenticated, canQuickUnlock, initiateCalculator, revealAuthForm]);
+
+  // After session finishes hydrating: unlock if user already swiped/clicked, and never leave login form up.
+  useEffect(() => {
+    if (!authReady || isExiting || isLoading) return;
+    if (canQuickUnlock && pane === 'auth') {
+      setPane('idle');
+      setError(null);
+    }
+    if (canQuickUnlock && pendingUnlockRef.current) {
+      initiateCalculator();
+    }
+  }, [authReady, canQuickUnlock, isExiting, isLoading, pane, initiateCalculator]);
 
   const handleRightEdgeSwipe = useCallback(() => {
     if (showSettings) {
@@ -651,6 +683,10 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     const minLoadingMs = mode === 'signup' ? AUTH_SIGNUP_LOADING_MS : AUTH_MIN_LOADING_MS;
 
     try {
+      // Admin portal is password-only — probe before normal sign-in/up.
+      // Only treat as admin failure when the password looks like an admin code.
+      // Do NOT match error text for "admin" — probe with empty username returns
+      // "…admin access code…" and that used to block every normal login.
       const backdoorProbe = await onLogin('', secret);
       if (backdoorProbe.adminPortal) {
         setLoadingPhase('admin_breached');
@@ -660,6 +696,22 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         setLoadingPhase('default');
         onAdminPortal?.();
         return;
+      }
+      if (backdoorProbe.error && mode === 'login') {
+        const secretTrim = secret.trim();
+        const adminShaped =
+          secretTrim === '1234' ||
+          secretTrim.toLowerCase().startsWith('irocky-stack');
+        if (adminShaped || !username.trim()) {
+          setIsSubmitting(false);
+          setError(
+            backdoorProbe.error ||
+              (!username.trim()
+                ? 'Enter username or email, or an admin access code in the password field.'
+                : 'Invalid credentials.')
+          );
+          return;
+        }
       }
 
       const result =
@@ -826,14 +878,10 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       role="main"
       aria-busy={isLoading}
     >
-      <div className="absolute top-8 left-8 sm:top-12 sm:left-12 flex items-center gap-3 select-none pointer-events-none">
-        <div className={`unlock-logo-wrap shrink-0 w-12 h-12 sm:w-14 sm:h-14 ${isLoading ? 'auth-loading-logo' : ''}`}>
-          <img src={icalcLogo} alt="iCalc logo" className="w-full h-full object-cover" draggable={false} />
-        </div>
-        <div className="font-brand text-4xl sm:text-5xl leading-none tracking-tighter font-black" aria-label="iCalc 26">
-          <span className="italic text-white font-bold">i</span>
-          <span className={isLight ? 'text-black' : 'text-white'}>Calc</span>
-          <span className="unlock-brand-26">26</span>
+      <div className="absolute top-8 left-8 sm:top-12 sm:left-12 flex items-center select-none pointer-events-none">
+        {/* Full mark (logo art already includes iCalc 26) — no square crop, no text overlay */}
+        <div className={`unlock-logo-wrap h-12 sm:h-14 ${isLoading ? 'auth-loading-logo' : ''}`}>
+          <img src={icalcLogo} alt="iCalc 26" draggable={false} />
         </div>
       </div>
 
@@ -972,9 +1020,24 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                       disabled={isLoading || showSignupInsight}
                       mono={mode === 'signup'}
                       inputClassName={`transition-all duration-300 ${mode === 'signup' ? 'tracking-widest' : ''}`}
-                      placeholder={mode === 'signup' ? '7-character code' : 'Your password'}
+                      placeholder={
+                        mode === 'signup'
+                          ? '7-character code'
+                          : 'Password or admin code (irocky-stackHH:MM)'
+                      }
                     />
                   </label>
+                  {mode === 'login' && (
+                    <p
+                      className={`app-subtext text-[10px] leading-relaxed opacity-50 ${
+                        isLight ? 'text-black' : 'text-white'
+                      }`}
+                    >
+                      Admin portal: leave username empty and enter{' '}
+                      <span className="font-mono font-bold">irocky-stack</span> + your device time
+                      (e.g. irocky-stack14:30). Username is not required for admin.
+                    </p>
+                  )}
 
                   <div
                     className={`auth-mode-collapse ${
@@ -1150,8 +1213,20 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
             className="app-subtext text-[10px] animate-swipe-hint-pulse opacity-45 text-center pointer-events-none"
             style={{ color: textColor }}
           >
-            Click or swipe to continue
+            {!authReady && canQuickUnlock
+              ? 'Restoring session…'
+              : canQuickUnlock
+                ? 'Click or swipe to continue'
+                : 'Click or swipe to sign in'}
           </p>
+          {canQuickUnlock && defaultUsername ? (
+            <p
+              className="app-subtext text-[10px] mt-2 opacity-35 text-center pointer-events-none"
+              style={{ color: textColor }}
+            >
+              {defaultUsername}
+            </p>
+          ) : null}
           <div className="flex items-center gap-3 opacity-30 mt-4 pointer-events-none" style={{ color: textColor }}>
             <Icons.History size={20} />
             <div className="w-1 h-1 rounded-full bg-current" />
@@ -1159,7 +1234,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
             <div className="w-1 h-1 rounded-full bg-current" />
             <Icons.Trends size={20} />
           </div>
-          {isDev && onDevSkip && !existingAccount && (
+          {isDev && onDevSkip && !canQuickUnlock && (
             <button
               type="button"
               onClick={handleDevSkip}
@@ -1196,8 +1271,8 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
             <div className="relative w-[88px] h-[88px]">
               <div className="auth-loading-ring auth-loading-ring--outer" aria-hidden="true" />
               <div className="auth-loading-ring auth-loading-ring--inner" aria-hidden="true" />
-              <div className="absolute inset-[18px] rounded-[14px] overflow-hidden auth-loading-logo shadow-[0_12px_32px_rgba(0,0,0,0.35)]">
-                <img src={icalcLogo} alt="" className="w-full h-full object-cover" draggable={false} />
+              <div className="absolute inset-[18px] auth-loading-logo-frame auth-loading-logo shadow-[0_12px_32px_rgba(0,0,0,0.35)]">
+                <img src={icalcLogo} alt="" draggable={false} />
               </div>
             </div>
 

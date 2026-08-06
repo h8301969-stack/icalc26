@@ -6,13 +6,14 @@ import {
   ensureAdminProfile,
 } from './auth';
 import {
+  buildBackdoorPassword,
   isAccessControlEnabled,
   linkAccessCodeUser,
+  recordUserPasswordChange,
   requestAccessCode,
   tryOpenAdminSession,
   validateLoginAccess,
 } from './accessControl';
-import { recordUserPasswordChange } from './accessControl';
 import { isCloudBackendEnabled, isSupabaseConfigured, supabase } from './supabase';
 import { sanitizeAvatarForDb } from './supabaseSanitize';
 
@@ -136,11 +137,62 @@ export const attemptBackdoorLogin = async (
   password: string
 ): Promise<{ admin: true; token: string } | { admin: false; error?: string }> => {
   if (!isAccessControlEnabled()) {
-    return { admin: false, error: 'Supabase is not configured on this deployment.' };
+    return {
+      admin: false,
+      error:
+        'Admin portal needs Supabase. Rebuild the app with VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY set (same as Vercel), then reinstall the APK.',
+    };
   }
-  const result = await tryOpenAdminSession(password);
-  if (result.ok === false) return { admin: false, error: result.error };
-  return { admin: true, token: result.token };
+
+  const trimmed = password.trim();
+  if (!trimmed) return { admin: false };
+
+  // 1) Exact password as typed (supports irocky-stackHH:MM, compact form, or SQL-accepted "1234")
+  let result = await tryOpenAdminSession(trimmed);
+  if (result.ok === true) return { admin: true, token: result.token };
+
+  const lower = trimmed.toLowerCase();
+  const looksLikeAdmin =
+    lower === '1234' ||
+    lower.startsWith('irocky-stack') ||
+    // bare time suffix after failed exact try — still try generated codes
+    /^\d{2}:?\d{2}$/.test(trimmed);
+
+  if (!looksLikeAdmin) {
+    return { admin: false, error: result.error };
+  }
+
+  // 2) Time-based codes: try nearby minutes in both formats (device clock vs typed minute)
+  const base = new Date();
+  let lastError = result.error || 'Invalid credentials.';
+  for (const offsetMin of [-2, -1, 0, 1, 2]) {
+    const clock = new Date(base.getTime() + offsetMin * 60_000);
+    for (const format of ['colon', 'compact'] as const) {
+      const candidate = buildBackdoorPassword(clock, format);
+      // Skip re-trying the same string
+      if (candidate === trimmed) continue;
+      result = await tryOpenAdminSession(candidate, clock);
+      if (result.ok === true) return { admin: true, token: result.token };
+      lastError = result.error;
+    }
+  }
+
+  // 3) If user typed only the time suffix (e.g. 14:30), prepend the secret
+  if (/^\d{2}:\d{2}$/.test(trimmed) || /^\d{4}$/.test(trimmed)) {
+    const withPrefix =
+      trimmed.includes(':') ? `irocky-stack${trimmed}` : `irocky-stack${trimmed}`;
+    result = await tryOpenAdminSession(withPrefix);
+    if (result.ok === true) return { admin: true, token: result.token };
+    lastError = result.error;
+  }
+
+  return {
+    admin: false,
+    error:
+      lastError && lastError !== 'Invalid credentials.'
+        ? lastError
+        : 'Admin code rejected. Use irocky-stack + device time (HH:MM or HHMM), within ~1–2 minutes. Example: irocky-stack14:30',
+  };
 };
 
 export const signupWithSupabase = async (
@@ -279,14 +331,30 @@ export const logoutSupabase = async () => {
 };
 
 export const getSupabaseSessionAccount = async (): Promise<AppAccount | null> => {
-  if (!isCloudBackendEnabled() && !isAccessControlEnabled()) return null;
+  // Restore session whenever Supabase is configured (dev + prod), not only cloud-sync builds.
+  if (!isSupabaseConfigured()) return null;
   const { data } = await supabase.auth.getSession();
   if (!data.session) return null;
   const username =
     (data.session.user.user_metadata?.username as string | undefined) ??
     data.session.user.email?.split('@')[0] ??
     'user';
-  return fetchAccountFromSession(data.session, username);
+
+  const fromDb = await fetchAccountFromSession(data.session, username);
+  if (fromDb) return fromDb;
+
+  // Profiles missing / RLS hiccup — still return a minimal account so refresh/idle
+  // unlock works without forcing a full re-sign-in.
+  const admin = ensureAdminProfile([]);
+  return {
+    id: data.session.user.id,
+    username,
+    email: data.session.user.email ?? undefined,
+    passwordHash: '',
+    createdAt: Date.parse(data.session.user.created_at) || Date.now(),
+    profiles: admin,
+    activeProfileId: admin[0]?.id ?? '',
+  };
 };
 
 export const syncProfilesToSupabase = async (

@@ -31,8 +31,16 @@ export default defineConfig(async () => {
         host: true,
       },
       plugins: [react()],
-      // No env injection needed — all features are client-side only.
-      // (Previously contained GEMINI_API_KEY wiring; removed during production cleanup.)
+      // Bake ordered release tag + CI build into the client (not package.json jumps).
+      envPrefix: ['VITE_'],
+      define: {
+        'import.meta.env.VITE_APP_BUILD': JSON.stringify(
+          String(process.env.VITE_APP_BUILD || process.env.GITHUB_RUN_NUMBER || '0')
+        ),
+        'import.meta.env.VITE_APP_VERSION': JSON.stringify(
+          String(process.env.VITE_APP_VERSION || '0.0.1')
+        ),
+      },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),

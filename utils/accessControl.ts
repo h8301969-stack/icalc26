@@ -106,11 +106,39 @@ export const tryOpenAdminSession = async (
     ...adminSessionClockPayload(at),
   });
 
-  if (error) return { ok: false, error: error.message };
-  if (!data?.ok) return { ok: false, error: 'Invalid credentials.' };
+  if (error) {
+    const msg = error.message || String(error);
+    // Common when SQL not applied or wrong function signature on the project
+    if (/could not find the function|schema cache|PGRST202/i.test(msg)) {
+      return {
+        ok: false,
+        error:
+          'Admin RPC missing on Supabase. Run supabase/setup.sql in the SQL Editor, then try again.',
+      };
+    }
+    if (/failed to fetch|network|load failed|CORS/i.test(msg)) {
+      return {
+        ok: false,
+        error:
+          'Cannot reach Supabase from this app. Check network and that VITE_SUPABASE_URL was set when the APK was built.',
+      };
+    }
+    return { ok: false, error: msg };
+  }
+  if (!data?.ok) {
+    return {
+      ok: false,
+      error: (data?.error as string) === 'invalid'
+        ? 'Invalid admin code or time window.'
+        : ((data?.error as string) ?? 'Invalid credentials.'),
+    };
+  }
 
-  storeAdminSession(data.token as string, data.expires_at as string);
-  return { ok: true, token: data.token as string };
+  const token = String(data.token ?? '');
+  if (!token) return { ok: false, error: 'Admin session token missing from server response.' };
+
+  storeAdminSession(token, data.expires_at as string);
+  return { ok: true, token };
 };
 
 /** Dev-only: open admin portal with simple password "1234" or synced clock backdoor. */

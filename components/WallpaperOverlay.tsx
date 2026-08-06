@@ -11,22 +11,10 @@ interface WallpaperOverlayProps {
 }
 
 const BrandHeader: React.FC = () => (
-  <div className="absolute top-12 left-12 flex items-center gap-3 select-none pointer-events-none">
-    <div className="unlock-logo-wrap shrink-0 w-14 h-14">
-      <img
-        src={icalcLogo}
-        alt="iCalc logo"
-        className="w-full h-full object-cover"
-        draggable={false}
-      />
-    </div>
-    <div
-      className="font-brand text-5xl leading-none tracking-tighter font-black"
-      aria-label="iCalc 26"
-    >
-      <span className="italic text-white font-bold">i</span>
-      <span className="text-black">Calc</span>
-      <span className="unlock-brand-26">26</span>
+  <div className="absolute top-12 left-12 flex items-center select-none pointer-events-none">
+    {/* Full mark only — artwork already includes iCalc 26 (avoids double overlay) */}
+    <div className="unlock-logo-wrap h-14">
+      <img src={icalcLogo} alt="iCalc 26" draggable={false} />
     </div>
   </div>
 );

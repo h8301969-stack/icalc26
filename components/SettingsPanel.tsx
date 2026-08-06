@@ -19,6 +19,13 @@ import FluidToggle from './FluidToggle';
 import BusinessInfoReceiptCard from './BusinessInfoReceiptCard';
 import PasswordField from './PasswordField';
 import { updateUserBusinessInfo } from '../utils/accessControl';
+import {
+  APP_VERSION,
+  APK_INSTALL_URL,
+  fetchLatestReleaseMeta,
+  resolveInstallOffer,
+  type AppInstallOffer,
+} from '../utils/appVersion';
 
 
 interface SettingsSlice {
@@ -146,6 +153,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const lastFocusedRef = useRef<HTMLElement | null>(null);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const wasOpenRef = useRef(false);
+  const [installOffer, setInstallOffer] = useState<AppInstallOffer>(() =>
+    resolveInstallOffer(Capacitor.isNativePlatform(), null)
+  );
+  const [installCheckLoading, setInstallCheckLoading] = useState(false);
 
   // Snapshot committed settings into draft when panel opens
   useEffect(() => {
@@ -158,6 +169,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
     wasOpenRef.current = isOpen;
   }, [isOpen, settings]);
+
+  // Install / Update: live release meta (site + GitHub) so download always points at newest push
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    setInstallCheckLoading(true);
+    void fetchLatestReleaseMeta()
+      .then((meta) => {
+        if (cancelled) return;
+        setInstallOffer(
+          resolveInstallOffer(Capacitor.isNativePlatform(), meta?.version ?? null, meta)
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setInstallCheckLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1006,22 +1037,58 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
 
-        {/* Get app on phone — separate card under the rest (web only) */}
-        {!Capacitor.isNativePlatform() && (
+        {/* Get app on phone — install (web) or Update when a newer release exists (app) */}
+        {(installOffer.kind !== 'current' || !Capacitor.isNativePlatform()) && (
           <div className="settings-card p-6 shadow-2xl">
-            {renderSettingsCardHeader('Get app on phone', <Icons.Download size={22} />)}
-            <p className={`app-subtext text-[10px] mb-4 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-              Click to download app for free
+            {renderSettingsCardHeader(
+              installOffer.kind === 'update' ? 'Update app' : 'Get app on phone',
+              <Icons.Download size={22} />
+            )}
+            <p className={`app-subtext text-[10px] mb-1 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+              {installOffer.kind === 'update'
+                ? `New version available — update to ${installOffer.version}`
+                : 'Click to install app for free'}
+            </p>
+            <p className={`app-subtext text-[10px] mb-4 opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
+              {installCheckLoading
+                ? 'Checking for updates…'
+                : installOffer.kind === 'update'
+                  ? `You have ${installOffer.current} · latest is ${installOffer.version}${
+                      installOffer.build ? ` (build ${installOffer.build})` : ''
+                    }`
+                  : `Version ${installOffer.version}${
+                      installOffer.build ? ` · build ${installOffer.build}` : ''
+                    }`}
             </p>
             <a
-              href="https://github.com/h8301969-stack/icalc26/releases/download/apk-latest/icalc.apk"
+              href={installOffer.kind === 'current' ? APK_INSTALL_URL : installOffer.url}
+              target="_blank"
+              rel="noopener noreferrer"
               className={`w-full py-3.5 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
                 isLight ? 'bg-blue-500 text-white' : 'bg-blue-500/90 text-white'
               }`}
             >
               <Icons.Download size={16} />
-              Download iCalc.apk
+              {installOffer.kind === 'update'
+                ? `Update ${installOffer.version}`
+                : `Install ${installOffer.version}`}
             </a>
+            {installOffer.kind === 'update' && (
+              <p className={`app-subtext text-[10px] mt-3 opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
+                Don&apos;t worry, updating will do in background, while you still work.
+              </p>
+            )}
+          </div>
+        )}
+
+        {Capacitor.isNativePlatform() && installOffer.kind === 'current' && (
+          <div className="settings-card p-6 shadow-2xl">
+            {renderSettingsCardHeader('Get app on phone', <Icons.Download size={22} />)}
+            <p className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+              {installCheckLoading
+                ? 'Checking for updates…'
+                : `You're on the latest install · v${APP_VERSION}`}
+            </p>
           </div>
         )}
 

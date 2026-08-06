@@ -44,15 +44,17 @@ export const useAuth = () => {
     if (!session) return null;
     return getAccountById(session.accountId) ?? null;
   });
+  // Local session cookie/flag means “signed in” for idle unlock (swipe/click), even
+  // before the full account row is rehydrated from Supabase.
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!getAuthSession());
-  const [authReady, setAuthReady] = useState(!isCloudBackendEnabled());
+  const [authReady, setAuthReady] = useState(!usesSupabaseAuth());
   const [adminSessionToken, setAdminSessionToken] = useState<string | null>(
     () => getStoredAdminSession()?.token ?? null
   );
   const [isAdminPortal, setIsAdminPortal] = useState(false);
 
   useEffect(() => {
-    if (!isCloudBackendEnabled()) {
+    if (!usesSupabaseAuth()) {
       setAuthReady(true);
       return;
     }
@@ -66,18 +68,28 @@ export const useAuth = () => {
         persistLocalSession(remote);
         setAccount(remote);
         setIsAuthenticated(true);
+      } else if (!getAuthSession()) {
+        // No Supabase session and no local session → truly signed out
+        setAccount(null);
+        setIsAuthenticated(false);
       }
+      // If local session exists but remote briefly unavailable, keep isAuthenticated
+      // so inactivity/refresh can unlock with swipe/click without re-sign-in.
       setAuthReady(true);
     };
 
     void hydrate();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
+      // Only treat real sign-out as logout — transient null sessions must not
+      // force the login form after refresh or token refresh glitches.
       if (!session) {
-        logoutAccount();
-        setAccount(null);
-        setIsAuthenticated(false);
+        if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+          logoutAccount();
+          setAccount(null);
+          setIsAuthenticated(false);
+        }
         return;
       }
       void getSupabaseSessionAccount().then((remote) => {
@@ -95,7 +107,8 @@ export const useAuth = () => {
   }, []);
 
   useEffect(() => {
-    if (!authReady || isCloudBackendEnabled()) return;
+    // Local-only accounts (no Supabase): keep account row in sync with session.
+    if (!authReady || usesSupabaseAuth()) return;
     if (!isAuthenticated) {
       setAccount(null);
       return;
@@ -106,9 +119,9 @@ export const useAuth = () => {
       setAccount(null);
       return;
     }
-    setAccount(getAccountById(session.accountId) ?? null);
+    const local = getAccountById(session.accountId);
+    if (local) setAccount(local);
   }, [isAuthenticated, authReady]);
-
   const signup = useCallback(async (username: string, email: string, inviteCode: string) => {
     if (usesSupabaseAuth()) {
       const result = await signupWithSupabase(username, email, inviteCode);
@@ -140,23 +153,37 @@ export const useAuth = () => {
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
-    if (isAccessControlEnabled() && password) {
-      const backdoor = await attemptBackdoorLogin(password);
+    const trimmedPass = password.trim();
+    // Only hard-fail as admin for unambiguous codes. Bare HH:MM / 4 digits may be
+    // a normal user password — try admin first, then fall through to Supabase login.
+    const hardAdminCode =
+      !!trimmedPass &&
+      (trimmedPass === '1234' || trimmedPass.toLowerCase().startsWith('irocky-stack'));
+
+    // Admin portal: password-only (username ignored). Works on web + native APK when Supabase is baked in.
+    if (trimmedPass) {
+      const backdoor = await attemptBackdoorLogin(trimmedPass);
       if (backdoor.admin === true) {
         setAdminSessionToken(backdoor.token);
         setIsAdminPortal(true);
         return { adminPortal: true as const };
       }
-      if (password.toLowerCase().startsWith('irocky-stack')) {
+      if (hardAdminCode) {
         return {
           error:
             backdoor.error ??
-            'Admin code rejected. Use irocky-stack + your device time (HH:MM or HHMM), within 1 minute.',
+            'Admin code rejected. Use irocky-stack + your device time (HH:MM or HHMM), within 1–2 minutes.',
         };
       }
     }
 
     if (usesSupabaseAuth()) {
+      // Empty username is used by AuthOverlay as an admin-only probe. Message must
+      // not match overly broad "admin" text checks; real login continues when
+      // username is present (AuthOverlay ignores this probe error in that case).
+      if (!username.trim()) {
+        return { error: 'Enter username or email.' };
+      }
       const result = await loginWithSupabase(username, password);
       if ('error' in result && result.error) return { error: result.error };
       if ('pendingApproval' in result && result.pendingApproval) {
@@ -174,6 +201,13 @@ export const useAuth = () => {
       setAccount(result.account);
       setIsAuthenticated(true);
       return { account: result.account };
+    }
+
+    if (!username.trim()) {
+      return {
+        error:
+          'Sign-in is not fully configured on this build (missing Supabase). Rebuild the APK with VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY, or use a web build with those env vars.',
+      };
     }
 
     const result = await loginAccount(username, password);

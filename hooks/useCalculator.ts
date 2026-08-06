@@ -223,18 +223,24 @@ export const useCalculator = (
     });
   }, [expression, triggerHaptic, pushToUndo]);
 
-  const addInventoryItem = useCallback((price: number) => {
+  /**
+   * Add inventory unit price(s) to the expression.
+   * @param quantity number of packs/units (default 1). With unitsPerBox=8, qty 4 = half box of stock intent.
+   */
+  const addInventoryItem = useCallback((price: number, quantity = 1) => {
     triggerHaptic();
     pushToUndo(expression);
     setIsResultMode(false);
 
+    const qty = Math.max(1, Math.floor(Number(quantity) || 1));
     const segment = formatInventoryPriceSegment(price);
+    const chunk = Array.from({ length: qty }, () => segment).join('+');
 
     setExpression((prev) => {
       if (prev === '0') {
-        cursorPosRef.current = segment.length;
-        setCursorPos(segment.length);
-        return segment;
+        cursorPosRef.current = chunk.length;
+        setCursorPos(chunk.length);
+        return chunk;
       }
 
       let pos = cursorPosRef.current;
@@ -242,7 +248,7 @@ export const useCalculator = (
 
       const before = prev.slice(0, pos);
       const needsSeparator = before.length > 0 && !before.endsWith('+');
-      const insert = needsSeparator ? `+${segment}` : segment;
+      const insert = needsSeparator ? `+${chunk}` : chunk;
       const newExpr = before + insert + prev.slice(pos);
       const nextPos = pos + insert.length;
       cursorPosRef.current = nextPos;

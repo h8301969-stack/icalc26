@@ -417,10 +417,10 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               aria-label="Return to calculator"
               title="Return to calculator"
             >
-              <img src={icalcLogo} alt="" className="w-full h-full object-cover" draggable={false} />
+              <img src={icalcLogo} alt="iCalc 26" className="w-full h-full object-contain" draggable={false} />
             </button>
           ) : (
-            <img src={icalcLogo} alt="" className="w-10 h-10 rounded-xl object-cover" draggable={false} />
+            <img src={icalcLogo} alt="iCalc 26" className="w-10 h-10 rounded-xl object-contain bg-[#0b0f14]" draggable={false} />
           )}
           <div>
             <p className="text-xs font-black uppercase tracking-[0.3em] opacity-60">Admin Profile</p>

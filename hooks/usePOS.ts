@@ -10,6 +10,18 @@ export interface ActivityLogEntry {
   profileName?: string;
 }
 
+/** One price change (or initial price) for the pricings history log. */
+export interface PriceHistoryEntry {
+  id: string;
+  itemId: string;
+  itemName: string;
+  price: number;
+  previousPrice?: number;
+  timestamp: number;
+  profileName?: string;
+  source: 'create' | 'update' | 'restock';
+}
+
 export interface PurchaseRecord {
   id: string;
   itemName: string;
@@ -23,15 +35,23 @@ export interface PurchaseRecord {
 export interface InventoryItem {
   id: string;
   name: string;
+  /** Stock in packs / base units (not whole boxes). */
   stock: number;
   price: number;
   threshold: number;
   category: string;
   dateAdded: string;
   supplier: string;
-  lastStocked: string; 
+  lastStocked: string;
   image: string;
   activities: ActivityLogEntry[];
+  /**
+   * How many packs fit in one box/carton.
+   * e.g. 8 → adding 4 packs on the calculator means 1/2 box.
+   */
+  unitsPerBox?: number;
+  /** Chronological price changes for this item (newest first preferred). */
+  priceHistory?: PriceHistoryEntry[];
 }
 
 export const usePOS = (_history: HistoryItem[]) => {

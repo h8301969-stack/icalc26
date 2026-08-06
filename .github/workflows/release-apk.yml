@@ -1,5 +1,5 @@
-# Build Android APK on every push to main, publish a GitHub Release,
-# and optionally commit public/icalc.apk so Vercel can serve /icalc.apk.
+# Build Android APK on every push to main, publish an ordered semver tag
+# (0.0.1 → 0.0.2 → 0.0.3 …), keep apk-latest rolling, and refresh website meta.
 # See APK_RELEASE_PIPELINE.md for the full story.
 
 name: Build APK & Release
@@ -24,7 +24,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Needed if we commit the APK back to the repo
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
@@ -43,8 +42,43 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build web + Capacitor sync
+      - name: Compute next ordered version tag
+        id: ver
         run: |
+          set -e
+          # Only pure semver tags count for order (ignore apk-latest / apk-N-sha)
+          TAGS=$(git tag -l | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true)
+          export TAGS
+          NEXT=$(node -e '
+            const tags = (process.env.TAGS || "").split(/\n/).filter(Boolean);
+            let best = null;
+            const parse = (s) => {
+              const m = String(s).replace(/^v/i, "").match(/^(\d+)\.(\d+)\.(\d+)/);
+              return m ? [+m[1], +m[2], +m[3]] : null;
+            };
+            const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+            for (const t of tags) {
+              const p = parse(t);
+              if (!p) continue;
+              if (!best || cmp(p, best) > 0) best = p;
+            }
+            if (!best) {
+              console.log("0.0.1");
+              process.exit(0);
+            }
+            console.log(best[0] + "." + best[1] + "." + (best[2] + 1));
+          ')
+          echo "Existing ordered tags:"
+          echo "$TAGS" | sort -V || true
+          echo "Next ordered tag: $NEXT"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Build web + Capacitor sync
+        env:
+          VITE_APP_BUILD: ${{ github.run_number }}
+          VITE_APP_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          echo "Building as ordered tag ${{ steps.ver.outputs.version }} (build ${{ github.run_number }})"
           npm run build
           npx cap sync android
 
@@ -68,13 +102,18 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          # Override hard-coded signing in app/build.gradle via gradle.properties
           {
             echo "RELEASE_STORE_FILE=release.keystore"
             echo "RELEASE_STORE_PASSWORD=${STORE_PASS}"
             echo "RELEASE_KEY_ALIAS=${KEY_ALIAS}"
             echo "RELEASE_KEY_PASSWORD=${KEY_PASS}"
           } >> android/gradle.properties
+
+      - name: Sync Android version with ordered tag + run number
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \".*\"/versionName \"${{ steps.ver.outputs.version }}\"/" android/app/build.gradle
+          grep -E "versionCode|versionName" android/app/build.gradle | head -5
 
       - name: Assemble release APK
         if: steps.keystore.outputs.present == 'true'
@@ -86,7 +125,7 @@ jobs:
         working-directory: android
         run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
 
-      - name: Stage APK as public/icalc.apk
+      - name: Stage APK + version metadata
         id: stage
         run: |
           set -e
@@ -107,52 +146,83 @@ jobs:
           cp "$SRC" public/icalc.apk
           cp "$SRC" icalc.apk
           ls -lh public/icalc.apk
+
+          export VERSION="${{ steps.ver.outputs.version }}"
+          export BUILD="${{ github.run_number }}"
+          export SHA="${{ github.sha }}"
+          export STABLE_URL="https://github.com/${{ github.repository }}/releases/download/apk-latest/icalc.apk"
+          export TAG_URL="https://github.com/${{ github.repository }}/releases/download/${VERSION}/icalc.apk"
+          export PUBLISHED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          node -e "
+            const j = {
+              version: process.env.VERSION,
+              build: Number(process.env.BUILD),
+              sha: process.env.SHA,
+              apkUrl: process.env.TAG_URL,
+              stableApkUrl: process.env.STABLE_URL,
+              publishedAt: process.env.PUBLISHED_AT,
+            };
+            const fs = require('fs');
+            const body = JSON.stringify(j, null, 2) + '\n';
+            fs.writeFileSync('version.json', body);
+            fs.writeFileSync('public/app-release.json', body);
+            console.log(body);
+          "
           echo "kind=$KIND" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release with APK
+      - name: Create ordered version release (0.0.x)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: apk-${{ github.run_number }}-${{ github.sha }}
-          name: APK build ${{ github.run_number }} (${{ steps.stage.outputs.kind }})
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: Release ${{ steps.ver.outputs.version }}
           body: |
-            Automated Android APK from commit `${{ github.sha }}` on `${{ github.ref_name }}`.
+            Ordered release **${{ steps.ver.outputs.version }}** from `${{ github.sha }}` on `${{ github.ref_name }}`.
 
             - Build type: **${{ steps.stage.outputs.kind }}**
-            - Download: `icalc.apk` (attached)
-            - Stable link (after `apk-latest` update):  
+            - CI run: **#${{ github.run_number }}**
+            - Download (this tag):  
+              https://github.com/${{ github.repository }}/releases/download/${{ steps.ver.outputs.version }}/icalc.apk
+            - Stable rolling link:  
               https://github.com/${{ github.repository }}/releases/download/apk-latest/icalc.apk
-
-            Web deploy (Vercel) is separate; see `APK_RELEASE_PIPELINE.md`.
-          files: icalc.apk
+          files: |
+            icalc.apk
+            version.json
           fail_on_unmatched_files: true
           generate_release_notes: true
+          make_latest: false
 
       - name: Update rolling apk-latest tag + release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: Latest APK
+          name: Latest APK (${{ steps.ver.outputs.version }})
           body: |
             Rolling release — always the newest CI APK from `main`.
 
+            **Ordered version:** ${{ steps.ver.outputs.version }}  
             **Download:** [icalc.apk](https://github.com/${{ github.repository }}/releases/download/apk-latest/icalc.apk)
 
             Built from `${{ github.sha }}` (run #${{ github.run_number }}, ${{ steps.stage.outputs.kind }}).
-          files: icalc.apk
+          files: |
+            icalc.apk
+            version.json
           fail_on_unmatched_files: true
           make_latest: true
 
-      - name: Commit APK into repo for Vercel (optional)
-        if: env.COMMIT_APK == 'true'
+      - name: Commit release metadata (+ optional APK) for Vercel website
         env:
           COMMIT_APK: ${{ secrets.COMMIT_APK_TO_REPO }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f public/icalc.apk
+          git add public/app-release.json
+          if [ "$COMMIT_APK" = "true" ]; then
+            git add -f public/icalc.apk
+          fi
           if git diff --staged --quiet; then
-            echo "APK unchanged; skip commit."
+            echo "No metadata/APK changes; skip commit."
             exit 0
           fi
-          git commit -m "chore: update public/icalc.apk [skip ci]"
+          git commit -m "chore: release ${{ steps.ver.outputs.version }} metadata [skip ci]"
           git push origin HEAD:${{ github.ref_name }}
