@@ -4,8 +4,9 @@ import { Icons } from '../constants';
 import {
   printerInstance,
   KnownPrinter,
-  getBluetoothSupport,
+  getPrinterSupport,
   normalizeBluetoothError,
+  type PrinterScanPhase,
 } from '../utils/bluetoothPrinter';
 import { CartLineItem, NewProfileInput, UserProfile } from '../types';
 import ProfileAvatar from './ProfileAvatar';
@@ -26,6 +27,9 @@ import {
   resolveInstallOffer,
   type AppInstallOffer,
 } from '../utils/appVersion';
+import BlurredBackground from './BlurredBackground';
+import { AppLoadingInline, AppLoadingSpinner } from './AppLoading';
+import { WALLPAPER_SLIDES } from '../utils/wallpapers';
 
 
 interface SettingsSlice {
@@ -33,12 +37,14 @@ interface SettingsSlice {
   disableCalculatorCard?: boolean;
   layoutMode?: 'portrait' | 'landscape';
   layoutModeAuto?: boolean;
-  invoiceSwitcherMode?: 'horizontal' | 'grid' | 'vertical' | 'list';
+  invoiceSwitcherMode?: 'horizontal' | 'list';
   expressionViewMode?: 'auto' | 'list';
   receiptLayoutMode?: 'summary' | 'full';
-  visionHubDrawerMode?: 'drag' | 'click';
+  visionHubDrawerMode?: 'click';
 
   standbyTimerSeconds?: number;
+  hapticFeedback?: boolean;
+  soundEffects?: boolean;
   profiles?: UserProfile[];
   activeProfileId?: string;
   businessName?: string;
@@ -46,6 +52,7 @@ interface SettingsSlice {
   businessAddress?: string;
   currency?: string;
   ghsCalculatorStyle?: 'ghs' | 'cedis';
+  customWallpapers?: { image: string }[];
 }
 
 const cloneSettings = (s: SettingsSlice): SettingsSlice =>
@@ -60,8 +67,10 @@ const settingsFingerprint = (s: SettingsSlice): string =>
     invoiceSwitcherMode: s.invoiceSwitcherMode ?? 'horizontal',
     expressionViewMode: s.expressionViewMode ?? 'auto',
     receiptLayoutMode: s.receiptLayoutMode ?? 'summary',
-    visionHubDrawerMode: s.visionHubDrawerMode ?? 'drag',
+    visionHubDrawerMode: 'click' as const,
     standbyTimerSeconds: s.standbyTimerSeconds ?? 0,
+    hapticFeedback: s.hapticFeedback !== false,
+    soundEffects: s.soundEffects !== false,
     profiles: s.profiles ?? [],
     activeProfileId: s.activeProfileId ?? '',
     businessName: s.businessName ?? '',
@@ -84,6 +93,8 @@ interface SettingsPanelProps {
   currency?: string;
   onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
   isLight?: boolean;
+  /** Autoswipe wallpaper slides; falls back to settings.customWallpapers / defaults. */
+  wallpapers?: { image: string }[];
   accountUsername?: string;
   onChangePassword?: (current: string, newPassword: string) => Promise<{ error?: string; ok?: boolean }>;
   onLogout?: () => void;
@@ -98,6 +109,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   updateSettings: _updateSettings,
   onApplyAppearance,
   isLight: isLightProp,
+  wallpapers: wallpapersProp,
   cartItems = [],
   runningTotal = 0,
   invoiceName = 'Walk-in Customer',
@@ -127,15 +139,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       ? (isLightProp ?? false)
       : draft.themeMode === 'light';
 
+  const wallpaperSlides = useMemo(() => {
+    if (wallpapersProp?.length) return wallpapersProp;
+    if (settings.customWallpapers?.length) return settings.customWallpapers;
+    return WALLPAPER_SLIDES;
+  }, [wallpapersProp, settings.customWallpapers]);
+
   // Bluetooth states
   const [printerName, setPrinterName] = useState<string | null>(null);
   const [, setConnectedId] = useState<string | null>(null);
   const [knownPrinters, setKnownPrinters] = useState<KnownPrinter[]>([]);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanPhase, setScanPhase] = useState<PrinterScanPhase | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [printSuccess, setPrintSuccess] = useState(false);
-  const [bluetoothSupport, setBluetoothSupport] = useState(getBluetoothSupport);
+  const [bluetoothSupport, setBluetoothSupport] = useState(getPrinterSupport);
   const [detectedPaperWidth, setDetectedPaperWidth] = useState(() => printerInstance.paperWidth);
   const [isProfilePickerOpen, setIsProfilePickerOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -245,9 +264,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
       onApplyAppearance?.();
     } finally {
-      // Keep "Saving…" on the button for at least 1s so the action is visible
+      // Keep "Saving…" visible at least 0.3s (loading window: 0.3s–1s)
+      const SAVE_LOADING_MIN_MS = 300;
       const elapsed = Date.now() - startedAt;
-      const remaining = Math.max(0, 1000 - elapsed);
+      const remaining = Math.max(0, SAVE_LOADING_MIN_MS - elapsed);
       if (remaining > 0) {
         await new Promise<void>((resolve) => window.setTimeout(resolve, remaining));
       }
@@ -308,22 +328,32 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    setBluetoothSupport(getBluetoothSupport());
+    setBluetoothSupport(getPrinterSupport());
     void refreshPrinterState();
 
     const bt = navigator.bluetooth;
-    const onAvailability = () => setBluetoothSupport(getBluetoothSupport());
+    const onAvailability = () => setBluetoothSupport(getPrinterSupport());
     bt?.addEventListener?.('availabilitychanged', onAvailability);
     return () => bt?.removeEventListener?.('availabilitychanged', onAvailability);
   }, [isOpen, refreshPrinterState]);
 
+  const scanPhaseLabel = (phase: PrinterScanPhase | null): string => {
+    if (!phase || phase === 'done') return 'Connecting…';
+    if (phase === 'usb') return 'Searching USB…';
+    if (phase === 'classic') return 'Searching paired Bluetooth…';
+    if (phase === 'bluetooth') return 'Searching Bluetooth…';
+    if (phase === 'wifi') return 'Searching Wi‑Fi…';
+    return 'Searching…';
+  };
+
   const handleScanAndConnect = async () => {
     setIsScanning(true);
+    setScanPhase('usb');
     setConnectingId(null);
     setErrorMessage(null);
     setPrintSuccess(false);
     try {
-      const connectedName = await printerInstance.scanAndConnect();
+      const connectedName = await printerInstance.scanAndConnect((phase) => setScanPhase(phase));
       setPrinterName(connectedName);
       setConnectedId(printerInstance.getConnectedDeviceId());
       await refreshPrinterState();
@@ -334,6 +364,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       }
     } finally {
       setIsScanning(false);
+      setScanPhase(null);
     }
   };
 
@@ -412,7 +443,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       setTimeout(() => {
         setPasswordSuccess(false);
         closePasswordPanel();
-      }, 1200);
+      }, 800); // loading/success hold within 0.4s–2s
     } finally {
       setIsChangingPassword(false);
     }
@@ -440,10 +471,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }, []);
 
   const renderSettingsModal = (children: React.ReactNode, onClose: () => void, label: string) => (
-    <div className="settings-modal-overlay absolute inset-0 z-[60] flex items-center justify-center p-6">
+    <div className="settings-modal-overlay absolute inset-0 z-[20] flex items-center justify-center p-6">
       <button
         type="button"
-        className="absolute inset-0 bg-black/45"
+        className="absolute inset-0 bg-black/45 morph-scrim morph-scrim--in"
         aria-label="Close dialog"
         onClick={onClose}
       />
@@ -451,7 +482,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        className={`settings-modal-card relative w-full max-w-sm rounded-2xl border p-5 shadow-2xl ${
+        className={`settings-modal-card relative w-full max-w-sm rounded-2xl border p-5 shadow-2xl fluid-pop-in ${
           isLight ? 'bg-white border-zinc-200 text-black' : 'bg-[#1c1c1e] border-white/12 text-white'
         }`}
       >
@@ -484,7 +515,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <button
             type="button"
             onClick={() => setShowPasswordPanel(true)}
-            className={`settings-security__btn w-full py-3.5 px-4 rounded-xl text-sm font-black tracking-tight active:scale-[0.98] transition-all ${
+            className={`settings-security__btn w-full py-3.5 px-4 rounded-xl text-sm font-black tracking-tight transition-all ${
               isLight
                 ? 'bg-blue-500 text-white shadow-[0_8px_22px_rgba(59,130,246,0.35)]'
                 : 'bg-blue-500/90 text-white shadow-[0_10px_28px_rgba(255,255,255,0.22)]'
@@ -495,7 +526,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <button
             type="button"
             onClick={() => setShowSignOutConfirm(true)}
-            className={`settings-security__btn settings-security__btn--signout w-full py-3 px-4 rounded-xl text-sm font-bold active:scale-[0.98] transition-all border ${
+            className={`settings-security__btn settings-security__btn--signout w-full py-3 px-4 rounded-xl text-sm font-bold transition-all border ${
               isLight
                 ? 'bg-white border-zinc-200 text-zinc-700'
                 : 'bg-white/8 border-white/14 text-white/85'
@@ -571,7 +602,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       ref={panelRef}
       inert={!isOpen ? true : undefined}
       className={`
-        fixed inset-0 z-[60] flex flex-col morph-panel
+        fixed inset-0 z-[500] flex flex-col morph-panel
         ${isOpen ? 'morph-panel--in pointer-events-auto' : 'morph-panel--out pointer-events-none'}
         settings-panel ${isLight ? 'settings-panel--light text-black' : 'settings-panel--dark text-white'}
       `}
@@ -579,8 +610,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       aria-modal={isOpen}
       aria-labelledby="settings-title"
     >
+      {/* Blurred autoswipe wallpaper sits under the glass cards (works over calc + POS chrome). */}
+      <BlurredBackground
+        contained
+        isLight={isLight}
+        wallpapers={wallpaperSlides}
+        isUnlocked
+      />
+
       <div
-        className="settings-panel-header shrink-0 flex items-center justify-between gap-3"
+        className="settings-panel-header relative z-10 shrink-0 flex items-center justify-between gap-3"
         style={{
           paddingTop: 'max(1.25rem, env(safe-area-inset-top))',
           paddingLeft: 'max(1.25rem, env(safe-area-inset-left))',
@@ -591,13 +630,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <h2 id="settings-title" className="settings-panel-title text-2xl font-black tracking-tight drop-shadow-sm min-w-0">
           Settings
         </h2>
-        <div className="flex items-center gap-2 shrink-0">
-          {(isDirty || isSaving) && (
-            <>
+        <div
+          className={`settings-header-actions shrink-0 ${
+            isDirty || isSaving ? 'settings-header-actions--dirty' : ''
+          }`}
+        >
+          {/* Close ↔ Save/Discard morph cluster */}
+          <div
+            className={`settings-header-actions__cluster ${
+              isDirty || isSaving
+                ? 'settings-header-actions__cluster--dirty'
+                : 'settings-header-actions__cluster--clean'
+            }`}
+            aria-live="polite"
+          >
+            <div className="settings-header-actions__dirty" aria-hidden={!(isDirty || isSaving)}>
               <button
                 type="button"
                 onClick={handleDiscard}
-                disabled={isSaving}
+                disabled={isSaving || !(isDirty || isSaving)}
+                tabIndex={isDirty || isSaving ? 0 : -1}
                 className="settings-panel-action settings-panel-action--discard"
               >
                 Discard
@@ -605,26 +657,37 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => void handleSave()}
-                disabled={isSaving}
+                disabled={isSaving || !(isDirty || isSaving)}
+                tabIndex={isDirty || isSaving ? 0 : -1}
                 className="settings-panel-action settings-panel-action--save"
                 aria-busy={isSaving}
               >
-                {isSaving ? 'Saving…' : 'Save'}
+                {isSaving ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <AppLoadingSpinner size="sm" label="Saving" />
+                    Saving…
+                  </span>
+                ) : (
+                  'Save'
+                )}
               </button>
-            </>
-          )}
-          <button 
-            ref={closeRef}
-            onClick={handleClose} 
-            aria-label="Close settings panel"
-            className="settings-panel-close p-2.5 rounded-full transition-all active:scale-90"
-          >
-            <Icons.X size={24} />
-          </button>
+            </div>
+            <button
+              ref={closeRef}
+              type="button"
+              onClick={handleClose}
+              aria-label="Close settings panel"
+              tabIndex={isDirty || isSaving ? -1 : 0}
+              disabled={isDirty || isSaving}
+              className="settings-panel-close p-2.5 rounded-full"
+            >
+              <Icons.X size={24} />
+            </button>
+          </div>
         </div>
       </div>
       
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 pb-8 space-y-5 custom-scrollbar">
+      <div ref={scrollRef} className="relative z-10 flex-1 overflow-y-auto px-5 pb-8 space-y-5 custom-scrollbar">
 
         {/* Profile */}
         <div
@@ -714,6 +777,36 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
               <div className="flex flex-col min-w-0">
+                <span className="text-sm font-black">Haptics</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  Vibration on presses and unlock
+                </span>
+              </div>
+              <FluidToggle
+                isLight={isLight}
+                ariaLabel="Haptic feedback"
+                checked={draft.hapticFeedback !== false}
+                onChange={(hapticFeedback) => patchDraft({ hapticFeedback })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-black">Sounds</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  Click and swipe audio cues
+                </span>
+              </div>
+              <FluidToggle
+                isLight={isLight}
+                ariaLabel="Sound effects"
+                checked={draft.soundEffects !== false}
+                onChange={(soundEffects) => patchDraft({ soundEffects })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+              <div className="flex flex-col min-w-0">
                 <span className="text-sm font-black">Layout</span>
                 <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
                   {draft.layoutModeAuto !== false ? 'Auto from device orientation' : 'Manual layout override'}
@@ -744,12 +837,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 size="sm"
                 isLight={isLight}
                 ariaLabel="Invoice switcher layout"
-                value={draft.invoiceSwitcherMode ?? 'horizontal'}
+                value={draft.invoiceSwitcherMode === 'list' ? 'list' : 'horizontal'}
                 onChange={(invoiceSwitcherMode) => patchDraft({ invoiceSwitcherMode })}
                 options={[
                   { id: 'horizontal', label: 'Horizontal', icon: <Icons.Carousel size={14} /> },
-                  { id: 'vertical', label: 'Vertical', icon: <Icons.Stack size={14} /> },
-                  { id: 'grid', label: 'Scattered', icon: <Icons.Grid size={14} /> },
                   { id: 'list', label: 'List', icon: <Icons.List size={14} /> },
                 ]}
               />
@@ -770,27 +861,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 value={draft.expressionViewMode ?? 'auto'}
                 onChange={(expressionViewMode) => patchDraft({ expressionViewMode })}
                 options={EXPRESSION_VIEW_OPTIONS.map(({ id, label }) => ({ id, label }))}
-              />
-            </div>
-
-            {/* Vision Hub drawer */}
-            <div className="pt-2 border-t border-white/10 space-y-3">
-              <div className="flex flex-col gap-1">
-                <span className="text-sm font-black">Vision Hub drawer</span>
-                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                  Drag invoices to the printer, or tap to focus and print
-                </span>
-              </div>
-              <FluidSegmentControl
-                isLight={isLight}
-                className="w-full"
-                ariaLabel="Vision Hub drawer mode"
-                value={draft.visionHubDrawerMode ?? 'drag'}
-                onChange={(visionHubDrawerMode) => patchDraft({ visionHubDrawerMode })}
-                options={[
-                  { id: 'drag', label: 'Drag', icon: <Icons.Printer size={14} /> },
-                  { id: 'click', label: 'Click', icon: <Icons.List size={14} /> },
-                ]}
               />
             </div>
 
@@ -880,7 +950,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           ref={(el) => { sectionRefs.current[2] = el; }}
           className="settings-card p-6 shadow-2xl"
         >
-          {renderSettingsCardHeader('Bluetooth and connectivity', <Icons.Printer size={22} />)}
+          {renderSettingsCardHeader('Printers and connectivity', <Icons.Printer size={22} />)}
 
           <div className="space-y-4">
             {bluetoothSupport.message && (
@@ -900,10 +970,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             <div className={`rounded-xl border px-3 py-2.5 ${isLight ? 'bg-blue-50/80 border-blue-200/70' : 'bg-blue-500/10 border-blue-400/20'}`}>
               <span className={`app-subtext font-black ${isLight ? 'text-blue-900' : 'text-blue-200'}`}>
-                Paper width: auto · {detectedPaperWidth}
+                Auto sequence · paper {detectedPaperWidth}
               </span>
               <p className={`app-subtext mt-1 ${isLight ? 'text-black/55' : 'text-white/55'}`}>
-                Detected from printer name when you connect (58mm standard, 25mm mini).
+                USB → paired Bluetooth → BLE → Wi‑Fi. Connects to the first printer found, then stops.
+                Paper width is auto-detected when possible.
               </p>
             </div>
 
@@ -914,7 +985,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => void refreshPrinterState()}
-                className={`text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg active:scale-95 ${
+                className={`text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg ${
                   isLight ? 'bg-zinc-100 text-black' : 'bg-white/10 text-white'
                 }`}
               >
@@ -933,7 +1004,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </div>
                 <button
                   onClick={handleDisconnect}
-                  className="py-1.5 px-3 rounded-lg bg-red-500/10 text-red-500 text-xs font-black uppercase hover:bg-red-500/20 active:scale-95 transition-all shrink-0"
+                  className="py-1.5 px-3 rounded-lg bg-red-500/10 text-red-500 text-xs font-black uppercase hover:bg-red-500/20 transition-all shrink-0"
                 >
                   Disconnect
                 </button>
@@ -963,7 +1034,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       <button
                         onClick={() => handleConnectSaved(entry.saved.id)}
                         disabled={isBusy || isScanning || !bluetoothSupport.supported}
-                        className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 transition-all shrink-0"
+                        className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase disabled:opacity-50 transition-all shrink-0"
                       >
                         {isBusy ? '...' : 'Connect'}
                       </button>
@@ -998,7 +1069,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       <button
                         onClick={() => handleConnectSaved(entry.saved.id)}
                         disabled={isBusy || isScanning || !bluetoothSupport.supported}
-                        className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 transition-all shrink-0"
+                        className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase disabled:opacity-50 transition-all shrink-0"
                       >
                         {isBusy ? '...' : 'Connect'}
                       </button>
@@ -1017,16 +1088,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <button
               onClick={handleScanAndConnect}
               disabled={isScanning || connectingId !== null || !bluetoothSupport.supported}
-              className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all shadow-md"
+              className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 disabled:opacity-50 transition-all shadow-md"
             >
-              {isScanning ? 'Searching...' : knownPrinters.length > 0 ? 'Scan for new printer' : 'Scan & Connect Printer'}
+              {isScanning ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <AppLoadingSpinner size="sm" label="Searching" />
+                  {scanPhaseLabel(scanPhase)}
+                </span>
+              ) : knownPrinters.length > 0 ? (
+                'Scan for printer (USB → BT → Wi‑Fi)'
+              ) : (
+                'Scan & Connect (USB → BT → Wi‑Fi)'
+              )}
             </button>
 
             {/* Test Invoice / Print Action */}
             {printerName && (
               <button
                 onClick={handlePrintReceipt}
-                className={`w-full py-3 rounded-xl border text-xs font-black uppercase tracking-widest transition-all active:scale-95 ${
+                className={`w-full py-3 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${
                   printSuccess 
                     ? 'bg-green-500 text-white border-green-500' 
                     : (isLight ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-900 border-white')
@@ -1045,60 +1125,99 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
 
-        {/* Get app on phone — install (web) or Update when a newer release exists (app) */}
-        {(installOffer.kind !== 'current' || !Capacitor.isNativePlatform()) && (
-          <div className="settings-card p-6 shadow-2xl">
-            {renderSettingsCardHeader(
-              installOffer.kind === 'update' ? 'Update app' : 'Get app on phone',
-              <Icons.Download size={22} />
-            )}
-            <p className={`app-subtext text-[10px] mb-1 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-              {installOffer.kind === 'update'
-                ? `New version available — update to ${installOffer.version}`
-                : 'Click to install app for free'}
-            </p>
-            <p className={`app-subtext text-[10px] mb-4 opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
-              {installCheckLoading
-                ? 'Checking for updates…'
-                : installOffer.kind === 'update'
-                  ? `You have ${installOffer.current} · latest is ${installOffer.version}${
-                      installOffer.build ? ` (build ${installOffer.build})` : ''
-                    }`
-                  : `Version ${installOffer.version}${
-                      installOffer.build ? ` · build ${installOffer.build}` : ''
-                    }`}
-            </p>
-            <a
-              href={installOffer.kind === 'current' ? APK_INSTALL_URL : installOffer.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`w-full py-3.5 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
-                isLight ? 'bg-blue-500 text-white' : 'bg-blue-500/90 text-white'
-              }`}
-            >
-              <Icons.Download size={16} />
-              {installOffer.kind === 'update'
-                ? `Update ${installOffer.version}`
-                : `Install ${installOffer.version}`}
-            </a>
-            {installOffer.kind === 'update' && (
-              <p className={`app-subtext text-[10px] mt-3 opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
-                Don&apos;t worry, updating will do in background, while you still work.
+        {/* Install (web) / Update status (installed app) */}
+        <div className="settings-card p-6 shadow-2xl">
+          {Capacitor.isNativePlatform() ? (
+            <>
+              {renderSettingsCardHeader(
+                installOffer.kind === 'update' ? 'Update app' : 'App status',
+                <Icons.Download size={22} />
+              )}
+              {installCheckLoading ? (
+                <div className="py-3">
+                  <AppLoadingInline label="Checking for updates" isLight={isLight} size="md" />
+                </div>
+              ) : installOffer.kind === 'update' ? (
+                <>
+                  <p className="update-available-neon mb-2" aria-live="polite">
+                    Update available
+                  </p>
+                  <p className={`app-subtext text-[10px] mb-4 opacity-55 ${isLight ? 'text-black' : 'text-white'}`}>
+                    You have v{installOffer.current} · latest is v{installOffer.version}
+                    {installOffer.build ? ` (build ${installOffer.build})` : ''}
+                  </p>
+                  <a
+                    href={installOffer.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3.5 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all bg-blue-500 text-white shadow-[0_0_24px_rgba(59,130,246,0.45)]"
+                  >
+                    <Icons.Download size={16} />
+                    Update {installOffer.version}
+                  </a>
+                  <p className={`app-subtext text-[10px] mt-3 opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
+                    Don&apos;t worry, updating will do in background, while you still work.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p
+                    className={`no-update-available mb-1 ${isLight ? 'text-black' : 'text-white'}`}
+                    aria-live="polite"
+                  >
+                    No update available
+                  </p>
+                  <p className={`app-subtext text-[10px] opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
+                    You&apos;re on the latest install · v{APP_VERSION}
+                  </p>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              {renderSettingsCardHeader(
+                installOffer.kind === 'update' ? 'Update app' : 'Get app on phone',
+                <Icons.Download size={22} />
+              )}
+              <p className={`app-subtext text-[10px] mb-1 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                {installOffer.kind === 'update'
+                  ? `New version available — update to ${installOffer.version}`
+                  : 'Click to install app for free'}
               </p>
-            )}
-          </div>
-        )}
-
-        {Capacitor.isNativePlatform() && installOffer.kind === 'current' && (
-          <div className="settings-card p-6 shadow-2xl">
-            {renderSettingsCardHeader('Get app on phone', <Icons.Download size={22} />)}
-            <p className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-              {installCheckLoading
-                ? 'Checking for updates…'
-                : `You're on the latest install · v${APP_VERSION}`}
-            </p>
-          </div>
-        )}
+              <p className={`app-subtext text-[10px] mb-4 opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
+                {installCheckLoading ? (
+                  <AppLoadingInline label="Checking for updates" isLight={isLight} />
+                ) : installOffer.kind === 'update' ? (
+                  `You have ${installOffer.current} · latest is ${installOffer.version}${
+                    installOffer.build ? ` (build ${installOffer.build})` : ''
+                  }`
+                ) : (
+                  `Version ${installOffer.version}${
+                    installOffer.build ? ` · build ${installOffer.build}` : ''
+                  }`
+                )}
+              </p>
+              <a
+                href={installOffer.kind === 'current' ? APK_INSTALL_URL : installOffer.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`w-full py-3.5 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
+                  isLight ? 'bg-blue-500 text-white' : 'bg-blue-500/90 text-white'
+                }`}
+              >
+                <Icons.Download size={16} />
+                {installOffer.kind === 'update'
+                  ? `Update ${installOffer.version}`
+                  : `Install ${installOffer.version}`}
+              </a>
+              {installOffer.kind === 'update' && (
+                <p className={`app-subtext text-[10px] mt-3 opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
+                  Don&apos;t worry, updating will do in background, while you still work.
+                </p>
+              )}
+            </>
+          )}
+        </div>
 
       </div>
 
@@ -1150,13 +1269,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               type="button"
               onClick={() => void handleChangePasswordSubmit()}
               disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}
-              className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
+              className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
                 isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
               }`}
             >
               {isChangingPassword ? (
                 <>
-                  <span className="auth-spinner" aria-hidden="true" />
+                  <AppLoadingSpinner size="sm" label="Updating password" />
                   Updating…
                 </>
               ) : (
@@ -1179,7 +1298,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <button
               type="button"
               onClick={() => setShowSignOutConfirm(false)}
-              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
+              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
                 isLight ? 'border-zinc-200 text-zinc-700' : 'border-white/15 text-white/80'
               }`}
             >
@@ -1192,7 +1311,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 handleClose();
                 onLogout?.();
               }}
-              className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all bg-red-500 text-white"
+              className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-red-500 text-white"
             >
               Sign out
             </button>

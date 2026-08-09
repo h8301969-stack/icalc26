@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Icons } from '../constants';
 import { useSwipeAnywhere } from '../hooks/useGestures';
 import icalcLogo from '../assets/logo/icalc-logo.png';
+import { playHaptic, playUnlockSound } from '../utils/uiSounds';
 
 interface WallpaperOverlayProps {
   onEnter: () => void;
@@ -53,8 +54,10 @@ const WallpaperOverlay: React.FC<WallpaperOverlayProps> = ({
   const handleEnter = () => {
     if (isEntering) return;
     setIsEntering(true);
-    if ('vibrate' in navigator) navigator.vibrate([10, 30]);
-    setTimeout(onEnter, 700);
+    playUnlockSound();
+    playHaptic([8, 20]);
+    // Open calculator immediately; exit animation runs in parallel
+    onEnter();
   };
 
   const swipe = useSwipeAnywhere(handleEnter);
@@ -64,7 +67,8 @@ const WallpaperOverlay: React.FC<WallpaperOverlayProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 z-[1000] flex flex-col items-center justify-between p-12 touch-none transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) ${isEntering ? 'opacity-0 scale-125' : 'opacity-100 scale-100'}`}
+      className={`unlock-screen fixed inset-0 z-[1000] flex flex-col items-center justify-between p-12 touch-none ${isEntering ? 'fluid-pop-out' : 'opacity-100 scale-100'}`}
+      style={isEntering ? { animationDuration: '160ms' } : undefined}
       onPointerDown={swipe.onPointerDown}
       onPointerUp={swipe.onPointerUp}
       onPointerCancel={swipe.onPointerCancel}

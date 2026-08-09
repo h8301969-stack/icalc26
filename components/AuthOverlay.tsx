@@ -16,18 +16,32 @@ import { MorphCrossfade } from './MorphCrossfade';
 import PasswordField from './PasswordField';
 import { supabase } from '../utils/supabase';
 import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
+import { AppLoadingCard, AppLoadingInline } from './AppLoading';
+import {
+  playClickSound,
+  playHaptic,
+  playSwipeSound,
+  playUnlockSound,
+  primeUiAudio,
+} from '../utils/uiSounds';
 
 type AuthMode = 'signup' | 'login';
 type AuthPane = 'idle' | 'auth' | 'settings';
 
-const AUTH_MIN_LOADING_MS = 1200;
-const AUTH_SIGNUP_LOADING_MS = 15000;
-const AUTH_ADMIN_PORTAL_LOADING_MS = 3000;
-const AUTH_SUCCESS_HOLD_MS = 700;
+/** All loading UI is clamped to 0.3s–1s (progress bars, min hold). */
+const LOADING_MIN_MS = 300;
+const LOADING_MAX_MS = 1000;
+const AUTH_MIN_LOADING_MS = LOADING_MIN_MS;
+const AUTH_SIGNUP_LOADING_MS = LOADING_MAX_MS;
+/** Dev skip + admin breached loading screen — fixed 0.5s. */
+const AUTH_ADMIN_PORTAL_LOADING_MS = 500;
+const AUTH_SUCCESS_HOLD_MS = 700; // within 0.3s–1s
 const AUTH_MODE_MS = 200;
-const EDGE_ZONE_PX = 56;
-const EDGE_SWIPE_MIN = 48;
-const TAP_THRESHOLD = 14;
+const EDGE_ZONE_PX = 48;
+/** Faster unlock recognition on idle. */
+const EDGE_SWIPE_MIN = 28;
+const TAP_THRESHOLD = 16;
+const IDLE_SWIPE_MIN = 22;
 
 const LOCK_SETTINGS_SECTIONS = ['idle', 'appearance', 'layout'] as const;
 type LockSettingsSection = (typeof LOCK_SETTINGS_SECTIONS)[number];
@@ -336,7 +350,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     if (pane === 'auth' || isLoading) return;
     setPane('auth');
     setAuthCardAnimKey((k) => k + 1);
-    if ('vibrate' in navigator) navigator.vibrate(10);
+    playHaptic(10);
   }, [pane, isLoading]);
 
   const openSettings = useCallback((sectionIndex = 0) => {
@@ -344,14 +358,14 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     setSettingsSectionIndex(sectionIndex);
     setSettingsAnimKey((k) => k + 1);
     setPane('settings');
-    if ('vibrate' in navigator) navigator.vibrate(10);
+    playHaptic(10);
   }, [isLoading]);
 
   const cycleSettingsSection = useCallback(() => {
     if (!showSettings || isLoading) return;
     setSettingsSectionIndex((i) => (i + 1) % LOCK_SETTINGS_SECTIONS.length);
     setSettingsAnimKey((k) => k + 1);
-    if ('vibrate' in navigator) navigator.vibrate(8);
+    playHaptic(8);
   }, [showSettings, isLoading]);
 
   const returnToIdle = useCallback(() => {
@@ -367,9 +381,11 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const initiateCalculator = useCallback(() => {
     if (isLoading || isExiting || !canQuickUnlock) return;
     pendingUnlockRef.current = false;
-    setIsExiting(true);
-    if ('vibrate' in navigator) navigator.vibrate([10, 30]);
+    playUnlockSound();
+    playHaptic([8, 20]);
+    // Unlock calculator immediately — exit animation runs in parallel
     onQuickUnlock?.();
+    setIsExiting(true);
   }, [canQuickUnlock, isLoading, isExiting, onQuickUnlock]);
 
   const handleContinue = useCallback(() => {
@@ -377,6 +393,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     if (!authReady) {
       if (canQuickUnlock || isAuthenticated) {
         pendingUnlockRef.current = true;
+        playClickSound();
       }
       // While auth isn’t ready, never force the login form (session may still restore).
       return;
@@ -386,6 +403,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       return;
     }
     // Truly no session → show sign-in / sign-up form
+    playClickSound();
     revealAuthForm();
   }, [authReady, isAuthenticated, canQuickUnlock, initiateCalculator, revealAuthForm]);
 
@@ -423,11 +441,15 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (isLoading) return;
+    primeUiAudio();
     const width = window.innerWidth;
     const x = e.clientX;
     let edge: 'left' | 'right' | null = null;
-    if (x <= EDGE_ZONE_PX) edge = 'left';
-    else if (x >= width - EDGE_ZONE_PX) edge = 'right';
+    // On idle lock, any gesture unlocks — don't reserve edges for settings
+    if (!isIdle) {
+      if (x <= EDGE_ZONE_PX) edge = 'left';
+      else if (x >= width - EDGE_ZONE_PX) edge = 'right';
+    }
     pointerStart.current = { x, y: e.clientY, edge };
   };
 
@@ -441,13 +463,25 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     const dy = e.clientY - pointerStart.current.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const horizontal = Math.abs(dx) > Math.abs(dy);
+    const isTap = dist <= TAP_THRESHOLD;
+    const isSwipe = dist >= IDLE_SWIPE_MIN;
+
+    // Idle / inactivity screen: every tap or swipe opens calculator (when session allows)
+    if (isIdle) {
+      if (isTap || isSwipe) {
+        // Sounds: unlock (in initiateCalculator) or click (sign-in form)
+        handleContinue();
+      }
+      pointerStart.current = null;
+      return;
+    }
 
     if (pointerStart.current.edge === 'right' && horizontal && dx <= -EDGE_SWIPE_MIN) {
+      playSwipeSound();
       handleRightEdgeSwipe();
     } else if (pointerStart.current.edge === 'left' && horizontal && dx >= EDGE_SWIPE_MIN) {
+      playSwipeSound();
       handleLeftEdgeSwipe();
-    } else if (isIdle && !pointerStart.current.edge && (dist <= TAP_THRESHOLD || dist >= EDGE_SWIPE_MIN)) {
-      handleContinue();
     }
 
     pointerStart.current = null;
@@ -468,7 +502,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       const result = await onDevSkip();
       if (result && result.adminPortal) {
         setLoadingPhase('admin_breached');
-        if ('vibrate' in navigator) navigator.vibrate([20, 40, 20]);
+        playHaptic([20, 40, 20]);
         await wait(AUTH_ADMIN_PORTAL_LOADING_MS);
         setIsSubmitting(false);
         setLoadingPhase('default');
@@ -493,7 +527,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     setMode('login');
     setError(null);
     if (confirmedEmail) setUsername(confirmedEmail);
-    if ('vibrate' in navigator) navigator.vibrate(8);
+    playHaptic(8);
   }, [signupConfirmation?.email]);
 
   const stopPendingWatch = useCallback(() => {
@@ -519,7 +553,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         setIsEntering(true);
         setLoadingPhase('default');
       });
-      if ('vibrate' in navigator) navigator.vibrate([10, 30]);
+      playHaptic([10, 30]);
       await wait(AUTH_SUCCESS_HOLD_MS);
       flushSync(() => {
         setIsEntering(false);
@@ -593,14 +627,14 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         setBusinessSetup({ accessCode, username: pendingUsername });
         setPane('auth');
         setAuthCardAnimKey((k) => k + 1);
-        if ('vibrate' in navigator) navigator.vibrate([12, 40, 12]);
+        playHaptic([12, 40, 12]);
         return;
       }
 
       if (status === 'denied' || status === 'unused') {
         stopPendingWatch();
         setLoadingPhase('access_denied');
-        await wait(1800);
+        await wait(LOADING_MAX_MS);
         setIsSubmitting(false);
         setLoadingPhase('default');
         setError('Access was denied.');
@@ -619,7 +653,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
           stopPendingWatch();
           setLoadingPhase('default');
           flushSync(() => setIsEntering(true));
-          if ('vibrate' in navigator) navigator.vibrate([10, 30]);
+          playHaptic([10, 30]);
           await wait(AUTH_SUCCESS_HOLD_MS);
           flushSync(() => {
             setIsEntering(false);
@@ -690,7 +724,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       const backdoorProbe = await onLogin('', secret);
       if (backdoorProbe.adminPortal) {
         setLoadingPhase('admin_breached');
-        if ('vibrate' in navigator) navigator.vibrate([20, 40, 20]);
+        playHaptic([20, 40, 20]);
         await wait(AUTH_ADMIN_PORTAL_LOADING_MS);
         setIsSubmitting(false);
         setLoadingPhase('default');
@@ -752,7 +786,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         setSignupConfirmation({
           email: result.confirmationEmail ?? (email.trim() || username.trim()),
         });
-        if ('vibrate' in navigator) navigator.vibrate([12, 40, 12]);
+        playHaptic([12, 40, 12]);
         return;
       }
 
@@ -766,7 +800,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         setIsEntering(true);
       });
 
-      if ('vibrate' in navigator) navigator.vibrate([10, 30]);
+      playHaptic([10, 30]);
       await wait(AUTH_SUCCESS_HOLD_MS);
 
       flushSync(() => {
@@ -797,7 +831,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   key={option.value}
                   type="button"
                   onClick={() => updateSettings({ standbyTimerSeconds: option.value })}
-                  className={`app-subtext px-3 py-2 rounded-xl text-[10px] font-black border transition-all active:scale-95 ${
+                  className={`app-subtext px-3 py-2 rounded-xl text-[10px] font-black border transition-all ${
                     isActive
                       ? 'bg-blue-500 text-white border-blue-500'
                       : isLight
@@ -866,26 +900,48 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
   const timeString = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
+  const layoutIsLandscape = (settings?.layoutMode ?? 'portrait') === 'landscape';
+  /** Allow vertical scroll on sign-in/up (or lock settings) so the card fits in landscape. */
+  const authNeedsScroll = showAuthForm || showSettings;
+
   return (
     <div
-      className={`auth-screen fixed inset-0 z-[1000] flex flex-col items-center justify-between p-6 sm:p-12 transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) ${!isLoading && !isExiting ? 'touch-none' : ''} ${isExiting ? 'opacity-0 scale-125 pointer-events-none' : 'opacity-100 scale-100'}`}
+      className={`auth-screen fixed inset-0 z-[1000] flex flex-col items-center p-6 sm:p-12 ${
+        authNeedsScroll || layoutIsLandscape
+          ? 'auth-screen--scrollable fluid-bounce-scroll justify-start overflow-y-auto'
+          : 'justify-between'
+      } ${!isLoading && !isExiting && !authNeedsScroll ? 'touch-none' : ''} ${
+        isExiting ? 'fluid-pop-out pointer-events-none' : 'opacity-100 scale-100'
+      } ${layoutIsLandscape ? 'auth-screen--landscape' : ''}`}
+      style={isExiting ? { animationDuration: '160ms' } : undefined}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
+      onAnimationEnd={(e) => {
+        if (!isExiting || e.target !== e.currentTarget) return;
+        if ((e.animationName || '').includes('fluid-pop-out')) onExitComplete?.();
+      }}
       onTransitionEnd={() => {
+        // Fallback if a transition-based exit is used
         if (isExiting) onExitComplete?.();
       }}
       role="main"
       aria-busy={isLoading}
     >
-      <div className="absolute top-8 left-8 sm:top-12 sm:left-12 flex items-center select-none pointer-events-none">
+      <div className="absolute top-8 left-8 sm:top-12 sm:left-12 flex items-center select-none pointer-events-none z-10">
         {/* Full mark (logo art already includes iCalc 26) — no square crop, no text overlay */}
         <div className={`unlock-logo-wrap h-12 sm:h-14 ${isLoading ? 'auth-loading-logo' : ''}`}>
           <img src={icalcLogo} alt="iCalc 26" draggable={false} />
         </div>
       </div>
 
-      <div className="flex flex-col items-center justify-center flex-1 w-full max-w-sm gap-6 pt-16">
+      <div
+        className={`auth-screen__center flex flex-col items-center justify-center w-full max-w-sm gap-6 ${
+          authNeedsScroll || layoutIsLandscape
+            ? 'flex-none min-h-0 my-auto py-14 sm:py-10'
+            : 'flex-1 pt-16'
+        }`}
+      >
         {!showSettings && (
           <div className={`text-center select-none pointer-events-none transition-opacity duration-300 ${isLoading ? 'opacity-40' : 'opacity-100'}`}>
             <p className="font-num-light text-5xl tracking-tighter tabular-nums opacity-80" style={{ color: textColor }}>
@@ -928,7 +984,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         {showAuthForm && (
           <div
             key={authCardAnimKey}
-            className={`auth-card-mode relative w-full rounded-2xl p-6 border shadow-2xl animate-auth-card-enter ${
+            className={`auth-card-mode auth-card-mode--scroll relative w-full rounded-2xl p-6 border shadow-2xl animate-auth-card-enter ${
               cardModePulse ? 'auth-card-mode--pulse' : ''
             } ${panelClass} ${isLoading && !showBusinessSetup ? 'opacity-40 pointer-events-none' : ''}`}
           >
@@ -1056,7 +1112,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   <button
                     type="submit"
                     disabled={isLoading || showSignupInsight}
-                    className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all duration-300 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2.5 min-h-[46px] ${
+                    className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all duration-300 disabled:opacity-50 flex items-center justify-center gap-2.5 min-h-[46px] ${
                       isLight ? 'bg-black text-white' : 'bg-white text-black'
                     }`}
                   >
@@ -1075,7 +1131,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                       type="button"
                       onClick={handleDevSkip}
                       disabled={isLoading || showSignupInsight}
-                      className={`w-full py-3 rounded-xl font-black text-[10px] uppercase tracking-[0.3em] transition-all active:scale-[0.98] disabled:opacity-40 border border-dashed ${
+                      className={`w-full py-3 rounded-xl font-black text-[10px] uppercase tracking-[0.3em] transition-all disabled:opacity-40 border border-dashed ${
                         isLight
                           ? 'border-black/20 text-black/50 hover:text-black/70'
                           : 'border-white/20 text-white/50 hover:text-white/70'
@@ -1116,8 +1172,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
                   {businessInfoLoading ? (
                     <div className="px-5 pb-6 flex flex-col items-center gap-3">
-                      <span className="auth-spinner" aria-hidden="true" />
-                      <p className="app-subtext text-[10px] opacity-45">Loading business details…</p>
+                      <AppLoadingInline label="Loading business details" isLight={isLight} size="md" className="flex-col gap-3" />
                     </div>
                   ) : (
                     <>
@@ -1137,7 +1192,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                           type="button"
                           disabled={isSubmitting || !receivedBusinessInfo?.businessName.trim()}
                           onClick={() => void handleBusinessReceiveContinue()}
-                          className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all active:scale-[0.98] min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
+                          className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
                         >
                           {isSubmitting ? 'Opening workspace…' : 'Continue'}
                         </button>
@@ -1181,7 +1236,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   <button
                     type="button"
                     onClick={dismissSignupConfirmation}
-                    className={`w-full mt-6 py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all active:scale-[0.98] ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
+                    className={`w-full mt-6 py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
                   >
                     Got it
                   </button>
@@ -1223,7 +1278,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
             <button
               type="button"
               onClick={handleDevSkip}
-              className={`app-subtext mt-5 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.25em] border border-dashed transition-all active:scale-95 pointer-events-auto ${
+              className={`app-subtext mt-5 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.25em] border border-dashed transition-all pointer-events-auto ${
                 isLight
                   ? 'border-black/20 text-black/45 hover:text-black/65'
                   : 'border-white/20 text-white/45 hover:text-white/65'
@@ -1246,43 +1301,12 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
           aria-live="polite"
           aria-label={loadingLabel}
         >
-          <div
-            className={`auth-loading-card relative w-full max-w-xs rounded-[28px] border px-8 py-10 flex flex-col items-center gap-6 ${
-              isLight
-                ? 'bg-white/85 border-black/10 text-black'
-                : 'pos-dashboard-card-glass border-white/12 text-white'
-            }`}
-          >
-            <div className="relative w-[88px] h-[88px]">
-              <div className="auth-loading-ring auth-loading-ring--outer" aria-hidden="true" />
-              <div className="auth-loading-ring auth-loading-ring--inner" aria-hidden="true" />
-              <div className="absolute inset-[18px] auth-loading-logo-frame auth-loading-logo shadow-[0_12px_32px_rgba(0,0,0,0.35)]">
-                <img src={icalcLogo} alt="" draggable={false} />
-              </div>
-            </div>
-
-            <div className="text-center space-y-2">
-              <p className={`auth-loading-status text-sm font-black tracking-tight ${isLight ? 'text-black' : 'text-white'}`}>
-                {loadingLabel}
-              </p>
-              <p className={`app-subtext text-[10px] font-bold ${isLight ? 'text-black/45' : 'text-white/45'}`}>
-                {loadingSubtext}
-              </p>
-            </div>
-
-            <div className="w-full auth-loading-bar" aria-hidden="true">
-              <div
-                className={`auth-loading-bar-fill ${
-                  useTimedLoadingBar ? 'auth-loading-bar-fill--signup' : ''
-                }`}
-                style={
-                  useTimedLoadingBar
-                    ? { animationDuration: `${loadingBarDurationMs}ms` }
-                    : undefined
-                }
-              />
-            </div>
-          </div>
+          <AppLoadingCard
+            label={loadingLabel}
+            subtext={loadingSubtext}
+            isLight={isLight}
+            progressMs={useTimedLoadingBar ? loadingBarDurationMs : undefined}
+          />
         </div>
       )}
     </div>

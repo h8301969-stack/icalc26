@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { fetchDeletedItems, handleSoftRestore } from '../utils/enhancedSync';
 import { Icons } from '../constants';
+import { AppLoadingInline } from './AppLoading';
 
 interface TrashPanelProps {
   isOpen: boolean;
@@ -89,10 +90,10 @@ export const TrashPanel: React.FC<TrashPanelProps> = ({
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar fluid-bounce-scroll">
           {loading ? (
             <div className="flex items-center justify-center h-full">
-              <div className="animate-spin"><Icons.Sync size={20} /></div>
+              <AppLoadingInline label="Loading" size="md" isLight={isLight} />
             </div>
           ) : deletedItems.length === 0 ? (
             <div className={`text-center py-8 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>

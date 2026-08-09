@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-export const MORPH_MS = 200;
-export const MORPH_EXIT_MS = 220;
-export const MORPH_MODE_MS = 140;
+/** Match fluid-pop tokens in index.css (Settings X/Save/Discard = 280ms). */
+export const MORPH_MS = 280;
+export const MORPH_EXIT_MS = 280;
+export const MORPH_MODE_MS = 200;
 
 /** Stacked dual/multi-label crossfade for mode-dependent copy. */
 export const MorphCrossfade: React.FC<{

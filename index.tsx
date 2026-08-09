@@ -13,6 +13,8 @@ import '@fontsource/montserrat/latin-900.css';
 import App from './App';
 import './index.css';
 import { nativeWarmupBle } from './utils/nativeBle';
+import { installFluidBounceScroll } from './utils/fluidBounceScroll';
+import { installTrioPress } from './utils/trioPress';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -25,6 +27,11 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+// iOS-style rubber-band bounce on every overflow scroller
+installFluidBounceScroll();
+// Every clickable control → trio spring press (Save/Discard language)
+installTrioPress();
 
 // Warm BLE permissions/adapter on native so printer connect is ready sooner
 void nativeWarmupBle();

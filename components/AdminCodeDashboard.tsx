@@ -476,7 +476,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         Tap code to copy · tap card for details · hold for quick open
       </p>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <div className="flex-1 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] custom-scrollbar fluid-bounce-scroll">
         {error && (
           <p className="admin-error-enter text-center text-sm font-bold text-red-500 mb-3" role="alert">
             {error}

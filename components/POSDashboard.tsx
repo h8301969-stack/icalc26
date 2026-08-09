@@ -26,6 +26,8 @@ import { DEFAULT_INVENTORY_IMAGE, resolveInventoryImage, WALLPAPER_IMAGE_URLS } 
 import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
 import { MorphPresence } from './MorphCrossfade';
 import { boxFractionLabel, formatBoxQuantity } from '../utils/inventoryUnits';
+import { useEdgeSwipe } from '../hooks/useGestures';
+import { playSwipeSound, playHaptic } from '../utils/uiSounds';
 
 interface POSDashboardProps {
   history: HistoryItem[];
@@ -54,13 +56,14 @@ interface POSDashboardProps {
     themeMode: 'light' | 'dark' | 'system';
     disableCalculatorCard?: boolean;
     layoutMode?: 'portrait' | 'landscape';
-    visionHubDrawerMode?: 'drag' | 'click';
+    visionHubDrawerMode?: 'click';
     profiles?: import('../types').UserProfile[];
     activeProfileId?: string;
     currency?: string;
     businessName?: string;
     businessPhone?: string;
     businessAddress?: string;
+    customWallpapers?: { image: string }[];
   };
   updateSettings: (keyOrPatch: string | Record<string, unknown>, value?: unknown) => void;
   onInvoicePrinted?: (invoiceName: string, total: string, items: CartLineItem[]) => void;
@@ -70,6 +73,8 @@ interface POSDashboardProps {
   onChangePassword?: (current: string, newPassword: string) => Promise<{ error?: string; ok?: boolean }>;
   onLogout?: () => void;
   onVerifyAdminPassword?: (password: string) => Promise<{ error?: string; ok?: boolean }>;
+  /** Close dashboard and open calculator on a new invoice. */
+  onNewInvoice?: () => void;
 }
 
 type DashboardLogFilter = 'all' | 'restock' | 'sale' | 'invoice' | 'unidentified' | 'updates' | '24h' | '48h' | '7d';
@@ -221,6 +226,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   onChangePassword,
   onLogout,
   onVerifyAdminPassword,
+  onNewInvoice,
 }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -256,6 +262,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [isSettingsAnimating, setIsSettingsAnimating] = useState(false);
   const [isCloseAnimating, setIsCloseAnimating] = useState(false);
   const [visionHubFocus, setVisionHubFocus] = useState(false);
+  const visionHubTryBackRef = useRef<(() => boolean) | null>(null);
+
+  const bindVisionHubBack = useCallback((handler: (() => boolean) | null) => {
+    visionHubTryBackRef.current = handler;
+  }, []);
   
   const [sortOption, setSortOption] = useState<SortOption>('a-z');
   const [filterOption, setFilterOption] = useState<FilterOption>('all');
@@ -309,58 +320,130 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const restockStageRef = useRef<HTMLDivElement>(null);
   const [showSuppliersPanel, setShowSuppliersPanel] = useState(false);
 
+  /** Hierarchical go-back: nested panels → Vision Hub drawer → leave POS. */
+  const handlePosGoBack = useCallback(() => {
+    if (showAddRequestPopup) {
+      closeRequestPopup();
+      return true;
+    }
+    if (showSuppliersPanel) {
+      setShowSuppliersPanel(false);
+      return true;
+    }
+    if (showAddRestockPopup) {
+      closeRestockPopup();
+      return true;
+    }
+    if (showPricingsHistory) {
+      setShowPricingsHistory(false);
+      return true;
+    }
+    if (isSettingsOpen) {
+      setIsSettingsOpen(false);
+      return true;
+    }
+    if (namingUnidentified) {
+      setNamingUnidentified(null);
+      return true;
+    }
+    if (actionLogsExpanded) {
+      setActionLogsExpanded(false);
+      setShowActionLogSearch(false);
+      setActionLogSearchQuery('');
+      return true;
+    }
+    if (requestsExpanded) {
+      setRequestsExpanded(false);
+      return true;
+    }
+    if (restockExpanded) {
+      if (restockGridZoomed) {
+        setRestockGridZoomed(false);
+      } else {
+        setRestockExpanded(false);
+      }
+      return true;
+    }
+    if (selectedItem && inventoryExpanded) {
+      setSelectedItem(null);
+      return true;
+    }
+    if (inventoryExpanded) {
+      setSelectedItem(null);
+      setInventoryExpanded(false);
+      return true;
+    }
+    if (purchasesExpanded) {
+      setPurchasesExpanded(false);
+      return true;
+    }
+    if (avgCustomerExpanded) {
+      setAvgCustomerExpanded(false);
+      return true;
+    }
+    if (invoicesTodayExpanded) {
+      setInvoicesTodayExpanded(false);
+      return true;
+    }
+    if (monthlyRevExpanded) {
+      setMonthlyRevExpanded(false);
+      return true;
+    }
+    if (dailySalesExpanded) {
+      setDailySalesExpanded(false);
+      return true;
+    }
+    if (visionHubTryBackRef.current?.()) {
+      return true;
+    }
+    onClose();
+    return true;
+    // Nested closers referenced by name at call time; deps track open layers
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    showAddRequestPopup,
+    showSuppliersPanel,
+    showAddRestockPopup,
+    showPricingsHistory,
+    isSettingsOpen,
+    namingUnidentified,
+    actionLogsExpanded,
+    requestsExpanded,
+    restockExpanded,
+    restockGridZoomed,
+    selectedItem,
+    inventoryExpanded,
+    purchasesExpanded,
+    avgCustomerExpanded,
+    invoicesTodayExpanded,
+    monthlyRevExpanded,
+    dailySalesExpanded,
+    onClose,
+  ]);
+
   // Keyboard accessibility: close on Escape
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (showAddRequestPopup) {
-          closeRequestPopup();
-        } else if (showSuppliersPanel) {
-          setShowSuppliersPanel(false);
-        } else if (showAddRestockPopup) {
-          closeRestockPopup();
-        } else if (showPricingsHistory) {
-          setShowPricingsHistory(false);
-        } else if (namingUnidentified) {
-          setNamingUnidentified(null);
-        } else if (actionLogsExpanded) {
-          setActionLogsExpanded(false);
-          setShowActionLogSearch(false);
-          setActionLogSearchQuery('');
-        } else if (requestsExpanded) {
-          setRequestsExpanded(false);
-        } else if (restockExpanded) {
-          if (restockGridZoomed) {
-            setRestockGridZoomed(false);
-          } else {
-            setRestockExpanded(false);
-          }
-        } else if (selectedItem && inventoryExpanded) {
-          setSelectedItem(null);
-        } else if (inventoryExpanded) {
-          setSelectedItem(null);
-          setInventoryExpanded(false);
-        } else if (purchasesExpanded) {
-          setPurchasesExpanded(false);
-        } else if (avgCustomerExpanded) {
-          setAvgCustomerExpanded(false);
-        } else if (invoicesTodayExpanded) {
-          setInvoicesTodayExpanded(false);
-        } else if (monthlyRevExpanded) {
-          setMonthlyRevExpanded(false);
-        } else if (dailySalesExpanded) {
-          setDailySalesExpanded(false);
-        } else {
-          onClose();
-        }
+        handlePosGoBack();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-    // closeRestockPopup is stable (useCallback below); omit to avoid TDZ — handler calls it by reference at runtime
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, onClose, showAddRequestPopup, showAddRestockPopup, showPricingsHistory, showSuppliersPanel, namingUnidentified, actionLogsExpanded, selectedItem, requestsExpanded, restockExpanded, restockGridZoomed, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded]);
+  }, [isOpen, handlePosGoBack]);
+
+  const posEdgeSwipe = useEdgeSwipe(
+    {
+      onSwipeFromLeftEdge: () => {
+        if (!isOpen) return;
+        playSwipeSound();
+        playHaptic(1);
+        handlePosGoBack();
+      },
+    },
+    isOpen
+  );
 
   useEffect(() => {
     if (!canViewTransactions) {
@@ -556,10 +639,19 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       grouped.get(log.invoiceName)!.push(log);
     }
 
+    const latestPrintTs = (name: string) => {
+      let max = 0;
+      for (const p of printLogs) {
+        if (p.invoiceName === name && p.timestamp > max) max = p.timestamp;
+      }
+      return max;
+    };
+
     const built: HubInvoice[] = [];
     for (const name of grouped.keys()) {
       if (name === invoiceName) continue;
       const logs = grouped.get(name)!;
+      const logTs = logs.reduce((m, l) => Math.max(m, l.timestamp || 0), 0);
       built.push({
         id: `past-${name}`,
         name,
@@ -571,9 +663,14 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         total: logs.reduce((s, l) => s + l.price * l.quantity, 0).toFixed(2),
         isCurrent: false,
         isPaid: printedInvoiceNames.has(name),
+        latestTimestamp: Math.max(logTs, latestPrintTs(name)),
       });
     }
 
+    const currentLogTs = (grouped.get(invoiceName) ?? []).reduce(
+      (m, l) => Math.max(m, l.timestamp || 0),
+      0
+    );
     built.push({
       id: 'current',
       name: invoiceName,
@@ -581,10 +678,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       total: runningTotal,
       isCurrent: true,
       isPaid: printedInvoiceNames.has(invoiceName),
+      latestTimestamp: Math.max(currentLogTs, latestPrintTs(invoiceName), Date.now()),
     });
 
     return built.filter((inv) => inv.isCurrent || inv.items.length > 0);
-  }, [invoiceActionLogs, cartItems, invoiceName, runningTotal, printedInvoiceNames]);
+  }, [invoiceActionLogs, cartItems, invoiceName, runningTotal, printedInvoiceNames, printLogs]);
 
   const latestPurchaseItems = useMemo(() => {
     if (purchases.length === 0) return [];
@@ -839,7 +937,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             e.stopPropagation();
             onPrint();
           }}
-          className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center active:scale-90 transition-all ${iconLiftLight} ${
+          className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center transition-all ${iconLiftLight} ${
             isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
           }`}
           aria-label={`Print ${title}`}
@@ -1201,7 +1299,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           selectRestockCard(idx);
           setRestockGridZoomed(true);
         }}
-        className={`text-left rounded-2xl p-3 sm:p-4 w-full aspect-[6/13] flex flex-col gap-1.5 transition-all duration-300 active:scale-[0.97] border ${
+        className={`text-left rounded-2xl p-3 sm:p-4 w-full aspect-[6/13] flex flex-col gap-1.5 transition-all duration-300 border ${
           isSelected && !restockGridZoomed
             ? 'bg-amber-500 text-white border-amber-500 shadow-lg'
             : isLight
@@ -1269,7 +1367,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               setRestockActiveIdx(0);
               setRestockDragDelta(0);
             }}
-            className={`px-3 py-2 rounded-xl pos-subtext text-[10px] font-black border transition-all active:scale-95 flex items-center gap-1.5 ${
+            className={`px-3 py-2 rounded-xl pos-subtext text-[10px] font-black border transition-all flex items-center gap-1.5 ${
               active
                 ? 'bg-amber-500 text-white border-amber-500'
                 : isLight
@@ -1341,7 +1439,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     <button
                       type="button"
                       onClick={() => setRestockGridZoomed(false)}
-                      className="p-2 rounded-full hover:bg-black/5 active:scale-90 transition-all text-black"
+                      className="p-2 rounded-full hover:bg-black/5 transition-all text-black"
                       aria-label="Back to grid"
                     >
                       <Icons.X size={18} />
@@ -1430,7 +1528,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         <button
           onClick={() => setShowPricingsHistory(false)}
           aria-label="Back to Restocking"
-          className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+          className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Restock
         </button>
@@ -1498,7 +1596,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             setRestockExpanded(false);
           }}
           aria-label="Back to Vision Hub"
-          className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+          className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
         </button>
@@ -1506,7 +1604,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           <button
             type="button"
             onClick={() => setShowPricingsHistory(true)}
-            className={`px-4 py-2.5 rounded-full font-black text-[10px] uppercase tracking-widest flex items-center gap-2 active:scale-95 transition-all border ${
+            className={`px-4 py-2.5 rounded-full font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all border ${
               isLight
                 ? 'bg-white text-black border-black/10 shadow-sm'
                 : 'bg-white/10 text-white border-white/15'
@@ -1517,7 +1615,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           </button>
           <button
             onClick={() => openRestockPopup()}
-            className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 active:scale-95 transition-all ${isLight ? 'bg-amber-500 text-white shadow-lg' : 'bg-amber-500 text-white shadow-[0_0_16px_rgb(245,158,11)]'}`}
+            className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 transition-all ${isLight ? 'bg-amber-500 text-white shadow-lg' : 'bg-amber-500 text-white shadow-[0_0_16px_rgb(245,158,11)]'}`}
             aria-label="Add restock note"
           >
             + Add more
@@ -1659,7 +1757,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   const levitateClass = isLight
     ? 'bg-white/90 shadow-[0_16px_36px_rgba(0,0,0,0.12)] hover:shadow-[0_24px_48px_rgba(0,0,0,0.16)] pos-dashboard-card-motion'
-    : 'pos-dashboard-card-glass border border-white/10 hover:-translate-y-0.5 active:scale-[0.99] pos-dashboard-card-motion';
+    : 'pos-dashboard-card-glass border border-white/10 hover:-translate-y-0.5 pos-dashboard-card-motion';
 
   const textColorClass = isLight ? 'text-black' : 'text-white';
   const cardSubtextClass = isLight ? 'text-black' : 'text-white';
@@ -1808,7 +1906,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     return slice.map((log) => {
       const actorName = log.profileName ?? activeProfileName;
       const isUpdateLog = log.type === 'price-update' || log.type === 'stock-update';
-      const rowClass = `w-full flex items-center justify-between gap-2 min-w-0 text-left ${clickable ? 'cursor-pointer hover:opacity-80 active:scale-[0.99] transition-all' : ''}`;
+      const rowClass = `w-full flex items-center justify-between gap-2 min-w-0 text-left ${clickable ? 'cursor-pointer hover:opacity-80 transition-all' : ''}`;
       const rowContent = (
         <>
           <div className="flex items-center gap-2 min-w-0">
@@ -1851,14 +1949,14 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             setActionLogSearchQuery('');
           }}
           aria-label="Back to Vision Hub"
-          className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+          className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
         </button>
         <button
           type="button"
           onClick={() => setShowActionLogSearch((v) => !v)}
-          className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-all ${iconLiftLight} ${showActionLogSearch ? (isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black') : (isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white')}`}
+          className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${iconLiftLight} ${showActionLogSearch ? (isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black') : (isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white')}`}
           aria-label="Search action logs"
         >
           <Icons.Search size={18} />
@@ -1912,7 +2010,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       <button
         onClick={() => setNamingUnidentified(null)}
         aria-label="Back to action logs"
-        className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+        className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back
       </button>
@@ -1951,7 +2049,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           type="button"
           onClick={handleSaveUnidentifiedItem}
           disabled={!newItemName.trim()}
-          className="w-full py-6 rounded-2xl text-black font-black uppercase tracking-[0.4em] text-[11px] active:scale-95 shadow-2xl transition-all disabled:opacity-40"
+          className="w-full py-6 rounded-2xl text-black font-black uppercase tracking-[0.4em] text-[11px] shadow-2xl transition-all disabled:opacity-40"
           style={{ backgroundColor: accentColor }}
         >
           Add Item & Update Log
@@ -2027,7 +2125,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         <button
           onClick={() => setSelectedItem(null)}
           aria-label="Back to Asset Hub"
-          className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+          className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Asset Hub
         </button>
@@ -2128,7 +2226,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   };
 
   return (
-    <div className={`pos-dashboard-root fixed inset-0 z-200 flex flex-col ${isOpen ? 'pos-dashboard-root--open' : 'pos-dashboard-root--closed'}`}>
+    <div
+      className={`pos-dashboard-root fixed inset-0 z-200 flex flex-col ${isOpen ? 'pos-dashboard-root--open' : 'pos-dashboard-root--closed'}`}
+      onPointerDown={posEdgeSwipe.onPointerDown}
+      onPointerUp={posEdgeSwipe.onPointerUp}
+      onPointerCancel={posEdgeSwipe.onPointerCancel}
+    >
       <div className={`pos-dashboard pos-dashboard-shell relative w-full h-full flex flex-col ${isLight ? 'pos-dashboard-shell--light' : 'pos-dashboard-shell--dark'} ${visionHubFocus ? 'pos-dashboard-shell--hub-focus' : ''} ${(isAddingItem || showAddRequestPopup || showAddRestockPopup || showSuppliersPanel) ? 'pos-dashboard-shell--dimmed' : ''}`}>
 
         {hubCollapsed && (
@@ -2149,13 +2252,23 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             onThemeToggle={() => { updateSettings('themeMode', isLight ? 'dark' : 'light'); setIsThemeAnimating(true); }}
             onSettingsOpen={() => { setIsSettingsOpen(true); setIsSettingsAnimating(true); }}
             onCloseDashboard={() => { onClose(); setIsCloseAnimating(true); }}
+            onBindBackHandler={bindVisionHubBack}
+            onNewInvoice={
+              onNewInvoice
+                ? () => {
+                    onClose();
+                    setIsCloseAnimating(true);
+                    onNewInvoice();
+                  }
+                : undefined
+            }
             isThemeAnimating={isThemeAnimating}
             isSettingsAnimating={isSettingsAnimating}
             isCloseAnimating={isCloseAnimating}
             onThemeAnimationEnd={() => setIsThemeAnimating(false)}
             onSettingsAnimationEnd={() => setIsSettingsAnimating(false)}
             onCloseAnimationEnd={() => setIsCloseAnimating(false)}
-            drawerMode={settings.visionHubDrawerMode ?? 'drag'}
+            drawerMode="click"
             businessName={typeof settings.businessName === 'string' ? settings.businessName : ''}
             businessPhone={typeof settings.businessPhone === 'string' ? settings.businessPhone : ''}
             businessAddress={typeof settings.businessAddress === 'string' ? settings.businessAddress : ''}
@@ -2163,7 +2276,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         )}
 
         {/* MAIN SCROLLABLE CONTENT */}
-        <div className={`pos-dashboard-hub-blur-target flex-1 overflow-y-auto px-6 space-y-10 custom-scrollbar pb-16 scroll-smooth`}>
+        <div className={`pos-dashboard-hub-blur-target flex-1 overflow-y-auto px-6 space-y-10 custom-scrollbar pb-16`}>
           {hubCollapsed ? (
             <div className="grid grid-cols-2 gap-6 pt-4">
               
@@ -2178,7 +2291,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   <div
                     key={idx}
                     onClick={canViewTransactions ? card.onClick : undefined}
-                    className={`p-7 rounded-xl ${levitateClass} ${canViewTransactions ? 'cursor-pointer active:scale-[0.98]' : 'opacity-75'}`}
+                    className={`p-7 rounded-xl ${levitateClass} ${canViewTransactions ? 'cursor-pointer' : 'opacity-75'}`}
                     role={canViewTransactions ? 'button' : undefined}
                     tabIndex={canViewTransactions ? 0 : undefined}
                     onKeyDown={canViewTransactions ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.onClick!(); } } : undefined}
@@ -2199,7 +2312,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
 
               {/* INVENTORY MASTER CARD - TEXTS FITTED MARGINALLY */}
-              <div onClick={() => setInventoryExpanded(true)} className={`col-span-2 aspect-16/10 rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer active:scale-[0.98]`}>
+              <div onClick={() => setInventoryExpanded(true)} className={`col-span-2 aspect-16/10 rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer`}>
                 <img src={WALLPAPER_IMAGE_URLS[3]} alt="" className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-70 dark:opacity-50" />
                 <div className="absolute inset-x-0 bottom-0 h-[65%] bg-linear-to-t from-black/95 via-black/30 to-transparent pointer-events-none" />
                 <div className="absolute inset-0 p-8 flex flex-col justify-between">
@@ -2227,7 +2340,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               {/* TWO CARDS BELOW INVENTORY: Requests + Restocking */}
               <div 
                 onClick={() => setRequestsExpanded(true)} 
-                className={`col-span-1 aspect-[16/10] rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer active:scale-[0.985] p-6 flex flex-col justify-between`}
+                className={`col-span-1 aspect-[16/10] rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer p-6 flex flex-col justify-between`}
               >
                 <div className="flex items-start justify-between">
                   <div className={`p-3.5 rounded-2xl bg-emerald-500/20 text-emerald-500 ${iconLiftLight}`}>
@@ -2246,7 +2359,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
               <div 
                 onClick={() => setRestockExpanded(true)} 
-                className={`col-span-1 aspect-[16/10] rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer active:scale-[0.985] p-6 flex flex-col justify-between`}
+                className={`col-span-1 aspect-[16/10] rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer p-6 flex flex-col justify-between`}
               >
                 <div className="flex items-start justify-between">
                   <div className={`p-3.5 rounded-2xl bg-amber-500/20 text-amber-500 ${iconLiftLight}`}>
@@ -2269,7 +2382,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 tabIndex={0}
                 onClick={() => setActionLogsExpanded(true)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActionLogsExpanded(true); } }}
-                className={`col-span-2 p-10 rounded-2xl ${levitateClass} text-left cursor-pointer active:scale-[0.99] transition-all`}
+                className={`col-span-2 p-10 rounded-2xl ${levitateClass} text-left cursor-pointer transition-all`}
                 aria-label="Open all action logs"
               >
                 <div className="flex justify-between items-center mb-6">
@@ -2300,7 +2413,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button
                 onClick={() => setMonthlyRevExpanded(false)}
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
@@ -2352,7 +2465,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button
                 onClick={() => setDailySalesExpanded(false)}
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
@@ -2404,7 +2517,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button
                 onClick={() => setAvgCustomerExpanded(false)}
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
@@ -2439,7 +2552,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button
                 onClick={() => setInvoicesTodayExpanded(false)}
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
               </button>
@@ -2499,7 +2612,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     <button 
                       onClick={() => { setSelectedItem(null); setInventoryExpanded(false); }} 
                       aria-label="Back to Vision Hub"
-                      className={`flex items-center gap-3 p-3 pr-5 rounded-2xl ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                      className={`flex items-center gap-3 p-3 pr-5 rounded-2xl ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
                     </button>
@@ -2508,12 +2621,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowSuppliersPanel(true)}
-                        className={`px-4 py-2 rounded-full font-black text-[9px] tracking-[0.2em] uppercase active:scale-95 transition-all ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
+                        className={`px-4 py-2 rounded-full font-black text-[9px] tracking-[0.2em] uppercase transition-all ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
                         aria-label="Open suppliers list"
                       >
                         Suppliers list
                       </button>
-                      <button onClick={() => setShowPlusMenu(!showPlusMenu)} className="p-4 rounded-full shadow-2xl text-white active:scale-90 transition-all" style={{ backgroundColor: accentColor }}>
+                      <button onClick={() => setShowPlusMenu(!showPlusMenu)} className="p-4 rounded-full shadow-2xl text-white transition-all" style={{ backgroundColor: accentColor }}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                       </button>
                     </div>
@@ -2564,14 +2677,14 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <button 
                   onClick={() => setRequestsExpanded(false)} 
                   aria-label="Back to Vision Hub"
-                  className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                  className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
                 </button>
 
                 <button
                   onClick={openRequestPopup}
-                  className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 active:scale-95 transition-all ${isLight ? 'bg-emerald-500 text-white shadow-lg' : 'bg-emerald-500 text-white shadow-[0_0_16px_rgb(16,185,129)]'}`}
+                  className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 transition-all ${isLight ? 'bg-emerald-500 text-white shadow-lg' : 'bg-emerald-500 text-white shadow-[0_0_16px_rgb(16,185,129)]'}`}
                   aria-label="Add more request"
                 >
                   + Add more
@@ -2613,7 +2726,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button 
                 onClick={() => setPurchasesExpanded(false)} 
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back
               </button>
@@ -2664,7 +2777,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     <button 
                       onClick={() => { setSelectedItem(null); setInventoryExpanded(false); }} 
                       aria-label="Back to Vision Hub"
-                      className={`flex items-center gap-3 p-3 pr-5 rounded-2xl ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                      className={`flex items-center gap-3 p-3 pr-5 rounded-2xl ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
                     </button>
@@ -2673,7 +2786,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowSuppliersPanel(true)}
-                        className={`px-4 py-2 rounded-full font-black text-[9px] tracking-[0.2em] uppercase active:scale-95 transition-all ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
+                        className={`px-4 py-2 rounded-full font-black text-[9px] tracking-[0.2em] uppercase transition-all ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
                         aria-label="Open suppliers list"
                       >
                         Suppliers list
@@ -2681,7 +2794,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       <button 
                         onClick={() => setShowPlusMenu(!showPlusMenu)}
                         aria-label="Open quick actions menu"
-                        className="p-4 rounded-full shadow-2xl text-white active:scale-90 transition-all" 
+                        className="p-4 rounded-full shadow-2xl text-white transition-all" 
                         style={{ backgroundColor: accentColor }}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -2732,7 +2845,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <button 
                   onClick={() => setRequestsExpanded(false)} 
                   aria-label="Back to Vision Hub"
-                  className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                  className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
                 </button>
@@ -2740,7 +2853,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 {/* GREEN FLOATING + ADD MORE BUTTON */}
                 <button
                   onClick={openRequestPopup}
-                  className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 active:scale-95 transition-all ${isLight ? 'bg-emerald-500 text-white shadow-lg' : 'bg-emerald-500 text-white shadow-[0_0_16px_rgb(16,185,129)]'}`}
+                  className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 transition-all ${isLight ? 'bg-emerald-500 text-white shadow-lg' : 'bg-emerald-500 text-white shadow-[0_0_16px_rgb(16,185,129)]'}`}
                   aria-label="Add more request"
                 >
                   + Add more
@@ -2783,7 +2896,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button 
                 onClick={() => setPurchasesExpanded(false)} 
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase transition-all duration-150`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back
               </button>
@@ -2849,7 +2962,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button 
                 onClick={() => { setShowPlusMenu(false); setIsAddingItem(true); }} 
                 aria-label="Create new inventory entry"
-                className={`w-full flex items-center justify-between p-6 rounded-[18.2px] transition-all duration-150 active:scale-95 ${isLight ? 'bg-zinc-50' : 'bg-white/5'}`}
+                className={`w-full flex items-center justify-between p-6 rounded-[18.2px] transition-all duration-150 ${isLight ? 'bg-zinc-50' : 'bg-white/5'}`}
               >
                 <span className={`font-black ${textColorClass}`}>Add New Asset</span>
                 <span aria-hidden="true">＋</span>
@@ -2858,7 +2971,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button 
                 onClick={() => { setShowPlusMenu(false); setPurchasesExpanded(true); }} 
                 aria-label="View full transaction archive"
-                className={`w-full flex items-center justify-between p-6 rounded-[18.2px] transition-all duration-150 active:scale-95 ${isLight ? 'bg-zinc-50' : 'bg-white/5'}`}
+                className={`w-full flex items-center justify-between p-6 rounded-[18.2px] transition-all duration-150 ${isLight ? 'bg-zinc-50' : 'bg-white/5'}`}
               >
                 <span className={`font-black ${textColorClass}`}>View Transaction Archive</span>
                 <span aria-hidden="true">→</span>
@@ -2921,7 +3034,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       type="button"
                       onClick={() => printRequestNotepad()}
                       disabled={requestLineItems.length === 0 && !newRequesterName.trim()}
-                      className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all disabled:opacity-40 ${
+                      className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} transition-all disabled:opacity-40 ${
                         isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                       }`}
                       aria-label="Print request notepad"
@@ -2931,7 +3044,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   )}
                   <button
                     onClick={closeRequestPopup}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} transition-all ${
                       isLight ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white'
                     }`}
                     aria-label="Close add request"
@@ -2941,7 +3054,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   <button
                     onClick={saveRequest}
                     disabled={!newRequesterName.trim() || requestLineItems.length === 0}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all disabled:opacity-40 ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} transition-all disabled:opacity-40 ${
                       isLight ? 'bg-emerald-500 text-white' : 'bg-emerald-500 text-white shadow-[0_0_14px_rgb(16,185,129)]'
                     }`}
                     aria-label="Save request"
@@ -3000,7 +3113,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowSuppliersPanel(false)}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-all ${iconLiftLight} ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${iconLiftLight} ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
                   aria-label="Close suppliers list"
                 >
                   <Icons.X size={18} />
@@ -3084,7 +3197,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       type="button"
                       onClick={() => printRestockNotepad()}
                       disabled={restockLineItems.length === 0}
-                      className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all disabled:opacity-40 ${
+                      className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} transition-all disabled:opacity-40 ${
                         isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                       }`}
                       aria-label="Print restock notepad"
@@ -3094,7 +3207,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   )}
                   <button
                     onClick={closeRestockPopup}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} transition-all ${
                       isLight ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white'
                     }`}
                     aria-label="Close restock note"
@@ -3104,7 +3217,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   <button
                     onClick={saveRestockNote}
                     disabled={restockLineItems.length === 0}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all disabled:opacity-40 ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} transition-all disabled:opacity-40 ${
                       isLight ? 'bg-emerald-500 text-white' : 'bg-emerald-500 text-white shadow-[0_0_14px_rgb(16,185,129)]'
                     }`}
                     aria-label="Save restock note"
@@ -3183,7 +3296,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                      <input type="text" value={newItemTag} onChange={(e) => setNewItemTag(e.target.value)} placeholder="Tag" aria-label="Item tag for identification" className={formInputClass(isLight, { size: 'lg' })} />
                    </label>
                  </div>
-                 <button onClick={handleAddItem} disabled={!newItemName.trim()} aria-label="Create new asset" className="w-full py-5 rounded-2xl text-black font-black uppercase tracking-[0.35em] text-[11px] active:scale-95 shadow-2xl transition-all disabled:opacity-40" style={{ backgroundColor: accentColor }}>Create Asset</button>
+                 <button onClick={handleAddItem} disabled={!newItemName.trim()} aria-label="Create new asset" className="w-full py-5 rounded-2xl text-black font-black uppercase tracking-[0.35em] text-[11px] shadow-2xl transition-all disabled:opacity-40" style={{ backgroundColor: accentColor }}>Create Asset</button>
                </div>
           </div>
         </div>
@@ -3195,6 +3308,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         updateSettings={updateSettings}
+        isLight={isLight}
+        wallpapers={settings.customWallpapers}
         cartItems={cartItems.length > 0 ? cartItems : latestPurchaseItems}
         runningTotal={cartItems.length > 0 ? (parseFloat(runningTotal) || 0) : latestPurchaseTotal}
         invoiceName={cartItems.length > 0 ? invoiceName : latestPurchaseName}

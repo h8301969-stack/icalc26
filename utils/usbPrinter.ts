@@ -85,18 +85,27 @@ export const getUsbSupport = (): UsbSupportInfo => {
   return { supported: true, secureContext, message: null };
 };
 
-/** Common USB thermal / ESC-POS vendor filters */
+/**
+ * Broad USB printer filters — class 7 (printers) plus common ESC/POS & POS chipsets.
+ * Used only for optional picker; silent auto-scan uses already-authorized devices.
+ */
 const USB_PRINTER_FILTERS: USBDeviceFilter[] = [
-  { classCode: 7 },
-  { vendorId: 0x0416 },
-  { vendorId: 0x0483 },
-  { vendorId: 0x04b8 },
+  { classCode: 7 }, // Printer class (any USB printer)
+  { classCode: 255 }, // Vendor-specific (many POS bridges)
+  { vendorId: 0x0416 }, // Winbond / common modules
+  { vendorId: 0x0483 }, // STMicro
+  { vendorId: 0x04b8 }, // Epson
+  { vendorId: 0x04e8 }, // Samsung
+  { vendorId: 0x03f0 }, // HP
+  { vendorId: 0x04f9 }, // Brother
   { vendorId: 0x154f },
   { vendorId: 0x1659 },
   { vendorId: 0x1fc9 },
   { vendorId: 0x6868 },
   { vendorId: 0x0fe6 },
   { vendorId: 0x0525 },
+  { vendorId: 0x0dd4 }, // Custom
+  { vendorId: 0x0519 }, // Star
 ];
 
 export const usbDeviceLabel = (device: USBDevice): string =>

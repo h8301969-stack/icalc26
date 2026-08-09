@@ -22,6 +22,7 @@ import {
   nativeEnsureBluetoothOn,
   nativeGetBondedOrKnown,
   nativeRequestPrinterDevice,
+  nativeSilentScanDevices,
   nativeWarmupBle,
   nativeWriteChunks,
   type NativeWriteChannel,
@@ -33,7 +34,10 @@ export interface BLEDevice {
   device: BluetoothDevice;
 }
 
-export type PrinterTransport = 'ble' | 'usb';
+/** How the printer is reached — auto-scan order: usb → classic → ble → wifi */
+export type PrinterTransport = 'usb' | 'classic' | 'ble' | 'wifi';
+
+export type PrinterScanPhase = 'usb' | 'classic' | 'bluetooth' | 'wifi' | 'done';
 
 export interface SavedPrinter {
   id: string;
@@ -41,6 +45,9 @@ export interface SavedPrinter {
   paperWidth: '58mm' | '25mm';
   lastConnected: number;
   transport?: PrinterTransport;
+  /** Wi‑Fi / network printers */
+  host?: string;
+  port?: number;
 }
 
 export type PrinterDeviceStatus = 'connected' | 'available' | 'saved';
@@ -130,17 +137,17 @@ export const normalizeBluetoothError = (err: unknown): Error => {
     msg.includes('retrieve services')
   ) {
     return new Error(
-      'Printer found but no BLE print service is available. Use a BLE thermal printer (not Bluetooth Classic-only), turn it on, disconnect it from other phones, then tap Scan & Connect again.'
+      'Printer found but no print service is available. Leave the printer on, disconnect it from other phones, then Scan again. USB and network printers are also supported.'
     );
   }
   if (msg.includes('no write characteristic') || msg.includes('write channel')) {
     return new Error(
-      'Connected to the printer but could not find a print channel. Try Scan & Connect again with the printer awake and unpaired from other devices.'
+      'Connected but could not open a print channel. Keep the printer awake and try Scan again, or use USB.'
     );
   }
   if (msg.includes('gatt') || msg.includes('disconnected') || msg.includes('connection')) {
     return new Error(
-      'Bluetooth connection failed. Keep the printer powered on and within 1–2 meters, then try again.'
+      'Connection failed. Keep the printer powered on nearby (or plug in USB), then try again.'
     );
   }
   return err;
@@ -153,27 +160,28 @@ export function getBluetoothSupport(): BluetoothSupportInfo {
       supported: true,
       secureContext: true,
       message:
-        'Native Bluetooth ready. Power on your mini thermal printer (BLE), tap Search, pick it from the list, then print. Classic-only Bluetooth printers are not supported.',
+        'Auto-scan: USB → paired Bluetooth → BLE → Wi‑Fi. Connects to the first printer found, then stops.',
     };
   }
 
   const secureContext = typeof window !== 'undefined' && window.isSecureContext;
   const hasApi = typeof navigator !== 'undefined' && !!navigator.bluetooth;
+  const hasUsb = getUsbSupport().supported;
 
-  if (!hasApi) {
+  if (!hasApi && !hasUsb) {
     if (!secureContext) {
       return {
         supported: false,
         secureContext: false,
         message:
-          'Bluetooth requires a secure context. Use HTTPS or open via http://localhost / http://127.0.0.1 (not plain HTTP on a network IP).',
+          'Printers require a secure context. Use HTTPS or http://localhost / http://127.0.0.1.',
       };
     }
     return {
       supported: false,
       secureContext: true,
       message:
-        'Web Bluetooth is not available in this browser. Download the Android APK for native BLE printing, or use Chrome/Edge.',
+        'No printer API in this browser. Use Chrome/Edge for USB + Bluetooth, or the Android APK.',
     };
   }
 
@@ -184,9 +192,25 @@ export function getBluetoothSupport(): BluetoothSupportInfo {
     supported: true,
     secureContext,
     message: isWindows
-      ? 'On Windows, pair the printer in Bluetooth settings first, then use Scan & Connect. The printer must support BLE (not Bluetooth Classic only).'
-      : null,
+      ? 'Auto-scan: USB → paired Bluetooth → BLE → Wi‑Fi. On Windows, pair Bluetooth printers in system settings first when possible.'
+      : 'Auto-scan: USB → paired Bluetooth → BLE → Wi‑Fi. Connects to the first printer found.',
   };
+}
+
+/** True if any transport path can run (USB and/or Bluetooth). */
+export function getPrinterSupport(): BluetoothSupportInfo {
+  const bt = getBluetoothSupport();
+  const usb = getUsbSupport();
+  if (bt.supported || usb.supported) {
+    return {
+      supported: true,
+      secureContext: bt.secureContext || usb.secureContext,
+      message:
+        bt.message ||
+        'Auto-scan: USB → paired Bluetooth → BLE → Wi‑Fi. Connects to the first printer found.',
+    };
+  }
+  return bt;
 }
 
 export class BLEPrinter {
@@ -200,12 +224,17 @@ export class BLEPrinter {
   private connectionListeners = new Set<() => void>();
   private disconnectHandler: ((event: Event) => void) | null = null;
   private isBluetoothBusy = false;
+  private wifiHost: string | null = null;
+  private wifiPort = 9100;
+  private wifiConnected = false;
 
   public paperWidth: PaperWidth = storage.get<PaperWidth>(DEFAULT_PAPER_WIDTH_KEY, '58mm');
   public transport: PrinterTransport = storage.get<PrinterTransport>(PRINTER_TRANSPORT_KEY, 'ble');
 
   get isConnected(): boolean {
-    return this.transport === 'usb' ? this.usb.isConnected : this.bleConnected;
+    if (this.transport === 'usb') return this.usb.isConnected;
+    if (this.transport === 'wifi') return this.wifiConnected && !!this.wifiHost;
+    return this.bleConnected;
   }
 
   private get usesNativeBle(): boolean {
@@ -235,12 +264,21 @@ export class BLEPrinter {
 
   getConnectedDeviceId(): string | null {
     if (this.transport === 'usb') return this.usb.getConnectedDeviceId();
+    if (this.transport === 'wifi' && this.wifiHost) {
+      return `wifi:${this.wifiHost}:${this.wifiPort}`;
+    }
     if (this.usesNativeBle) return this.nativeChannel?.deviceId ?? null;
     return this.device?.id ?? null;
   }
 
   getConnectedDeviceName(): string | null {
     if (this.transport === 'usb') return this.usb.getConnectedDeviceName();
+    if (this.transport === 'wifi' && this.wifiHost) {
+      const saved = this.getSavedPrinters().find(
+        (p) => p.transport === 'wifi' && p.host === this.wifiHost
+      );
+      return saved?.name || `Wi‑Fi ${this.wifiHost}`;
+    }
     if (this.usesNativeBle) return this.nativeDeviceName ?? this.nativeChannel?.deviceName ?? null;
     return this.device?.name ?? null;
   }
@@ -625,6 +663,21 @@ export class BLEPrinter {
         };
       }
 
+      if (entry.transport === 'wifi') {
+        const isConnected =
+          this.transport === 'wifi' &&
+          this.wifiConnected &&
+          !!entry.host &&
+          entry.host === this.wifiHost;
+        return {
+          saved: entry,
+          device: null,
+          isConnected,
+          isAuthorized: !!entry.host,
+          status: (isConnected ? 'connected' : entry.lastConnected ? 'available' : 'saved') as PrinterDeviceStatus,
+        };
+      }
+
       if (this.usesNativeBle) {
         const known = nativeKnown.some((d) => d.deviceId === entry.id);
         const isConnected =
@@ -660,9 +713,265 @@ export class BLEPrinter {
     });
   }
 
-  async scanAndConnect(): Promise<string> {
+  /**
+   * Sequential auto-connect (behind the scenes):
+   * 1) USB (authorized)
+   * 2) Classic / already-paired Bluetooth
+   * 3) BLE discovery
+   * 4) Wi‑Fi (saved network printers)
+   * Connects to the first success and stops.
+   * @param options.silent — skip any UI pickers (app entry / background).
+   */
+  async scanAndConnect(
+    onPhase?: (phase: PrinterScanPhase) => void,
+    options?: { silent?: boolean }
+  ): Promise<string> {
+    const silent = options?.silent === true;
+    const phases: PrinterScanPhase[] = ['usb', 'classic', 'bluetooth', 'wifi'];
+    const errors: string[] = [];
+
+    for (const phase of phases) {
+      onPhase?.(phase);
+      try {
+        if (phase === 'usb') {
+          const name = await this.tryConnectUsbSilent();
+          if (name) {
+            onPhase?.('done');
+            return name;
+          }
+          continue;
+        }
+        if (phase === 'classic') {
+          const name = await this.tryConnectClassicBonded();
+          if (name) {
+            onPhase?.('done');
+            return name;
+          }
+          continue;
+        }
+        if (phase === 'bluetooth') {
+          const name = await this.tryConnectBluetoothDiscover({ silent });
+          if (name) {
+            onPhase?.('done');
+            return name;
+          }
+          continue;
+        }
+        if (phase === 'wifi') {
+          const name = await this.tryConnectWifiSaved();
+          if (name) {
+            onPhase?.('done');
+            return name;
+          }
+        }
+      } catch (err: unknown) {
+        if (isUserCancelled(err)) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push(`${phase}: ${message}`);
+        logPrinterFail(`scan_phase_${phase}`, err, { phase, silent });
+      }
+    }
+
+    onPhase?.('done');
+    const detail = errors.length ? ` (${errors[errors.length - 1]})` : '';
+    throw new Error(
+      `No printer found via USB → Bluetooth → Wi‑Fi.${detail} Power on a printer, plug in USB, or pair Bluetooth, then try again.`
+    );
+  }
+
+  /** Phase 1 — USB: already-authorized devices only (no picker). */
+  private async tryConnectUsbSilent(): Promise<string | null> {
+    const support = getUsbSupport();
+    if (!support.supported) return null;
+
+    const authorized = await this.usb.getAuthorizedDevices();
+    for (const device of authorized) {
+      try {
+        this.setTransport('usb');
+        const id = usbDeviceId(device);
+        const name = await this.usb.connectToId(id);
+        this.saveUsbDevice(name, id);
+        this.notifyConnectionChange();
+        return name;
+      } catch {
+        // try next USB device
+      }
+    }
+    return null;
+  }
+
+  /** Phase 2 — Classic / bonded: system-paired or previously authorized BT. */
+  private async tryConnectClassicBonded(): Promise<string | null> {
+    const support = getBluetoothSupport();
+    if (!support.supported) return null;
+
+    if (this.usesNativeBle) {
+      await nativeWarmupBle();
+      const bonded = await nativeGetBondedOrKnown(
+        this.getSavedPrinters()
+          .filter((p) => p.transport !== 'usb' && p.transport !== 'wifi')
+          .map((p) => p.id)
+      );
+      for (const d of bonded) {
+        try {
+          if (this.transport !== 'ble' && this.transport !== 'classic') {
+            this.setTransport('ble');
+          }
+          this.transport = 'classic';
+          storage.set(PRINTER_TRANSPORT_KEY, 'ble');
+          const name = d.name || d.deviceId || 'Bluetooth Printer';
+          return await this.connectNativeBle(d.deviceId, name);
+        } catch {
+          // try next bonded device
+        }
+      }
+      return null;
+    }
+
+    // Web: previously granted BLE devices (often system-paired on desktop)
     try {
-      // Prefer BLE without tearing down an existing native session first
+      this.assertBluetoothAvailable();
+      const authorized = await this.getAuthorizedDevices();
+      for (const device of authorized) {
+        try {
+          this.transport = 'classic';
+          storage.set(PRINTER_TRANSPORT_KEY, 'ble');
+          return await this.connectGATT(device);
+        } catch {
+          // try next
+        }
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  /** Phase 3 — active BLE discovery (silent scan on native; picker only when not silent). */
+  private async tryConnectBluetoothDiscover(opts?: { silent?: boolean }): Promise<string | null> {
+    const support = getBluetoothSupport();
+    if (!support.supported) return null;
+    const silent = opts?.silent === true;
+
+    if (this.usesNativeBle) {
+      await nativeWarmupBle();
+      // Silent LE scan first — connect to first device that accepts GATT print channel
+      const scanned = await nativeSilentScanDevices(1200);
+      const ranked = [...scanned].sort((a, b) => {
+        const score = (n?: string) => {
+          const s = (n || '').toLowerCase();
+          if (/print|pos|thermal|receipt|rpp|mtp|inner|xp-|gprinter|blue|bt/i.test(s)) return 0;
+          if (s.length > 0) return 1;
+          return 2;
+        };
+        return score(a.name) - score(b.name);
+      });
+
+      for (const d of ranked) {
+        try {
+          this.transport = 'ble';
+          storage.set(PRINTER_TRANSPORT_KEY, 'ble');
+          const name = d.name || d.deviceId || 'Bluetooth Printer';
+          return await this.connectNativeBle(d.deviceId, name);
+        } catch {
+          // not a usable printer — continue sequence
+        }
+      }
+
+      if (silent) return null;
+
+      // Fall back to system picker only when user initiated Scan
+      try {
+        const device = await nativeRequestPrinterDevice();
+        this.transport = 'ble';
+        storage.set(PRINTER_TRANSPORT_KEY, 'ble');
+        const name = device.name || device.deviceId || 'Bluetooth Printer';
+        return await this.connectNativeBle(device.deviceId, name);
+      } catch (err) {
+        if (isUserCancelled(err)) throw err;
+        return null;
+      }
+    }
+
+    // Web Bluetooth — never open picker during silent/background entry
+    if (silent) return null;
+
+    try {
+      this.assertBluetoothAvailable();
+      this.transport = 'ble';
+      storage.set(PRINTER_TRANSPORT_KEY, 'ble');
+      const device = await this.requestPrinterDevice();
+      return await this.connectGATT(device);
+    } catch (err) {
+      if (isUserCancelled(err)) throw err;
+      return null;
+    }
+  }
+
+  /** Phase 4 — Wi‑Fi / network printers previously saved (host:port raw JetDirect-style). */
+  private async tryConnectWifiSaved(): Promise<string | null> {
+    const wifiPrinters = this.getSavedPrinters()
+      .filter((p) => p.transport === 'wifi' && p.host)
+      .sort((a, b) => b.lastConnected - a.lastConnected);
+
+    for (const p of wifiPrinters) {
+      try {
+        const ok = await this.probeWifiPrinter(p.host!, p.port ?? 9100);
+        if (!ok) continue;
+        this.transport = 'wifi';
+        storage.set(PRINTER_TRANSPORT_KEY, 'wifi');
+        // Mark connected via saved metadata (raw TCP write happens at print time when available)
+        this.saveWifiDevice(p.name, p.id, p.host!, p.port ?? 9100);
+        this.wifiHost = p.host!;
+        this.wifiPort = p.port ?? 9100;
+        this.wifiConnected = true;
+        this.notifyConnectionChange();
+        return p.name;
+      } catch {
+        // try next
+      }
+    }
+    return null;
+  }
+
+  private async probeWifiPrinter(host: string, port: number): Promise<boolean> {
+    // Browsers cannot open raw TCP; we only verify the host is reachable via HTTP-ish probe.
+    // Network ESC/POS often still accepts a TCP 9100 client from native builds later.
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 900);
+    try {
+      await fetch(`http://${host}:${port}/`, {
+        method: 'GET',
+        mode: 'no-cors',
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+      return true;
+    } catch {
+      // no-cors often "succeeds" as opaque; abort = unreachable
+      return false;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
+  private saveWifiDevice(name: string, id: string, host: string, port: number) {
+    const saved = this.getSavedPrinters().filter((p) => p.id !== id);
+    saved.unshift({
+      id,
+      name,
+      paperWidth: this.paperWidth,
+      lastConnected: Date.now(),
+      transport: 'wifi',
+      host,
+      port,
+    });
+    storage.set(PAIRED_PRINTERS_KEY, saved.slice(0, 12));
+  }
+
+  /** Legacy BLE-only scan (picker) — used when a specific BLE path is needed. */
+  async scanAndConnectBleOnly(): Promise<string> {
+    try {
       if (this.transport !== 'ble') {
         this.setTransport('ble');
       } else {
@@ -674,7 +983,7 @@ export class BLEPrinter {
       if (this.usesNativeBle) {
         await nativeWarmupBle();
         const device = await nativeRequestPrinterDevice();
-        const name = device.name || device.deviceId || 'Thermal Printer';
+        const name = device.name || device.deviceId || 'Bluetooth Printer';
         return await this.connectNativeBle(device.deviceId, name);
       }
 
@@ -863,6 +1172,8 @@ export class BLEPrinter {
     this.server = null;
     this.characteristic = null;
     this.bleConnected = false;
+    this.wifiConnected = false;
+    this.wifiHost = null;
     this.usb.disconnect();
     this.notifyConnectionChange();
   }
@@ -1125,7 +1436,12 @@ export class BLEPrinter {
     runningTotal: number,
     currency: string = '¢',
     attendantName?: string,
-    layoutMode: ReceiptLayoutMode = 'full'
+    layoutMode: ReceiptLayoutMode = 'full',
+    business?: {
+      businessName?: string;
+      businessPhone?: string;
+      businessAddress?: string;
+    }
   ): Promise<boolean> {
     const validation = validateReceiptPrint(
       invoiceName,
@@ -1137,6 +1453,7 @@ export class BLEPrinter {
     );
     logReceiptPrint('validate', {
       mode: 'raster_image',
+      layoutMode,
       invoiceName,
       paperWidth: this.paperWidth,
       itemCount: items.length,
@@ -1156,17 +1473,13 @@ export class BLEPrinter {
 
     const spec = getReceiptSpec(this.paperWidth);
     const width = spec.widthPx;
-    const itemHeight = spec.itemLineHeightPx;
-    const headerHeight = attendantName ? spec.headerHeightPx : spec.headerHeightPx - 12;
-    const footerHeight = spec.footerHeightPx;
-    const itemRows = layoutMode === 'full' ? items.length : 0;
-    const height = headerHeight + itemRows * itemHeight + footerHeight;
 
     logReceiptPrint('start', {
       mode: 'raster_image',
+      layoutMode,
       invoiceName,
       paperWidth: this.paperWidth,
-      canvas: { width, height },
+      canvas: { width },
       itemCount: items.length,
       total: runningTotal,
       warnings: validation.warnings,
@@ -1182,6 +1495,9 @@ export class BLEPrinter {
       attendantName,
       layoutMode,
       spec,
+      businessName: business?.businessName,
+      businessPhone: business?.businessPhone,
+      businessAddress: business?.businessAddress,
     });
 
     const printWidth = canvas.width;
@@ -1235,10 +1551,10 @@ export class BLEPrinter {
     if (ok) {
       logReceiptPrint('success', {
         mode: 'raster_image',
+        layoutMode,
         invoiceName,
         paperWidth: this.paperWidth,
-        canvas: { width, height },
-        commandBytes: width / 8 * height + 12,
+        itemCount: items.length,
       });
     } else {
       logReceiptPrint('failure', {

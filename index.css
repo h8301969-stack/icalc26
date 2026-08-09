@@ -7,29 +7,32 @@
   --font-num: "Montserrat", Candara;
   --font-brand: "Montserrat", Candara;
   --font-mono: "Montserrat", Candara;
+
+  /* ── Fluid Interface motion tokens — matched to Settings close/Save/Discard ── */
+  --fluid-spring: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --fluid-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --fluid-in-ms: 280ms;
+  --fluid-out-ms: 280ms;
+  --fluid-micro-ms: 280ms;
   
-  --animate-ripple: ripple 0.6s linear;
-  --animate-fade-in: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  --animate-insight-pop: insight-pop 0.42s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  --animate-fade-in: fluid-pop-in var(--fluid-in-ms) var(--fluid-spring) both;
+  --animate-insight-pop: fluid-pop-in var(--fluid-in-ms) var(--fluid-spring) both;
   --animate-plus-trigger: plus-trigger 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   --animate-live-breathe: live-breathe 3.5s ease-in-out infinite;
   --animate-live-spring: live-spring 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  @keyframes ripple {
-    0% { transform: scale(0); opacity: 0.4; }
-    100% { transform: scale(4); opacity: 0; }
-  }
+  /* Aliases → unified fluid-pop (kept for Tailwind theme consumers) */
   @keyframes fade-in {
-    from { opacity: 0; transform: translateY(10px) scale(0.98); filter: blur(4px); }
-    to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+    from { opacity: 0; transform: scale(0.92); filter: blur(4px); }
+    to { opacity: 1; transform: scale(1); filter: blur(0); }
   }
   @keyframes insight-pop {
-    from { opacity: 0; transform: scale(0.96) translate3d(0, 32px, 0); }
-    to { opacity: 1; transform: scale(1) translate3d(0, 0, 0); }
+    from { opacity: 0; transform: scale(0.92); filter: blur(4px); }
+    to { opacity: 1; transform: scale(1); filter: blur(0); }
   }
   @keyframes insight-pop-out {
-    from { opacity: 1; transform: scale(1) translate3d(0, 0, 0); filter: blur(0); }
-    to { opacity: 0; transform: scale(0.96) translate3d(0, 36px, 0); filter: blur(3px); }
+    from { opacity: 1; transform: scale(1); filter: blur(0); }
+    to { opacity: 0; transform: scale(0.92); filter: blur(4px); }
   }
   @keyframes plus-trigger {
     0% { transform: scale(1) rotate(0deg); }
@@ -65,13 +68,471 @@
   }
 }
 
-.auth-spinner {
+/* ═══════════════════════════════════════════════════════════════════
+   Fluid pop — single enter/exit language for the whole app
+   scale + fade + blur, spring ease (matches Settings close → Save)
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  /* Exact same clock as Settings X ↔ Save/Discard (280ms spring) */
+  --fluid-spring: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --fluid-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --fluid-in-ms: 280ms;
+  --fluid-out-ms: 280ms;
+  --fluid-micro-ms: 280ms;
+  --fluid-blur: 4px;
+  --fluid-scale-from: 0.92;
+  --fluid-scale-chip: 0.72;
+  /* Navigation / chrome micro-interactions (slightly under pop for snappy 120Hz) */
+  --fluid-nav-ms: 180ms;
+}
+
+@keyframes fluid-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--fluid-scale-from));
+    filter: blur(var(--fluid-blur));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes fluid-pop-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(var(--fluid-scale-from));
+    filter: blur(var(--fluid-blur));
+  }
+}
+
+/* Sheet variant: slight rise while springing (modals / switcher stage) */
+@keyframes fluid-sheet-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translate3d(0, 18px, 0);
+    filter: blur(var(--fluid-blur));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+}
+
+@keyframes fluid-sheet-out {
+  from {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.94) translate3d(0, 14px, 0);
+    filter: blur(var(--fluid-blur));
+  }
+}
+
+/* Chip / header action spring (close → Save/Discard) */
+@keyframes fluid-chip-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--fluid-scale-chip)) translateX(10px);
+    filter: blur(var(--fluid-blur));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateX(0);
+    filter: blur(0);
+  }
+}
+
+.fluid-pop-in {
+  animation: fluid-pop-in var(--fluid-in-ms) var(--fluid-spring) both;
+}
+
+.fluid-pop-out {
+  animation: fluid-pop-out var(--fluid-out-ms) var(--fluid-ease) both;
+}
+
+/* Idle unlock exit — snappier so calculator feels instant */
+.auth-screen.fluid-pop-out,
+.unlock-screen.fluid-pop-out {
+  animation-duration: 160ms;
+}
+
+/* Trio press — same spring language as Settings Save/Discard / Vision Hub actions
+   Installed globally via utils/trioPress.ts on every clickable control.
+   --trio-press-scale: mid-press size (1 = no shrink). Blur always full --fluid-blur (never reduced).
+   filter on the control blurs the whole paint layer including text / icons / children. */
+@keyframes trio-press {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+    -webkit-filter: blur(0);
+  }
+  45% {
+    opacity: 0.88;
+    transform: scale(var(--trio-press-scale, var(--fluid-scale-chip, 0.72)));
+    /* Full blur always — includes labels, icons, nested text */
+    filter: blur(var(--fluid-blur, 4px));
+    -webkit-filter: blur(var(--fluid-blur, 4px));
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+    -webkit-filter: blur(0);
+  }
+}
+
+.animate-trio-press,
+.trio-press-global button.animate-trio-press,
+.trio-press-global [role="button"].animate-trio-press {
+  /* Default chip / icon — subtle shrink (not a hard squash) */
+  --trio-press-scale: 0.9;
+  animation: trio-press var(--fluid-in-ms, 280ms) var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)) both;
+  transform-origin: center;
+  /* One layer so filter blurs text + chrome together (no sharp child layers) */
+  isolation: isolate;
+  will-change: transform, filter, opacity;
+}
+
+/* Keep text/icons in the same paint as the control so parent filter blurs them */
+.animate-trio-press {
+  /* filter applies to the entire element subtree (labels, icons, nested copy) */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+.animate-trio-press * {
+  -webkit-font-smoothing: antialiased;
+  /* Don't create unfiltered stacking contexts that stay sharp during press */
+  filter: none !important;
+  -webkit-filter: none !important;
+}
+
+/* Medium controls / calc keys: mild scale only (blur unchanged) */
+.animate-trio-press.animate-trio-press--soft {
+  --trio-press-scale: 0.94;
+}
+
+/* Large tiles (non-dashboard): very slight scale */
+.animate-trio-press.animate-trio-press--soft-lg {
+  --trio-press-scale: 0.96;
+}
+
+/* POS dashboard cards: only a little press scale (not a big shrink) */
+.animate-trio-press.animate-trio-press--dash-card {
+  --trio-press-scale: 0.96;
+}
+
+/* Global clickable baseline — compositor-friendly, no laggy active:scale fights */
+.trio-press-global button:not([data-no-trio-press]),
+.trio-press-global a[href]:not([data-no-trio-press]),
+.trio-press-global [role="button"]:not([data-no-trio-press]),
+.trio-press-global [role="tab"]:not([data-no-trio-press]),
+.trio-press-global [role="menuitem"]:not([data-no-trio-press]),
+.trio-press-global [role="option"]:not([data-no-trio-press]),
+.trio-press-global [role="switch"]:not([data-no-trio-press]),
+.trio-press-global .trio-pressable,
+.trio-press-global .vision-hub-trio-pressable,
+.trio-press-global .pos-dashboard-icon-lift,
+.trio-press-global .vision-hub-click-row,
+.trio-press-global .calc-key,
+.trio-press-global .cursor-pointer:not(.morph-scrim):not(.vision-hub-backdrop) {
+  touch-action: manipulation;
+  transform-origin: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+
+/* Full-screen calculator refresh on + new invoice */
+@keyframes trio-screen {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  40% {
+    opacity: 0.75;
+    transform: scale(0.94);
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.animate-trio-screen {
+  animation: trio-screen var(--fluid-in-ms, 280ms) var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)) both;
+}
+
+/* +new lives outside the trio↔date morph so it stays clickable always */
+.vision-hub-new-btn--standalone {
+  position: relative;
+  z-index: 30;
+  pointer-events: auto !important;
+  touch-action: manipulation;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.vision-hub-new-btn--standalone:disabled {
+  opacity: 1;
+  pointer-events: auto !important;
+  cursor: pointer;
+}
+
+.fluid-sheet-in {
+  animation: fluid-sheet-in var(--fluid-in-ms) var(--fluid-spring) both;
+}
+
+.fluid-sheet-out {
+  animation: fluid-sheet-out var(--fluid-out-ms) var(--fluid-ease) both;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Unified loading system (all busy states)
+   Blue/white orbit + soft scale breathe — same language app-wide
+   ═══════════════════════════════════════════════════════════════════ */
+@keyframes app-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes app-loading-breathe {
+  0%, 100% { transform: scale(0.94); opacity: 0.82; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+
+@keyframes app-loading-orb-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 10px rgba(59, 130, 246, 0.45),
+      0 0 22px rgba(255, 255, 255, 0.2);
+  }
+  50% {
+    box-shadow:
+      0 0 18px rgba(59, 130, 246, 0.85),
+      0 0 36px rgba(255, 255, 255, 0.45);
+  }
+}
+
+@keyframes app-loading-bar-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes app-loading-bar-timed {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
+@keyframes update-neon-bounce {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    color: #60a5fa;
+    text-shadow:
+      0 0 6px rgba(96, 165, 250, 0.95),
+      0 0 14px rgba(59, 130, 246, 0.75),
+      0 0 24px rgba(255, 255, 255, 0.35);
+  }
+  50% {
+    transform: translateY(-5px) scale(1.08);
+    color: #ffffff;
+    text-shadow:
+      0 0 8px rgba(255, 255, 255, 1),
+      0 0 18px rgba(96, 165, 250, 0.95),
+      0 0 32px rgba(59, 130, 246, 0.85),
+      0 0 48px rgba(147, 197, 253, 0.55);
+  }
+}
+
+.app-loading-spinner {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 1.125rem;
   height: 1.125rem;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: auth-spin 0.65s linear infinite;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.app-loading-spinner--sm {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.app-loading-spinner--md {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.app-loading-spinner--lg {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.app-loading-spinner__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  border-top-color: #3b82f6;
+  border-right-color: rgba(255, 255, 255, 0.92);
+  border-bottom-color: rgba(59, 130, 246, 0.25);
+  animation: app-loading-spin 0.7s linear infinite;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.45);
+}
+
+.app-loading-spinner__core {
+  width: 28%;
+  height: 28%;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 35%, #fff 0%, #93c5fd 45%, #3b82f6 100%);
+  animation: app-loading-breathe 1.05s var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)) infinite;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.65);
+}
+
+/* Legacy class → unified spinner visuals */
+.auth-spinner {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  animation: none;
+  vertical-align: middle;
+}
+
+.auth-spinner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  border-top-color: #3b82f6;
+  border-right-color: rgba(255, 255, 255, 0.92);
+  border-bottom-color: rgba(59, 130, 246, 0.25);
+  animation: app-loading-spin 0.7s linear infinite;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.45);
+}
+
+.auth-spinner::after {
+  content: '';
+  width: 28%;
+  height: 28%;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 35%, #fff 0%, #93c5fd 45%, #3b82f6 100%);
+  animation: app-loading-breathe 1.05s var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)) infinite;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.65);
+}
+
+.app-loading-orb {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  display: block;
+}
+
+.app-loading-orb__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 2px solid transparent;
+}
+
+.app-loading-orb__ring--outer {
+  border-top-color: #3b82f6;
+  border-right-color: rgba(255, 255, 255, 0.75);
+  animation: app-loading-spin 1.05s linear infinite;
+}
+
+.app-loading-orb__ring--inner {
+  inset: 12px;
+  border-bottom-color: #60a5fa;
+  border-left-color: rgba(255, 255, 255, 0.55);
+  animation: app-loading-spin 0.75s linear infinite reverse;
+}
+
+.app-loading-orb__core {
+  position: absolute;
+  inset: 26px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, #fff 0%, #93c5fd 40%, #2563eb 100%);
+  animation: app-loading-breathe 1.05s var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)) infinite,
+    app-loading-orb-pulse 1.4s ease-in-out infinite;
+}
+
+.app-loading-status {
+  animation: app-loading-breathe 1.6s ease-in-out infinite;
+}
+
+.app-loading-bar {
+  height: 4px;
+  width: 100%;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.app-loading-bar__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    #3b82f6 35%,
+    rgba(255, 255, 255, 0.95) 50%,
+    #3b82f6 65%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+}
+
+.app-loading-bar__fill--indeterminate {
+  width: 100%;
+  animation: app-loading-bar-shimmer 1s linear infinite;
+}
+
+.app-loading-bar__fill--timed {
+  width: 0%;
+  animation: app-loading-bar-timed 1s linear forwards;
+  background: linear-gradient(90deg, #3b82f6 0%, rgba(147, 197, 253, 0.95) 50%, #fff 100%);
+  background-size: 100% 100%;
+}
+
+/* Settings: installed app — neon “update available” */
+.update-available-neon {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  animation: update-neon-bounce 1.1s var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)) infinite;
+  will-change: transform, text-shadow, color;
+}
+
+.no-update-available {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.55;
 }
 
 @keyframes auth-ring-orbit {
@@ -108,211 +569,173 @@
 @keyframes auth-card-enter {
   from {
     opacity: 0;
-    transform: translateY(28px) scale(0.94);
+    transform: scale(var(--fluid-scale-from));
+    filter: blur(var(--fluid-blur));
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: scale(1);
+    filter: blur(0);
   }
 }
 
 .animate-auth-card-enter {
-  animation: auth-card-enter 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fluid-pop-in var(--fluid-in-ms) var(--fluid-spring) both;
 }
 
 /* ── Shared morph / crossfade motion (auth, invoice switcher, panels) ── */
 .morph-scrim {
-  transition: opacity 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    opacity var(--fluid-out-ms) var(--fluid-ease),
+    filter var(--fluid-out-ms) var(--fluid-ease);
 }
 
 .morph-scrim--in {
   opacity: 1;
+  filter: blur(0);
 }
 
 .morph-scrim--out {
   opacity: 0;
+  filter: blur(2px);
 }
 
 .morph-panel {
   transition:
-    opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
-    filter 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--fluid-in-ms) var(--fluid-spring),
+    transform var(--fluid-in-ms) var(--fluid-spring),
+    filter var(--fluid-in-ms) var(--fluid-spring);
   will-change: opacity, transform, filter;
 }
 
 .morph-panel--in {
   opacity: 1;
-  transform: scale(1) translateY(0);
+  transform: scale(1);
   filter: blur(0);
 }
 
 .morph-panel--out {
   opacity: 0;
-  transform: scale(0.96) translateY(12px);
-  filter: blur(4px);
+  transform: scale(var(--fluid-scale-from));
+  filter: blur(var(--fluid-blur));
   pointer-events: none;
 }
 
-/* Invoice switcher — enter/exit (insight-pop motion) */
+/* Invoice switcher — fluid-pop sheet */
 .invoice-switcher-sheet {
   will-change: opacity, transform, filter;
+}
+
+/* Fluid Interface carousel — GPU-friendly continuous cards (spring-driven, no CSS ease lag) */
+.invoice-switcher-fluid {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.invoice-switcher-fluid-card {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0);
+  will-change: transform, opacity, filter;
 }
 
 /* Static resting pose when closed (no anim on first mount) */
 .invoice-switcher-sheet--out {
   opacity: 0;
-  transform: scale(0.96) translate3d(0, 40px, 0);
-  filter: blur(4px);
+  transform: scale(0.94) translate3d(0, 18px, 0);
+  filter: blur(var(--fluid-blur));
   pointer-events: none;
 }
 
 .invoice-switcher-sheet--in {
-  animation: invoice-switcher-enter 0.22s cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: fluid-sheet-in var(--fluid-in-ms) var(--fluid-spring) both;
 }
 
 /* Only applied while closing after a successful enter */
 .invoice-switcher-sheet--exiting {
-  animation: invoice-switcher-exit 0.18s cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: fluid-sheet-out var(--fluid-out-ms) var(--fluid-ease) both;
   pointer-events: none;
 }
 
-@keyframes invoice-switcher-enter {
-  from {
-    opacity: 0;
-    transform: scale(0.97) translate3d(0, 28px, 0);
-    filter: blur(3px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translate3d(0, 0, 0);
-    filter: blur(0);
-  }
-}
-
-@keyframes invoice-switcher-exit {
-  from {
-    opacity: 1;
-    transform: scale(1) translate3d(0, 0, 0);
-    filter: blur(0);
-  }
-  to {
-    opacity: 0;
-    transform: scale(0.97) translate3d(0, 24px, 0);
-    filter: blur(3px);
-  }
-}
-
-/* Grid / list: same motion, slightly larger travel */
+/* List browse: same fluid-pop language */
 .invoice-switcher-sheet--browse.invoice-switcher-sheet--out {
-  transform: scale(0.97) translate3d(0, 12%, 0);
-  filter: blur(5px);
+  transform: scale(0.94) translate3d(0, 18px, 0);
+  filter: blur(var(--fluid-blur));
 }
 .invoice-switcher-sheet--browse.invoice-switcher-sheet--in {
-  animation-name: invoice-switcher-browse-enter;
+  animation-name: fluid-sheet-in;
 }
 .invoice-switcher-sheet--browse.invoice-switcher-sheet--exiting {
-  animation-name: invoice-switcher-browse-exit;
-}
-
-@keyframes invoice-switcher-browse-enter {
-  from {
-    opacity: 0;
-    transform: scale(0.97) translate3d(0, 12%, 0);
-    filter: blur(5px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translate3d(0, 0, 0);
-    filter: blur(0);
-  }
-}
-
-@keyframes invoice-switcher-browse-exit {
-  from {
-    opacity: 1;
-    transform: scale(1) translate3d(0, 0, 0);
-    filter: blur(0);
-  }
-  to {
-    opacity: 0;
-    transform: scale(0.97) translate3d(0, 10%, 0);
-    filter: blur(5px);
-  }
+  animation-name: fluid-sheet-out;
 }
 
 .invoice-switcher-scrim {
-  transition: opacity 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  transition:
+    opacity var(--fluid-out-ms) var(--fluid-ease),
+    filter var(--fluid-out-ms) var(--fluid-ease);
 }
 
 .invoice-switcher-scrim--in {
   opacity: 1;
+  filter: blur(0);
 }
 
 .invoice-switcher-scrim--out {
   opacity: 0;
+  filter: blur(2px);
 }
 
 .invoice-switcher-toolbar {
   transition:
-    opacity 0.16s cubic-bezier(0.32, 0.72, 0, 1) 20ms,
-    transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+    opacity var(--fluid-micro-ms) var(--fluid-spring),
+    transform var(--fluid-micro-ms) var(--fluid-spring),
+    filter var(--fluid-micro-ms) var(--fluid-spring);
 }
 
 .invoice-switcher-toolbar--in {
   opacity: 1;
-  transform: translate3d(0, 0, 0);
+  transform: scale(1);
+  filter: blur(0);
 }
 
 .invoice-switcher-toolbar--out {
   opacity: 0;
-  transform: translate3d(0, -8px, 0);
+  transform: scale(0.92);
+  filter: blur(var(--fluid-blur));
   pointer-events: none;
 }
 
-/* Utility: insight-pop (panels / whole-screen + ) */
+/* Utility: insight-pop → fluid-pop */
 .animate-insight-pop {
-  animation: insight-pop 0.42s cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: fluid-pop-in var(--fluid-in-ms) var(--fluid-spring) both;
 }
 
-/* Slightly snappier full-screen pop for new invoice */
+/* Full-screen pop for new invoice */
 .animate-insight-pop-screen {
-  animation: insight-pop-screen 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
-}
-
-@keyframes insight-pop-screen {
-  from {
-    opacity: 0;
-    transform: scale(0.96) translate3d(0, 28px, 0);
-    filter: blur(4px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translate3d(0, 0, 0);
-    filter: blur(0);
-  }
+  animation: fluid-sheet-in var(--fluid-in-ms) var(--fluid-spring) both;
 }
 
 .animate-insight-pop-press {
-  animation: insight-pop-press 0.28s cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: insight-pop-press var(--fluid-micro-ms) var(--fluid-spring) both;
 }
 
 .morph-panel-content {
   transition:
-    opacity 160ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
-    filter 160ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--fluid-micro-ms) var(--fluid-spring),
+    transform var(--fluid-micro-ms) var(--fluid-spring),
+    filter var(--fluid-micro-ms) var(--fluid-spring);
 }
 
 .morph-panel-content--in {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: scale(1);
   filter: blur(0);
 }
 
 .morph-panel-content--out {
   opacity: 0;
-  transform: translateY(6px) scale(0.99);
+  transform: scale(0.96);
   filter: blur(2px);
   pointer-events: none;
 }
@@ -331,20 +754,23 @@
 .morph-crossfade > span {
   grid-area: 1 / 1;
   transition:
-    opacity 140ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--fluid-micro-ms) var(--fluid-spring),
+    transform var(--fluid-micro-ms) var(--fluid-spring),
+    filter var(--fluid-micro-ms) var(--fluid-spring);
 }
 
 .morph-crossfade > span[data-active='false'] {
   opacity: 0;
-  transform: translateY(3px);
+  transform: scale(0.92);
+  filter: blur(2px);
   pointer-events: none;
   user-select: none;
 }
 
 .morph-crossfade > span[data-active='true'] {
   opacity: 1;
-  transform: translateY(0);
+  transform: scale(1);
+  filter: blur(0);
 }
 
 /* Auth mode switch — card body height + content crossfade */
@@ -365,6 +791,65 @@
 
 .auth-card-mode--pulse {
   transform: scale(1.006);
+}
+
+/* Sign-in / sign-up card: scroll when content exceeds viewport (esp. landscape) */
+.auth-screen--scrollable {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: none;
+  touch-action: pan-y;
+  scrollbar-gutter: stable;
+}
+
+.auth-screen--scrollable .auth-screen__center {
+  width: 100%;
+}
+
+.auth-card-mode--scroll {
+  max-height: min(34rem, calc(100dvh - 5.5rem));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.auth-screen--landscape .auth-card-mode--scroll {
+  max-height: calc(100dvh - 3.25rem);
+}
+
+.auth-screen--landscape.auth-screen--scrollable {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.auth-screen--landscape .auth-screen__center {
+  padding-top: 2.5rem;
+  padding-bottom: 1.25rem;
+}
+
+.auth-screen--landscape .unlock-logo-wrap {
+  height: 2.25rem;
+}
+
+@media (orientation: landscape) {
+  .auth-card-mode--scroll {
+    max-height: calc(100dvh - 3.25rem);
+  }
+
+  .auth-screen--scrollable {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .auth-screen--scrollable .auth-screen__center {
+    padding-top: 2.5rem;
+    padding-bottom: 1.25rem;
+  }
+
+  .auth-screen--scrollable .unlock-logo-wrap {
+    height: 2.25rem;
+  }
 }
 
 .auth-mode-fields {
@@ -393,20 +878,23 @@
 .auth-crossfade > span {
   grid-area: 1 / 1;
   transition:
-    opacity 140ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--fluid-micro-ms) var(--fluid-spring),
+    transform var(--fluid-micro-ms) var(--fluid-spring),
+    filter var(--fluid-micro-ms) var(--fluid-spring);
 }
 
 .auth-crossfade > span[data-active='false'] {
   opacity: 0;
-  transform: translateY(3px);
+  transform: scale(0.92);
+  filter: blur(2px);
   pointer-events: none;
   user-select: none;
 }
 
 .auth-crossfade > span[data-active='true'] {
   opacity: 1;
-  transform: translateY(0);
+  transform: scale(1);
+  filter: blur(0);
 }
 
 /* Height is driven by .auth-mode-shell FLIP; rows swap instantly so measure is exact */
@@ -435,63 +923,83 @@
 @keyframes auth-settings-enter {
   from {
     opacity: 0;
-    transform: translateX(40px);
+    transform: scale(var(--fluid-scale-from));
+    filter: blur(var(--fluid-blur));
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: scale(1);
+    filter: blur(0);
   }
 }
 
 @keyframes auth-settings-cycle {
   from {
     opacity: 0;
-    transform: translateX(24px);
+    transform: scale(0.94);
+    filter: blur(3px);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: scale(1);
+    filter: blur(0);
   }
 }
 
 .animate-auth-settings-enter {
-  animation: auth-settings-enter 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fluid-pop-in var(--fluid-in-ms) var(--fluid-spring) both;
 }
 
 .animate-auth-settings-cycle {
-  animation: auth-settings-cycle 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fluid-pop-in var(--fluid-micro-ms) var(--fluid-spring) both;
 }
 
 @keyframes auth-calc-enter {
   from {
     opacity: 0;
-    transform: scale(0.9);
+    transform: scale(var(--fluid-scale-from));
+    filter: blur(var(--fluid-blur));
   }
   to {
     opacity: 1;
     transform: scale(1);
+    filter: blur(0);
   }
 }
 
 .animate-auth-calc-enter {
-  animation: auth-calc-enter 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fluid-pop-in var(--fluid-in-ms) var(--fluid-spring) both;
 }
 
-/* Admin portal — insight-pop modals, staggered cards, tab transitions */
+/* Admin portal — fluid-pop shell, modals, staggered cards */
 @keyframes admin-portal-enter {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+    filter: blur(var(--fluid-blur));
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
 }
 .admin-portal-shell {
-  animation: admin-portal-enter 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: admin-portal-enter var(--fluid-in-ms) var(--fluid-spring) both;
 }
 
 @keyframes admin-header-enter {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+    filter: blur(var(--fluid-blur));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
 }
 .admin-portal-header {
-  animation: admin-header-enter 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fluid-pop-in var(--fluid-in-ms) var(--fluid-spring) both;
 }
 
 @keyframes admin-backdrop-enter {
@@ -499,53 +1007,93 @@
   to { opacity: 1; }
 }
 .admin-modal-backdrop {
-  animation: admin-backdrop-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: admin-backdrop-enter var(--fluid-out-ms) var(--fluid-ease) both;
 }
 
 .admin-modal-panel {
-  animation: insight-pop 0.42s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  animation: fluid-pop-in var(--fluid-in-ms) var(--fluid-spring) both;
 }
 
 @keyframes admin-card-enter {
-  from { opacity: 0; transform: translateY(14px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(var(--fluid-scale-from));
+    filter: blur(var(--fluid-blur));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
 }
 .admin-card-enter {
-  animation: admin-card-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fluid-pop-in var(--fluid-in-ms) var(--fluid-spring) both;
   opacity: 0;
 }
 
 @keyframes admin-list-enter {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
 }
 .admin-list-enter {
-  animation: admin-list-enter 0.36s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fluid-pop-in var(--fluid-micro-ms) var(--fluid-spring) both;
 }
 
 @keyframes admin-error-enter {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+    filter: blur(var(--fluid-blur));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
 }
 .admin-error-enter {
-  animation: admin-error-enter 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fluid-pop-in var(--fluid-micro-ms) var(--fluid-spring) both;
 }
 
 @keyframes admin-history-row-enter {
-  from { opacity: 0; transform: translateX(-10px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
 }
 .admin-history-row-enter {
-  animation: admin-history-row-enter 0.34s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fluid-pop-in var(--fluid-micro-ms) var(--fluid-spring) both;
   opacity: 0;
 }
 
 @keyframes admin-section-enter {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(var(--fluid-scale-from));
+    filter: blur(var(--fluid-blur));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
 }
 .admin-section-enter {
-  animation: admin-section-enter 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fluid-pop-in var(--fluid-in-ms) var(--fluid-spring) both;
   opacity: 0;
 }
 
@@ -656,7 +1204,8 @@
 
 .auth-loading-bar-fill--signup {
   width: 0%;
-  animation: auth-signup-progress 15s linear forwards;
+  /* Fallback when inline duration not set — max loading window is 1s */
+  animation: auth-signup-progress 1s linear forwards;
   background: linear-gradient(90deg, #0a84ff 0%, rgba(10, 132, 255, 0.85) 100%);
   background-size: 100% 100%;
 }
@@ -760,15 +1309,15 @@ body {
 
 .pos-dashboard-card-motion {
   transition:
-    transform 0.28s cubic-bezier(0.32, 0.72, 0, 1),
-    box-shadow 0.28s cubic-bezier(0.32, 0.72, 0, 1),
-    background-color 0.28s cubic-bezier(0.32, 0.72, 0, 1),
-    border-color 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    transform var(--fluid-in-ms) var(--fluid-spring),
+    box-shadow var(--fluid-in-ms) var(--fluid-spring),
+    background-color var(--fluid-in-ms) var(--fluid-spring),
+    border-color var(--fluid-in-ms) var(--fluid-spring);
   will-change: transform;
 }
 
 .pos-dashboard-root {
-  transition: opacity 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: opacity var(--fluid-out-ms) var(--fluid-ease);
 }
 
 .pos-dashboard-root--open {
@@ -782,17 +1331,19 @@ body {
 }
 
 .pos-dashboard-root--open .pos-dashboard-shell {
-  animation: dashboard-ios-enter 0.42s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  animation: fluid-sheet-in var(--fluid-in-ms) var(--fluid-spring) both;
 }
 
 @keyframes dashboard-ios-enter {
   from {
     opacity: 0;
-    transform: translate3d(0, 24px, 0) scale(0.97);
+    transform: scale(0.94) translate3d(0, 18px, 0);
+    filter: blur(var(--fluid-blur));
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: scale(1) translate3d(0, 0, 0);
+    filter: blur(0);
   }
 }
 
@@ -819,6 +1370,46 @@ body {
   opacity: 0.88;
 }
 
+/* ── Native 120Hz feel: compositing, instant touch, finger-matched scroll ── */
+html {
+  height: 100%;
+  height: 100dvh;
+  scroll-behavior: auto; /* never CSS-smooth — matches finger, not lag */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Prefer high-refresh display update when available */
+  interpolate-size: allow-keywords;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation; /* kill ~300ms click delay */
+  /* Stable compositor root for ProMotion / 120Hz */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+body {
+  height: 100%;
+  height: 100dvh;
+  margin: 0;
+  /* Continuous scroll/gesture samples prefer no forced layout thrash */
+  text-rendering: optimizeSpeed;
+}
+
+#root {
+  height: 100%;
+  height: 100dvh;
+  isolation: isolate;
+}
+
 /* Utility classes and accessibility overrides */
 * { 
   -webkit-touch-callout: none; 
@@ -829,15 +1420,63 @@ body {
 input, textarea { -webkit-user-select: auto; user-select: auto; }
 ::-webkit-scrollbar { display: none; }
 
+button,
+a,
+[role="button"],
+[role="tab"],
+[role="switch"],
+summary {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Finger-driven scroll surfaces — 120Hz compositor path + iOS rubber-band */
+.custom-scrollbar,
+.calc-expression-scroll,
+.invoice-receipt-stage,
+.pos-dashboard-hub-blur-target,
+.auth-screen--scrollable,
+.auth-card-mode--scroll,
+.vision-hub-click-list,
+.vision-hub-date-drawer,
+.fluid-bounce-scroll,
+[data-native-scroll],
+[data-fluid-scroll] {
+  -webkit-overflow-scrolling: touch;
+  /* We own edge bounce via fluidBounceScroll — block browser chrome overscroll */
+  overscroll-behavior: none;
+  /* Promote scroll layer without layout thrash */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* iOS UIScrollView-style edge bounce (transform applied while rubber-banding) */
+.fluid-bounce-scroll,
+.custom-scrollbar,
+.calc-expression-scroll,
+.pos-dashboard-hub-blur-target,
+.auth-screen--scrollable,
+.auth-card-mode--scroll,
+.vision-hub-click-list {
+  touch-action: pan-x pan-y;
+}
+
+.fluid-bounce-scroll[data-fluid-bounce='1'],
+[data-fluid-bounce='1'] {
+  /* Keep bounce on compositor; spring returns to identity */
+  will-change: transform;
+  transition: none !important;
+}
 
 .calc-expression-scroll {
   overflow-y: auto;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  touch-action: pan-y;
+  overscroll-behavior: none;
+  touch-action: pan-x pan-y;
 }
 
 .calc-expression-display {
@@ -1499,6 +2138,193 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .vision-hub-drawer--click.vision-hub-drawer--open {
   overflow: hidden;
 }
+
+/* Force white drawer when open (overrides dark theme) */
+.vision-hub-shell--force-light,
+.vision-hub-drawer--force-light,
+.vision-hub-drawer__inner--force-light {
+  color: #0a0a0a !important;
+  background: #ffffff !important;
+}
+.vision-hub-drawer__inner--force-light {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+.vision-hub-drawer__inner--force-light .vision-hub-click-row {
+  background: rgba(0, 0, 0, 0.04) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  color: #0a0a0a !important;
+}
+.vision-hub-drawer__inner--force-light .vision-hub-click-row__name,
+.vision-hub-drawer__inner--force-light .vision-hub-click-row__total {
+  color: #0a0a0a !important;
+  text-shadow: none !important;
+}
+.vision-hub-date-drawer {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Vision Hub: trio ↔ date morph (same spring language as Settings Save/Discard) */
+.vision-hub-actions-cluster {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 2rem;
+  min-width: 2rem;
+}
+
+.vision-hub-actions-trio {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  transform-origin: right center;
+  transform: scale(1);
+  opacity: 1;
+  filter: blur(0);
+  pointer-events: auto;
+  transition:
+    opacity var(--fluid-micro-ms, 280ms) var(--fluid-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    transform var(--fluid-in-ms, 280ms) var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)),
+    filter var(--fluid-micro-ms, 280ms) var(--fluid-ease, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.vision-hub-actions-trio__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Green +new — part of the trio morph block */
+.vision-hub-new-btn {
+  color: #fff !important;
+  background: #22c55e !important;
+  border-color: rgba(34, 197, 94, 0.95) !important;
+  box-shadow:
+    0 6px 18px rgba(34, 197, 94, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+}
+
+.vision-hub-new-btn:hover:not(:disabled) {
+  background: #16a34a !important;
+}
+
+.vision-hub-new-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.vision-hub-actions-cluster--date .vision-hub-actions-trio {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%) scale(var(--fluid-scale-chip, 0.72));
+  opacity: 0;
+  filter: blur(var(--fluid-blur, 4px));
+  pointer-events: none;
+}
+
+.vision-hub-actions-date {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%) scale(var(--fluid-scale-chip, 0.72));
+  transform-origin: right center;
+  opacity: 0;
+  pointer-events: none;
+  filter: blur(var(--fluid-blur, 4px));
+  transition:
+    opacity var(--fluid-micro-ms, 280ms) var(--fluid-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    transform var(--fluid-in-ms, 280ms) var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)),
+    filter var(--fluid-micro-ms, 280ms) var(--fluid-ease, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.vision-hub-actions-cluster--date .vision-hub-actions-date {
+  position: relative;
+  top: auto;
+  right: auto;
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+  filter: blur(0);
+}
+
+.vision-hub-actions-cluster--date .vision-hub-actions-date__btn {
+  animation: fluid-chip-in var(--fluid-in-ms, 280ms) var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)) both;
+}
+
+.vision-hub-actions-cluster--date .vision-hub-actions-date__btn.vision-hub-drawer-close-btn {
+  animation-delay: 0.04s;
+}
+
+.vision-hub-actions-date__row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* Vision Hub active: all text/buttons use trio morph language */
+.vision-hub-shell--trio-morph .vision-hub-morph-text {
+  animation: fluid-chip-in var(--fluid-in-ms, 280ms) var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)) both;
+}
+
+.vision-hub-shell--trio-morph .vision-hub-morph-text--1 { animation-delay: 0s; }
+.vision-hub-shell--trio-morph .vision-hub-morph-text--2 { animation-delay: 0.03s; }
+.vision-hub-shell--trio-morph .vision-hub-morph-text--3 { animation-delay: 0.05s; }
+.vision-hub-shell--trio-morph .vision-hub-morph-text--4 { animation-delay: 0.07s; }
+.vision-hub-shell--trio-morph .vision-hub-morph-text--5 { animation-delay: 0.09s; }
+.vision-hub-shell--trio-morph .vision-hub-morph-text--6 { animation-delay: 0.11s; }
+
+.vision-hub-drawer__inner--trio-morph .vision-hub-morph-text {
+  animation: fluid-chip-in var(--fluid-in-ms, 280ms) var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)) both;
+}
+
+.vision-hub-drawer__inner--trio-morph .vision-hub-click-row.vision-hub-morph-text {
+  animation-name: fluid-chip-in;
+}
+
+/* Press feedback handled globally by utils/trioPress.ts (.animate-trio-press) */
+.vision-hub-trio-pressable {
+  touch-action: manipulation;
+  transform-origin: center;
+}
+
+.vision-hub-shell--trio-morph .vision-hub-actions-date__btn,
+.vision-hub-shell--trio-morph .vision-hub-new-btn--standalone {
+  animation: fluid-chip-in var(--fluid-in-ms, 280ms) var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)) both;
+}
+
+.vision-hub-actions-cluster--trio .vision-hub-actions-trio__btn {
+  animation: fluid-chip-in var(--fluid-in-ms, 280ms) var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)) both;
+}
+
+.vision-hub-actions-cluster--trio .vision-hub-actions-trio__row .vision-hub-actions-trio__btn:nth-child(1) {
+  animation-delay: 0s;
+}
+.vision-hub-actions-cluster--trio .vision-hub-actions-trio__row .vision-hub-actions-trio__btn:nth-child(2) {
+  animation-delay: 0.03s;
+}
+.vision-hub-actions-cluster--trio .vision-hub-actions-trio__row .vision-hub-actions-trio__btn:nth-child(3) {
+  animation-delay: 0.06s;
+}
+.vision-hub-actions-cluster--trio .vision-hub-new-btn {
+  animation-delay: 0.09s;
+}
+
+.vision-hub-actions-trio__btn,
+.vision-hub-actions-date__btn {
+  transition:
+    opacity var(--fluid-micro-ms, 280ms) var(--fluid-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    transform var(--fluid-in-ms, 280ms) var(--fluid-spring, cubic-bezier(0.34, 1.45, 0.64, 1)),
+    filter var(--fluid-micro-ms, 280ms) var(--fluid-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    background-color 0.16s ease,
+    border-color 0.16s ease;
+}
+
 .vision-hub-drawer__inner--click {
   display: flex;
   flex-direction: column;
@@ -1929,7 +2755,7 @@ select.app-input--dark {
   padding: 0.5rem 0.65rem 0.65rem;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.45rem;
 }
 .invoice-switcher-card__attendant-btn {
   flex: 1;
@@ -1942,7 +2768,7 @@ select.app-input--dark {
   font-size: 0.68rem;
   font-weight: 900;
   letter-spacing: -0.02em;
-  color: #2563eb;
+  color: #111;
   cursor: pointer;
   transition: background 0.2s ease, transform 0.2s ease;
   overflow: hidden;
@@ -1953,6 +2779,36 @@ select.app-input--dark {
   transform: scale(0.99);
   background: rgba(0, 0, 0, 0.03);
 }
+/* Single primary print action on invoice switcher (no blue secondary print/share) */
+.invoice-switcher-card__print-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2.15rem;
+  padding: 0.5rem 0.9rem;
+  border: none;
+  border-radius: 999px;
+  background: #10b981;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.32);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.invoice-switcher-card__print-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.invoice-switcher-card__print-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+/* Legacy circle action styles (unused on switcher footer; kept for safety) */
 .invoice-switcher-card__action-btn {
   width: 2rem;
   height: 2rem;
@@ -2566,6 +3422,7 @@ select.app-input--dark {
 .fluid-segment {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  border-radius: 999px; /* pill bar — aligns with rounded segment buttons */
 }
 
 .fluid-segment--light {
@@ -2579,12 +3436,17 @@ select.app-input--dark {
 }
 
 .fluid-segment-thumb {
+  border-radius: 999px; /* match pill track + buttons */
   background: linear-gradient(135deg, #22d3ee 0%, #3b82f6 55%, #6366f1 100%);
   box-shadow:
     0 2px 10px rgba(34, 211, 238, 0.35),
     0 0 0 1px rgba(255, 255, 255, 0.12) inset;
   transition: none;
   will-change: transform, width;
+}
+
+.fluid-segment-btn {
+  border-radius: 999px;
 }
 
 /* Avoid a first-paint slide from 0; animate only after measured */
@@ -2725,8 +3587,11 @@ select.app-input--dark {
   transform: scale(0.96);
 }
 
-/* ---------- Settings panel: transparent over idle/calc background ---------- */
+/* ---------- Settings panel: always above POS / Vision Hub (z-70) and dashboard modals ---------- */
 .settings-panel {
+  position: fixed;
+  z-index: 500 !important;
+  isolation: isolate;
   border-radius: inherit;
   overflow: hidden;
   background: transparent !important;
@@ -2742,10 +3607,80 @@ select.app-input--dark {
   border-bottom: none;
 }
 
+/* Close ↔ Discard/Save morph (top-right) */
+.settings-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 2.75rem;
+}
+
+.settings-header-actions__cluster {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+
+.settings-header-actions__dirty {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%) scale(var(--fluid-scale-chip));
+  transform-origin: right center;
+  opacity: 0;
+  pointer-events: none;
+  filter: blur(var(--fluid-blur));
+  transition:
+    opacity var(--fluid-micro-ms) var(--fluid-ease),
+    transform var(--fluid-in-ms) var(--fluid-spring),
+    filter var(--fluid-micro-ms) var(--fluid-ease);
+}
+
+.settings-header-actions__cluster--dirty .settings-header-actions__dirty {
+  position: relative;
+  top: auto;
+  right: auto;
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+  filter: blur(0);
+}
+
 .settings-panel-close {
   background: transparent !important;
   border: 1px solid transparent;
   box-shadow: none;
+  flex-shrink: 0;
+  transform: scale(1);
+  opacity: 1;
+  filter: blur(0);
+  pointer-events: auto;
+  transition:
+    opacity var(--fluid-micro-ms) var(--fluid-ease),
+    transform var(--fluid-in-ms) var(--fluid-spring),
+    filter var(--fluid-micro-ms) var(--fluid-ease),
+    background-color 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.settings-header-actions__cluster--dirty .settings-panel-close {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%) scale(0.55);
+  opacity: 0;
+  filter: blur(var(--fluid-blur));
+  pointer-events: none;
+}
+
+.settings-header-actions__cluster--clean .settings-panel-close {
+  position: relative;
 }
 
 .settings-panel--light .settings-panel-close {
@@ -2756,7 +3691,7 @@ select.app-input--dark {
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
 }
 
-.settings-panel--light .settings-panel-close:hover {
+.settings-panel--light .settings-panel-close:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.38) !important;
   border-color: rgba(0, 0, 0, 0.18);
 }
@@ -2769,7 +3704,7 @@ select.app-input--dark {
   -webkit-backdrop-filter: blur(14px) saturate(1.5);
 }
 
-.settings-panel--dark .settings-panel-close:hover {
+.settings-panel--dark .settings-panel-close:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.14) !important;
   border-color: rgba(255, 255, 255, 0.22);
 }
@@ -2790,12 +3725,37 @@ select.app-input--dark {
     transform 0.12s ease;
 }
 
+.settings-header-actions__cluster--dirty .settings-panel-action--discard {
+  animation: fluid-chip-in var(--fluid-in-ms) var(--fluid-spring) both;
+  animation-delay: 0s;
+}
+
+.settings-header-actions__cluster--dirty .settings-panel-action--save {
+  animation: fluid-chip-in var(--fluid-in-ms) var(--fluid-spring) both;
+  /* Same 280ms clock as Discard — slight stagger still reads as one trio */
+  animation-delay: 0.04s;
+}
+
+/* Alias kept for any residual references */
+@keyframes settings-action-pop {
+  from {
+    opacity: 0;
+    transform: scale(var(--fluid-scale-chip)) translateX(10px);
+    filter: blur(var(--fluid-blur));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateX(0);
+    filter: blur(0);
+  }
+}
+
 .settings-panel-action:disabled {
   opacity: 0.45;
   pointer-events: none;
 }
 
-.settings-panel-action:active {
+.settings-panel-action:active:not(:disabled) {
   transform: scale(0.96);
 }
 
@@ -2837,18 +3797,18 @@ select.app-input--dark {
     transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Light: bg-white/80 border-black/10 */
+/* Light: frosted glass over blurred autoswipe wallpaper */
 .settings-panel--light .settings-card {
   color: #000;
   border-color: rgba(0, 0, 0, 0.1);
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(20px) saturate(1.45);
+  -webkit-backdrop-filter: blur(20px) saturate(1.45);
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
 }
 
 .settings-panel--light .settings-card:hover {
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.82);
   box-shadow: 0 28px 56px -12px rgba(0, 0, 0, 0.3);
 }
 
@@ -2878,14 +3838,51 @@ select.app-input--dark {
 /* Only overrides timing/duration — never transition-property — so
    component-specific transitions (width, colors, ...) keep working. */
 :root {
-  --spring-fast: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --spring-fast: cubic-bezier(0.34, 1.45, 0.64, 1); /* same as --fluid-spring */
 }
 
 button:not(:disabled),
 [role="button"],
 a[href] {
-  transition-duration: 180ms;
+  transition-duration: var(--fluid-nav-ms, 180ms);
   transition-timing-function: var(--spring-fast);
+}
+
+/* Prefer compositor-only properties for 120Hz animation budgets */
+.fluid-pop-in,
+.fluid-pop-out,
+.fluid-sheet-in,
+.fluid-sheet-out,
+.morph-panel,
+.invoice-switcher-sheet,
+.animate-insight-pop,
+.animate-insight-pop-screen,
+.animate-auth-card-enter,
+.animate-auth-calc-enter {
+  will-change: opacity, transform, filter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fluid-pop-in,
+  .fluid-pop-out,
+  .fluid-sheet-in,
+  .fluid-sheet-out,
+  .animate-insight-pop,
+  .animate-insight-pop-screen,
+  .animate-auth-card-enter,
+  .animate-auth-calc-enter,
+  .animate-auth-settings-enter,
+  .animate-auth-settings-cycle {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+  .morph-panel,
+  .morph-panel-content,
+  .morph-scrim {
+    transition: none !important;
+  }
 }
 
 button:not(:disabled):active,

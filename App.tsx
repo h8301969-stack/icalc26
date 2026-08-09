@@ -37,6 +37,7 @@ import { useSupabaseDataSync } from './hooks/useSupabaseDataSync';
 import { useSyncStatus } from './hooks/useSyncStatus';
 import { ensureAdminProfile, getAccounts, getAuthSession, isAdminProfile } from './utils/auth';
 import { SyncStatusIndicator } from './components/SyncStatusIndicator';
+import { printerInstance } from './utils/bluetoothPrinter';
 
 import { usePOS, InventoryItem } from './hooks/usePOS';
 import { useInvoice } from './hooks/useInvoice';
@@ -210,6 +211,30 @@ const AppContent: React.FC = () => {
   }, [triggerHaptic]);
 
   useStandby(isUnlocked, settings.standbyTimerSeconds ?? 0, lockScreen);
+
+  // Background printer sequence on app entry when nothing is connected yet
+  useEffect(() => {
+    if (!isUnlocked) return;
+    if (printerInstance.isConnected) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const ok = await printerInstance.ensureConnected();
+          if (cancelled || ok || printerInstance.isConnected) return;
+          await printerInstance.scanAndConnect(undefined, { silent: true });
+        } catch {
+          // Background — user can Scan from Settings
+        }
+      })();
+    }, 900);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isUnlocked]);
 
   useEffect(() => {
     if (!account) return;
@@ -858,7 +883,7 @@ const AppContent: React.FC = () => {
       {isUnlocked && (
       <>
       <div
-        className={`fixed inset-0 z-20 flex items-center justify-center transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) opacity-100 scale-100 ${isCalculatorHidden ? 'opacity-0 invisible pointer-events-none' : ''} ${isCalculatorEntering ? 'animate-auth-calc-enter' : ''} ${isPlusAnimating ? 'animate-insight-pop-screen' : ''} ${forceLandscapeRotate ? 'calc-force-landscape' : ''}`}
+        className={`fixed inset-0 z-20 flex items-center justify-center transition-[opacity,transform,filter] duration-[280ms] ease-[cubic-bezier(0.34,1.45,0.64,1)] opacity-100 scale-100 ${isCalculatorHidden ? 'opacity-0 scale-[0.92] blur-[4px] invisible pointer-events-none' : ''} ${isCalculatorEntering ? 'animate-auth-calc-enter' : ''} ${isPlusAnimating ? 'animate-trio-screen' : ''} ${forceLandscapeRotate ? 'calc-force-landscape' : ''}`}
         onPointerDown={calcEdgeSwipe.onPointerDown}
         onPointerUp={calcEdgeSwipe.onPointerUp}
         onPointerCancel={calcEdgeSwipe.onPointerCancel}
@@ -866,20 +891,27 @@ const AppContent: React.FC = () => {
           // Only handle animations on this layer (not bubbling from children)
           if (e.target !== e.currentTarget) return;
           const name = e.animationName || '';
-          if (name.includes('auth-calc-enter') || isCalculatorEntering) {
+          if (name.includes('auth-calc-enter') || name.includes('fluid-pop-in') || isCalculatorEntering) {
             setIsCalculatorEntering(false);
           }
-          if (name.includes('insight-pop-screen') || isPlusAnimating) {
-            setIsPlusAnimating(false);
-            if (plusNewInvoicePendingRef.current) {
-              plusNewInvoicePendingRef.current = false;
-              handleNewInvoice();
+          if (
+            name.includes('trio-screen') ||
+            name.includes('fluid-pop-in') ||
+            name.includes('insight-pop-screen') ||
+            isPlusAnimating
+          ) {
+            if (isPlusAnimating) {
+              setIsPlusAnimating(false);
+              if (plusNewInvoicePendingRef.current) {
+                plusNewInvoicePendingRef.current = false;
+                handleNewInvoice();
+              }
             }
           }
         }}
       >
         <div 
-          className={`relative flex flex-col overflow-hidden transition-all duration-500 ${
+          className={`relative flex flex-col overflow-hidden transition-[width,height,border-radius,background-color,box-shadow,color] duration-[280ms] ease-[cubic-bezier(0.34,1.45,0.64,1)] ${
             isLandscape
               ? disableCard
                 ? 'w-[98%] h-[94%] sm:w-[96vw] sm:h-[92vh]'
@@ -901,7 +933,7 @@ const AppContent: React.FC = () => {
         >
           {isSearchOpen && (
             <div
-              className={`absolute inset-x-0 bottom-0 z-40 transition-all duration-300 pointer-events-none ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
+              className={`absolute inset-x-0 bottom-0 z-40 transition-opacity duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] pointer-events-none ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
               style={{ top: '3.25rem' }}
               aria-hidden="true"
             />
@@ -922,8 +954,15 @@ const AppContent: React.FC = () => {
                 triggerHaptic(1);
                 plusNewInvoicePendingRef.current = true;
                 setIsPlusAnimating(true);
+                // Safety: always complete new invoice if animationend is missed
+                window.setTimeout(() => {
+                  if (!plusNewInvoicePendingRef.current) return;
+                  plusNewInvoicePendingRef.current = false;
+                  setIsPlusAnimating(false);
+                  handleNewInvoice();
+                }, 320);
               }}
-              className={`pointer-events-auto h-8 w-8 shrink-0 rounded-full flex items-center justify-center transition-all duration-300 ${isSearchOpen ? 'blur-[2px] opacity-35' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`}
+              className={`pointer-events-auto h-8 w-8 shrink-0 rounded-full flex items-center justify-center border transition-[opacity,filter,background-color] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isSearchOpen ? 'blur-[2px] opacity-35' : ''} ${isPlusAnimating ? 'animate-trio-press' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`}
               style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 0 12px rgba(255,255,255,0.6), 0 0 4px rgba(255,255,255,0.3)' }}
               title="New Invoice"
               aria-label="Start new invoice"
@@ -945,7 +984,7 @@ const AppContent: React.FC = () => {
                 aria-label="Search invoices and inventory"
                 aria-expanded={isSearchOpen}
                 aria-controls="search-results-panel"
-                className={`w-full py-1.5 px-4 text-center text-sm rounded-full outline-none border transition-all duration-300 blur-0 ${
+                className={`w-full py-1.5 px-4 text-center text-sm rounded-full outline-none border transition-[background-color,border-color,box-shadow,opacity] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] blur-0 ${
                   isSearchOpen
                     ? 'bg-zinc-600 border-zinc-500/60 text-white placeholder-white/50 shadow-lg opacity-100'
                     : isLight
@@ -979,13 +1018,13 @@ const AppContent: React.FC = () => {
             </div>
  
             <div
-              className={`flex items-center shrink-0 pointer-events-auto transition-all duration-300 ${isSearchOpen ? 'blur-[2px] opacity-35' : ''}`}
+              className={`flex items-center shrink-0 pointer-events-auto transition-[opacity,filter] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isSearchOpen ? 'blur-[2px] opacity-35' : ''}`}
               style={{ gap: 'max(0.1rem, calc(0.375rem - 0.8%))' }}
             >
               <button 
                 onClick={() => { setIsPOSOpen(true); triggerHaptic(); setIsHomeAnimating(true); }} 
                 onAnimationEnd={() => setIsHomeAnimating(false)}
-                className={`h-8 w-8 rounded-full flex items-center justify-center transition-all ${isHomeAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`} 
+                className={`h-8 w-8 rounded-full flex items-center justify-center transition-all border ${isHomeAnimating ? 'animate-trio-press' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`} 
                 style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 0 12px rgba(255,255,255,0.6), 0 0 4px rgba(255,255,255,0.3)' }}
                 title="Dashboard"
               >
@@ -994,7 +1033,7 @@ const AppContent: React.FC = () => {
               <button 
                 onClick={() => { setIsSettingsOpen(true); triggerHaptic(); setIsSettingsAnimating(true); }} 
                 onAnimationEnd={() => setIsSettingsAnimating(false)}
-                className={`h-8 w-8 rounded-full flex items-center justify-center transition-all ${isSettingsAnimating ? 'animate-plus-trigger' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`} 
+                className={`h-8 w-8 rounded-full flex items-center justify-center transition-all border ${isSettingsAnimating ? 'animate-trio-press' : ''} ${isLight ? 'bg-white/60 border-black/5 hover:bg-white/80 text-black' : 'bg-black/20 border-white/10 hover:bg-black/40 text-white'}`} 
                 style={{ boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)' : '0 0 12px rgba(255,255,255,0.6), 0 0 4px rgba(255,255,255,0.3)' }}
                 title="Settings"
               >
@@ -1004,7 +1043,7 @@ const AppContent: React.FC = () => {
           </div>
 
           <div
-            className={`relative z-40 flex justify-center items-center shrink-0 pointer-events-none select-none overflow-hidden pb-0.5 pt-0 transition-opacity duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${showLiveResult ? '' : 'opacity-0'}`}
+            className={`relative z-40 flex justify-center items-center shrink-0 pointer-events-none select-none overflow-hidden pb-0.5 pt-0 transition-[opacity,filter] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${showLiveResult ? '' : 'opacity-0'}`}
             style={{
               paddingLeft: edgePadding,
               paddingRight: edgePadding,
@@ -1037,7 +1076,7 @@ const AppContent: React.FC = () => {
           <div className={`flex-1 flex min-h-0 overflow-hidden ${isLandscape ? 'flex-row' : 'flex-col'}`}>
             {isLandscape && (
               <div
-                className={`relative z-10 shrink-0 grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-all duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+                className={`relative z-10 shrink-0 grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-[opacity,filter] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
                 style={{
                   width: '52%',
                   gap: keypadGap,
@@ -1068,7 +1107,7 @@ const AppContent: React.FC = () => {
             <div ref={expressionColumnRef} className={`flex flex-col min-h-0 min-w-0 ${isLandscape ? 'flex-1 gap-0' : 'flex-1 gap-3'}`}>
               {/* Display area */}
               <div
-                className={`flex-1 flex flex-col items-center overflow-hidden min-h-0 transition-all duration-300 ${isLight ? 'text-black' : 'text-white'} ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+                className={`flex-1 flex flex-col items-center overflow-hidden min-h-0 transition-[opacity,filter,color] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isLight ? 'text-black' : 'text-white'} ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
                 style={{
                   paddingTop: isLandscape ? '0' : '0.35rem',
                   paddingBottom: isLandscape ? '0' : '0.15rem',
@@ -1232,7 +1271,7 @@ const AppContent: React.FC = () => {
               {/* Action toolbar */}
               <div
                 ref={expressionToolbarRef}
-                className={`calc-expression-toolbar relative z-50 isolate shrink-0 flex justify-between gap-1.5 py-[0.34rem] rounded-full border transition-all duration-300 self-center ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white border-black/8 text-black' : 'bg-[#141414] border-white/14 text-white'}`}
+                className={`calc-expression-toolbar relative z-50 isolate shrink-0 flex justify-between gap-1.5 py-[0.34rem] rounded-full border transition-[opacity,filter,background-color,border-color] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] self-center ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white border-black/8 text-black' : 'bg-[#141414] border-white/14 text-white'}`}
                 style={{
                   width: '80%',
                   marginBottom: isLandscape ? '0.35rem' : '0.5rem',
@@ -1249,7 +1288,7 @@ const AppContent: React.FC = () => {
 
             {!isLandscape && (
               <div
-                className={`relative z-30 shrink-0 grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-opacity duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+                className={`relative z-30 shrink-0 grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-[opacity,filter] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
                 style={{
                   flex: '1.3 0 0%',
                   gap: keypadGap,
@@ -1297,6 +1336,7 @@ const AppContent: React.FC = () => {
         focusSectionIndex={settingsSectionIndex}
         settings={settings}
         isLight={isLight}
+        wallpapers={settings.customWallpapers}
         updateSettings={handleUpdateSettings}
         cartItems={cartItems}
         runningTotal={parseFloat(runningTotal) || 0}
@@ -1368,6 +1408,10 @@ const AppContent: React.FC = () => {
         onChangePassword={handleChangePassword}
         onLogout={handleLogout}
         onVerifyAdminPassword={handleVerifyAdminPassword}
+        onNewInvoice={() => {
+          setIsPOSOpen(false);
+          handleNewInvoice();
+        }}
       />
       <SyncStatusIndicator
         syncState={syncStatus.syncState}

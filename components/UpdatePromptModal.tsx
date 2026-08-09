@@ -169,7 +169,7 @@ const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({ isLight, enabled 
     window.setTimeout(() => {
       setStarting(false);
       setOpen(false);
-    }, 900);
+    }, 800); // loading dismiss within 0.4s–2s
   };
 
   if (!open) return null;
@@ -179,13 +179,13 @@ const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({ isLight, enabled 
 
   return (
     <div
-      className="fixed inset-0 z-[1200] flex items-center justify-center p-5 bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-[1200] flex items-center justify-center p-5 bg-black/50 backdrop-blur-sm morph-scrim morph-scrim--in"
       role="dialog"
       aria-modal="true"
       aria-labelledby="update-prompt-title"
     >
       <div
-        className={`w-full max-w-sm rounded-2xl border p-5 shadow-2xl ${
+        className={`w-full max-w-sm rounded-2xl border p-5 shadow-2xl fluid-pop-in ${
           isLight ? 'bg-white border-black/10 text-black' : 'bg-zinc-900 border-white/10 text-white'
         }`}
       >
@@ -215,7 +215,7 @@ const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({ isLight, enabled 
             type="button"
             onClick={handleUpdate}
             disabled={starting}
-            className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-[10px] font-black uppercase tracking-widest active:scale-[0.98] disabled:opacity-60 transition-all"
+            className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-60 transition-all"
           >
             {starting ? 'Starting download…' : 'Click to update'}
           </button>
@@ -223,7 +223,7 @@ const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({ isLight, enabled 
             type="button"
             onClick={handleCancel}
             disabled={starting}
-            className={`w-full py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest active:scale-[0.98] disabled:opacity-60 transition-all ${
+            className={`w-full py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest disabled:opacity-60 transition-all ${
               isLight ? 'border-black/15 text-black/70 hover:bg-black/5' : 'border-white/15 text-white/70 hover:bg-white/5'
             }`}
           >

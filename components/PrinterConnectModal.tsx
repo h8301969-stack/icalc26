@@ -222,7 +222,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
                         type="button"
                         onClick={() => handleConnectSaved(entry.saved.id)}
                         disabled={isBusy || isScanning || (entry.saved.transport !== 'usb' && !bluetoothSupport.supported)}
-                        className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 shrink-0"
+                        className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase disabled:opacity-50 shrink-0"
                       >
                         {isBusy ? '...' : 'Connect'}
                       </button>
@@ -243,7 +243,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             type="button"
             onClick={handleScanAndConnect}
             disabled={isScanning || connectingId !== null || !bluetoothSupport.supported}
-            className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all"
+            className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 disabled:opacity-50 transition-all"
           >
             {isScanning ? 'Searching...' : 'Search for Bluetooth Printer'}
           </button>
@@ -262,7 +262,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             type="button"
             onClick={() => void handleUsbConnect()}
             disabled={isScanning || connectingId !== null || !usbSupport.supported}
-            className="w-full py-3.5 rounded-xl bg-violet-600 text-white text-xs font-black uppercase tracking-widest hover:bg-violet-700 active:scale-95 disabled:opacity-50 transition-all"
+            className="w-full py-3.5 rounded-xl bg-violet-600 text-white text-xs font-black uppercase tracking-widest hover:bg-violet-700 disabled:opacity-50 transition-all"
           >
             {isScanning ? 'Connecting...' : 'Connect USB Printer'}
           </button>
@@ -278,7 +278,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
               type="button"
               onClick={handlePrint}
               disabled={isPrinting}
-              className="w-full py-3.5 rounded-xl bg-green-500 text-white text-xs font-black uppercase tracking-widest shadow-[0_0_20px_rgba(48,209,88,0.4)] hover:bg-green-600 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              className="w-full py-3.5 rounded-xl bg-green-500 text-white text-xs font-black uppercase tracking-widest shadow-[0_0_20px_rgba(48,209,88,0.4)] hover:bg-green-600 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
             >
               <Icons.Check size={16} />
               {isPrinting ? 'Printing...' : 'Print Invoice'}

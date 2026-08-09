@@ -5,12 +5,18 @@ interface BlurredBackgroundProps {
   isLight: boolean;
   wallpapers: { image: string }[];
   isUnlocked?: boolean;
+  /**
+   * Fill the parent instead of the viewport.
+   * Used by full-screen overlays (e.g. Settings) that sit over solid chrome.
+   */
+  contained?: boolean;
 }
 
 const BlurredBackground: React.FC<BlurredBackgroundProps> = ({
   isLight,
   wallpapers,
   isUnlocked = true,
+  contained = false,
 }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
   const slides = wallpapers.length > 0 ? wallpapers : [{ image: '' }];
@@ -25,7 +31,11 @@ const BlurredBackground: React.FC<BlurredBackgroundProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-0 overflow-hidden pointer-events-none min-h-[100dvh] min-w-full"
+      className={
+        contained
+          ? 'absolute inset-0 z-0 overflow-hidden pointer-events-none'
+          : 'fixed inset-0 z-0 overflow-hidden pointer-events-none min-h-[100dvh] min-w-full'
+      }
       aria-hidden="true"
     >
       {slides.map((slide, index) => {

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AuditLogEntry } from '../types';
 import { fetchAllAuditLogs } from '../utils/auditLog';
 import { Icons } from '../constants';
+import { AppLoadingInline } from './AppLoading';
 
 interface AuditLogPanelProps {
   isOpen: boolean;
@@ -66,10 +67,10 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto custom-scrollbar fluid-bounce-scroll">
           {loading ? (
             <div className="flex items-center justify-center h-full">
-              <div className="animate-spin"><Icons.Sync size={20} /></div>
+              <AppLoadingInline label="Loading" size="md" isLight={isLight} />
             </div>
           ) : logs.length === 0 ? (
             <div className={`text-center py-8 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>

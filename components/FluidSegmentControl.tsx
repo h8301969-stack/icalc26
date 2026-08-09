@@ -77,7 +77,7 @@ const FluidSegmentControl = <T extends string>({
       className={`fluid-segment relative ${
         isChip
           ? 'flex flex-wrap gap-1.5 p-0'
-          : `inline-flex items-stretch gap-0.5 p-0.5 rounded-[14px]${fullWidth ? ' w-full' : ''}`
+          : `inline-flex items-stretch gap-0.5 p-0.5 rounded-full${fullWidth ? ' w-full' : ''}`
       } ${text} ${
         isChip ? '' : isLight ? 'fluid-segment--light' : 'fluid-segment--dark'
       } ${disabled ? 'opacity-50 pointer-events-none' : ''} ${className}`}
@@ -85,7 +85,7 @@ const FluidSegmentControl = <T extends string>({
       {!isChip && (
         <span
           aria-hidden
-          className={`fluid-segment-thumb absolute top-0.5 bottom-0.5 rounded-[11px] pointer-events-none ${
+          className={`fluid-segment-thumb absolute top-0.5 bottom-0.5 rounded-full pointer-events-none ${
             thumbReady ? 'fluid-segment-thumb--ready' : ''
           }`}
           style={{
@@ -118,7 +118,7 @@ const FluidSegmentControl = <T extends string>({
                         ? 'fluid-chip-btn--idle-light'
                         : 'fluid-chip-btn--idle-dark'
                   }`
-                : `fluid-segment-btn relative z-[1] flex items-center justify-center gap-1 px-3 ${py} rounded-[11px] font-semibold tracking-normal transition-[color,opacity] duration-200 ease-out ${
+                : `fluid-segment-btn relative z-[1] flex items-center justify-center gap-1 px-3 ${py} rounded-full font-semibold tracking-normal transition-[color,opacity] duration-200 ease-out ${
                     fullWidth ? 'flex-1 min-w-0' : ''
                   } ${active ? 'fluid-segment-btn--active' : 'fluid-segment-btn--idle'}`
             }

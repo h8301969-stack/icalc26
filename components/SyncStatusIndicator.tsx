@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SyncState } from '../types';
 import { Icons } from '../constants';
+import { AppLoadingSpinner } from './AppLoading';
 
 interface SyncStatusIndicatorProps {
   syncState: SyncState;
@@ -36,13 +37,11 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({
         title={isError ? 'Click to see sync details' : 'Syncing...'}
       >
         {isSyncing ? (
-          <div className="animate-spin">
-            <Icons.Sync size={14} />
-          </div>
+          <AppLoadingSpinner size="sm" label="Syncing" />
         ) : (
           <span className="text-lg">⚠️</span>
         )}
-        <span>{isSyncing ? 'Syncing...' : 'Sync failed'}</span>
+        <span>{isSyncing ? 'Syncing…' : 'Sync failed'}</span>
       </button>
 
       {showDetails && isError && (

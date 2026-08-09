@@ -46,7 +46,7 @@ const ProfileAvatar: React.FC<ProfileAvatarProps> = ({
           onClick?.(e);
         }}
         aria-label={ariaLabel ?? `Avatar for ${profile?.name ?? 'profile'}`}
-        className={`${baseClass} active:scale-95 transition-transform ${className}`}
+        className={`${baseClass} transition-transform ${className}`}
         style={{ width: size, height: size }}
       >
         {inner}

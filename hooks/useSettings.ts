@@ -9,6 +9,7 @@ import { ExpressionViewMode, normalizeExpressionViewMode } from '../utils/expres
 import { ReceiptLayoutMode } from '../utils/receiptLayout';
 import { isCloudBackendEnabled } from '../utils/supabase';
 import { fetchSettingsFromSupabase, syncSettingsToSupabase } from '../utils/supabaseDataSync';
+import { setUiHapticsEnabled, setUiSoundsEnabled } from '../utils/uiSounds';
 
 const SETTINGS_KEY = 'calc_settings';
 const SETTINGS_SYNC_DEBOUNCE_MS = 1200;
@@ -18,6 +19,7 @@ export const DEFAULT_SETTINGS = {
   glassBlur: 24,
   hapticFeedback: true,
   hapticIntensity: 'medium' as 'soft' | 'medium' | 'intense',
+  soundEffects: true,
   themeMode: 'system' as ThemeMode,
   currency: 'GHS' as 'GHS' | 'USD' | 'EUR' | 'GBP' | 'JPY' | 'NGN',
   ghsCalculatorStyle: 'ghs' as 'ghs' | 'cedis',
@@ -26,10 +28,10 @@ export const DEFAULT_SETTINGS = {
   disableCalculatorCard: false as boolean,
   layoutMode: 'portrait' as 'portrait' | 'landscape',
   layoutModeAuto: true,
-  invoiceSwitcherMode: 'horizontal' as 'horizontal' | 'grid' | 'vertical' | 'list',
+  invoiceSwitcherMode: 'horizontal' as 'horizontal' | 'list',
   expressionViewMode: 'auto' as ExpressionViewMode,
   receiptLayoutMode: 'summary' as ReceiptLayoutMode,
-  visionHubDrawerMode: 'drag' as 'drag' | 'click',
+  visionHubDrawerMode: 'click' as 'click',
   standbyTimerSeconds: 0,
   profiles: [] as UserProfile[],
   activeProfileId: '',
@@ -90,6 +92,17 @@ const migrateStoredSettings = (stored: Partial<AppSettings> & Record<string, unk
   delete merged.invoiceSwitcherGridCols;
   delete merged.invoiceSwitcherGridDensity;
 
+  // Vertical stack + scattered grid removed from invoice switcher
+  if (
+    (merged.invoiceSwitcherMode as string) === 'vertical' ||
+    (merged.invoiceSwitcherMode as string) === 'grid'
+  ) {
+    merged.invoiceSwitcherMode = 'horizontal';
+  }
+
+  // Vision Hub drawer is click-only (drag removed)
+  merged.visionHubDrawerMode = 'click';
+
   return merged as AppSettings;
 };
 
@@ -146,6 +159,8 @@ export const useSettings = (options: UseSettingsOptions = {}) => {
   useEffect(() => {
     storage.set(SETTINGS_KEY, settings);
     document.documentElement.style.fontSize = `${(settings.uiScale || 1) * 100}%`;
+    setUiSoundsEnabled(settings.soundEffects !== false);
+    setUiHapticsEnabled(settings.hapticFeedback !== false);
   }, [settings]);
 
   useEffect(() => {

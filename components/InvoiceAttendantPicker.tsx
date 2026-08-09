@@ -77,7 +77,7 @@ const InvoiceAttendantPicker: React.FC<InvoiceAttendantPickerProps> = ({
                     key={profile.id}
                     type="button"
                     onClick={() => handleSelect(profile.name)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all active:scale-[0.98] ${
+                    className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${
                       isSelected
                         ? isLight
                           ? 'bg-zinc-900 text-white border-zinc-900'

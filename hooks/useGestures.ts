@@ -1,8 +1,11 @@
 import { useRef } from 'react';
+import { playClickSound, playSwipeSound, primeUiAudio } from '../utils/uiSounds';
 
 const TAP_THRESHOLD = 14;
-const EDGE_ZONE_PX = 56;
-const EDGE_SWIPE_MIN = 48;
+/** Lower threshold so idle / unlock swipes feel instant. */
+const EDGE_ZONE_PX = 48;
+const EDGE_SWIPE_MIN = 28;
+const ANY_SWIPE_MIN = 24;
 
 type EdgeSide = 'left' | 'right';
 
@@ -50,10 +53,11 @@ export const useEdgeSwipe = (
   return { onPointerDown, onPointerUp, onPointerCancel, isEdgeActive: () => start.current !== null };
 };
 
-export const useSwipeAnywhere = (onSwipe: () => void, minDistance = 48) => {
+export const useSwipeAnywhere = (onSwipe: () => void, minDistance = ANY_SWIPE_MIN) => {
   const start = useRef<{ x: number; y: number } | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
+    primeUiAudio();
     start.current = { x: e.clientX, y: e.clientY };
   };
 
@@ -62,7 +66,11 @@ export const useSwipeAnywhere = (onSwipe: () => void, minDistance = 48) => {
     const dx = e.clientX - start.current.x;
     const dy = e.clientY - start.current.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist >= minDistance || dist <= TAP_THRESHOLD) onSwipe();
+    if (dist >= minDistance || dist <= TAP_THRESHOLD) {
+      if (dist <= TAP_THRESHOLD) playClickSound();
+      else playSwipeSound();
+      onSwipe();
+    }
     start.current = null;
   };
 

@@ -83,8 +83,8 @@ export const ensureNativeBleInitialized = async (): Promise<void> => {
         await BleClient.setDisplayStrings({
           scanning: 'Looking for printers…',
           cancel: 'Cancel',
-          availableDevices: 'Bluetooth printers',
-          noDeviceFound: 'No BLE printer found. Power on the mini printer and try again.',
+          availableDevices: 'Available printers',
+          noDeviceFound: 'No Bluetooth printer found. Power on the printer and try again.',
         });
       } catch {
         // optional API
@@ -211,9 +211,46 @@ const pickWriteChannel = (
 };
 
 /**
+ * Silent LE scan (no system picker) — used in sequential auto-connect.
+ * Returns devices seen within `durationMs` (capped 400–1200ms).
+ */
+export const nativeSilentScanDevices = async (durationMs = 1200): Promise<BleDevice[]> => {
+  await ensureNativeBleInitialized();
+  await nativeEnsureBluetoothOn();
+
+  const ms = Math.min(1200, Math.max(400, durationMs));
+  const found = new Map<string, BleDevice>();
+
+  try {
+    await BleClient.requestLEScan({ allowDuplicates: false }, (result) => {
+      const id = result.device?.deviceId;
+      if (!id) return;
+      if (!found.has(id)) {
+        found.set(id, {
+          deviceId: id,
+          name: result.device.name || result.localName || undefined,
+        });
+      }
+    });
+  } catch (err) {
+    // Scan may be unavailable — fall back to empty (caller uses picker)
+    if (isUserCancel(err)) throw err;
+    return [];
+  }
+
+  await delay(ms);
+  try {
+    await BleClient.stopLEScan();
+  } catch {
+    // ignore
+  }
+
+  return [...found.values()];
+};
+
+/**
  * Open the system BLE device picker.
- * On native we deliberately do NOT filter by services — mini printers rarely
- * advertise their print service UUID, so a services filter hides them.
+ * Optional service UUIDs are not used as a hard filter so any BLE printer can appear.
  */
 export const nativeRequestPrinterDevice = async (preferredName?: string): Promise<BleDevice> => {
   await ensureNativeBleInitialized();

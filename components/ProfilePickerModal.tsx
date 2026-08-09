@@ -5,6 +5,7 @@ import ProfileAvatar from './ProfileAvatar';
 import { ADMIN_PROFILE_NAME, isAdminProfile } from '../utils/auth';
 import PasswordField from './PasswordField';
 import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
+import { AppLoadingSpinner } from './AppLoading';
 
 interface ProfilePickerModalProps {
   isOpen: boolean;
@@ -207,7 +208,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
   return (
     <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-4 pointer-events-auto">
       <div
-        className={`absolute inset-0 ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
+        className={`absolute inset-0 morph-scrim morph-scrim--in ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
         onClick={handleClose}
         aria-hidden="true"
       />
@@ -221,7 +222,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
       />
 
       <div
-        className={`relative w-full max-w-sm rounded-[28px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.45)] ${panelBg}`}
+        className={`relative w-full max-w-sm rounded-[28px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.45)] fluid-pop-in ${panelBg}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-picker-title"
@@ -256,13 +257,13 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
             <button
               type="submit"
               disabled={isVerifyingAdmin || !adminPassword}
-              className={`w-full py-4 rounded-2xl text-xs font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
+              className={`w-full py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
                 isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
               }`}
             >
               {isVerifyingAdmin ? (
                 <>
-                  <span className="auth-spinner" aria-hidden="true" />
+                  <AppLoadingSpinner size="sm" label="Verifying" />
                   Verifying…
                 </>
               ) : (
@@ -282,7 +283,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                     type="button"
                     onClick={() => setIsAdding(true)}
                     aria-label="Add new profile"
-                    className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
                       isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                     }`}
                   >
@@ -392,13 +393,13 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                   type="button"
                   onClick={() => void handleCreate()}
                   disabled={isCreatingProfile || !canCreateProfile}
-                  className={`w-full py-4 rounded-2xl text-xs font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
+                  className={`w-full py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
                     isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                   }`}
                 >
                   {isCreatingProfile ? (
                     <>
-                      <span className="auth-spinner" aria-hidden="true" />
+                      <AppLoadingSpinner size="sm" label="Creating profile" />
                       Creating…
                     </>
                   ) : (
@@ -415,7 +416,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                       key={profile.id}
                       type="button"
                       onClick={() => handleSelect(profile.id)}
-                      className={`w-full flex items-center gap-4 p-4 rounded-2xl border text-left transition-all active:scale-[0.98] ${
+                      className={`w-full flex items-center gap-4 p-4 rounded-2xl border text-left transition-all ${
                         isActive
                           ? isLight
                             ? 'bg-zinc-900 text-white border-zinc-900'
@@ -445,7 +446,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                   <button
                     type="button"
                     onClick={() => handleSelect(adminProfile.id)}
-                    className={`w-full flex items-center gap-4 p-4 rounded-2xl border text-left transition-all active:scale-[0.98] ${rowBg}`}
+                    className={`w-full flex items-center gap-4 p-4 rounded-2xl border text-left transition-all ${rowBg}`}
                   >
                     <ProfileAvatar
                       profile={adminProfile}
