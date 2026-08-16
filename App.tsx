@@ -50,6 +50,9 @@ import {
 import { CartLineItem, InvoiceActionLog, InvoicePrintLog, SavedInvoice } from './types';
 import { usePOSDashboardData } from './hooks/usePOSDashboardData';
 import { clearAppSessionData, FRESH_INVOICE_NAME, isCloudUserAccount } from './utils/freshAppSession';
+import { printerInstance } from './utils/bluetoothPrinter';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 
 const AppContent: React.FC = () => {
   const {
@@ -60,7 +63,7 @@ const AppContent: React.FC = () => {
     signup,
     login,
     logout,
-    openDevAdminPortal,
+    skipDevAuthAsAdmin,
     syncProfiles,
     changePassword,
     verifyPassword,
@@ -75,7 +78,20 @@ const AppContent: React.FC = () => {
   const disableCard = !!settings.disableCalculatorCard;
   const isLandscape = settings.layoutMode === 'landscape';
   const { history, setHistory, saveResult } = useHistory();
-  const { items, setItems, purchases, setPurchases } = usePOS(history);
+  const {
+    items,
+    setItems,
+    purchases,
+    setPurchases,
+    wholesales,
+    activeWholesaleId,
+    setActiveWholesaleId,
+    renameWholesale,
+    addWholesale,
+    archivedWholesales,
+    archiveWholesale,
+    restoreWholesale,
+  } = usePOS(history);
   const {
     suppliers,
     setSuppliers,
@@ -126,13 +142,12 @@ const AppContent: React.FC = () => {
     getSavedInvoices,
   } = useInvoice(expression, items, settings.currency, activeProfileName);
 
-  /** Record a sale only after admin confirms print from the Vision Hub drawer. */
+  /** Record a sale when Print is used (invoice switcher or Vision Hub drawer). */
   const handleDrawerInvoicePrinted = useCallback(
     (name: string, total: string, items: CartLineItem[]) => {
-      if (!canViewTransactions) return;
       recordPrint(name, total, items);
     },
-    [canViewTransactions, recordPrint]
+    [recordPrint]
   );
 
   const handleInvoiceHydrated = useCallback(
@@ -181,6 +196,8 @@ const AppContent: React.FC = () => {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isCalculatorEntering, setIsCalculatorEntering] = useState(false);
   const [authOverlayMounted, setAuthOverlayMounted] = useState(true);
+  const sessionBootstrappedRef = useRef(false);
+  const isAdminPortalRef = useRef(false);
 
   const closeAllPanels = useCallback(() => {
     setIsHistoryOpen(false);
@@ -195,8 +212,33 @@ const AppContent: React.FC = () => {
     setSettingsSectionIndex(0);
   }, []);
 
+  /** Logged-in path: land on calculator (close POS/settings/history overlays). */
+  const openCalculatorHome = useCallback(
+    (opts?: { animate?: boolean }) => {
+      if (isAdminPortalRef.current) return;
+      closeAllPanels();
+      setAuthOverlayMounted(false);
+      if (opts?.animate) setIsCalculatorEntering(true);
+      setIsUnlocked(true);
+    },
+    [closeAllPanels]
+  );
+
+  // While using the calculator: auto-scan printers USB → Bluetooth → WiFi.
+  useEffect(() => {
+    if (!authReady || !account || !isUnlocked) {
+      printerInstance.stopBackgroundAutoConnect();
+      return;
+    }
+    printerInstance.startBackgroundAutoConnect(40000);
+    return () => {
+      printerInstance.stopBackgroundAutoConnect();
+    };
+  }, [authReady, account, isUnlocked]);
+
   const lockScreen = useCallback(() => {
     closeAllPanels();
+    printerInstance.stopBackgroundAutoConnect();
     setIsUnlocked(false);
     setAuthOverlayMounted(true);
   }, [closeAllPanels]);
@@ -204,10 +246,58 @@ const AppContent: React.FC = () => {
   const handleQuickUnlock = useCallback(() => {
     setIsCalculatorEntering(true);
     setIsUnlocked(true);
+    setAuthOverlayMounted(false);
     triggerHaptic(2);
   }, [triggerHaptic]);
 
   useStandby(isUnlocked, settings.standbyTimerSeconds ?? 0, lockScreen);
+
+  // Keep portal ref in sync for resume handlers (avoid stale closures).
+  useEffect(() => {
+    isAdminPortalRef.current = isAdminPortal;
+  }, [isAdminPortal]);
+
+  // Cold start / session restore: if already logged in, open calculator immediately.
+  useEffect(() => {
+    if (!authReady || sessionBootstrappedRef.current) return;
+    sessionBootstrappedRef.current = true;
+    if (account && !isAdminPortal) {
+      openCalculatorHome({ animate: true });
+    }
+  }, [authReady, account, isAdminPortal, openCalculatorHome]);
+
+  // Any app reopen / foreground resume while logged in → calculator.
+  useEffect(() => {
+    if (!authReady || !account) return;
+
+    const resumeToCalculator = () => {
+      if (isAdminPortalRef.current) return;
+      openCalculatorHome({ animate: false });
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') resumeToCalculator();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pageshow', resumeToCalculator);
+
+    let removeCap: (() => void) | undefined;
+    if (Capacitor.isNativePlatform()) {
+      void CapApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) resumeToCalculator();
+      }).then((handle) => {
+        removeCap = () => {
+          void handle.remove();
+        };
+      });
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pageshow', resumeToCalculator);
+      removeCap?.();
+    };
+  }, [authReady, account, openCalculatorHome]);
 
   useEffect(() => {
     if (!account) return;
@@ -261,7 +351,18 @@ const AppContent: React.FC = () => {
     triggerHaptic(2);
     setIsCalculatorEntering(true);
     setIsUnlocked(true);
+    setAuthOverlayMounted(false);
   }, [resetToFreshSession, updateSettings, triggerHaptic]);
+
+  /** Local guest login for `npm run dev` — does not require Supabase. */
+  const handleDevSkip = useCallback(async () => {
+    const guest = skipDevAuthAsAdmin();
+    if (!guest) {
+      return { error: 'Dev skip only works during npm run dev.' };
+    }
+    handleAuthSuccess(guest);
+    return { account: guest };
+  }, [skipDevAuthAsAdmin, handleAuthSuccess]);
 
   const handleAdminReturnToCalc = useCallback(() => {
     hideAdminPortal();
@@ -846,7 +947,7 @@ const AppContent: React.FC = () => {
           onAuthComplete={handleAuthSuccess}
           onAdminPortal={handleAdminPortal}
           onFinalizeAccess={handleFinalizeAccess}
-          onDevSkip={import.meta.env.DEV ? openDevAdminPortal : undefined}
+          onDevSkip={import.meta.env.DEV ? handleDevSkip : undefined}
           onQuickUnlock={handleQuickUnlock}
           onExitComplete={() => setAuthOverlayMounted(false)}
         />
@@ -1318,6 +1419,7 @@ const AppContent: React.FC = () => {
         printLogs={printLogs}
         profiles={settings.profiles ?? []}
         activeProfileId={settings.activeProfileId ?? ''}
+        onInvoicePrinted={handleDrawerInvoicePrinted}
         onSelectInvoice={handleSelectInvoice}
         switcherMode={settings.invoiceSwitcherMode ?? 'horizontal'}
         onSwitcherModeChange={(mode) => updateSettings({ invoiceSwitcherMode: mode })}
@@ -1341,6 +1443,14 @@ const AppContent: React.FC = () => {
         setRequests={setRequests}
         restocks={restocks}
         setRestocks={setRestocks}
+        wholesales={wholesales}
+        activeWholesaleId={activeWholesaleId}
+        setActiveWholesaleId={setActiveWholesaleId}
+        renameWholesale={renameWholesale}
+        addWholesale={addWholesale}
+        archivedWholesales={archivedWholesales}
+        archiveWholesale={archiveWholesale}
+        restoreWholesale={restoreWholesale}
         invoiceActionLogs={actionLogs}
         invoiceName={invoiceName}
         cartItems={cartItems}

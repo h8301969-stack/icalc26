@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  /* UI/body: Candara. Numbers/brand/mono: Montserrat (weights 300–900). */
-  --font-sans: Candara, "Montserrat";
-  --font-text: Candara, "Montserrat";
-  --font-num: "Montserrat", Candara;
-  --font-brand: "Montserrat", Candara;
-  --font-mono: "Montserrat", Candara;
+  /* UI/body: Montserrat (dynamic). Numbers/brand/mono: Montserrat (weights 300–900). */
+  --font-sans: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  --font-text: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  --font-num: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  --font-brand: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  --font-mono: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
   
   --animate-ripple: ripple 0.6s linear;
   --animate-fade-in: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -917,6 +917,40 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
     0 0 14px rgba(255, 255, 255, 0.78),
     0 0 28px rgba(255, 255, 255, 0.52),
     0 0 42px rgba(255, 255, 255, 0.32);
+}
+
+/* Settings panel: ensure the settings UI covers underlying backgrounds with a solid scrim
+  and force settings cards to use an opaque background so they don't show behind content. */
+.settings-panel .settings-panel-scrim {
+ position: absolute;
+ inset: 0;
+ z-index: 0; /* sits behind panel content children */
+}
+.settings-panel--light .settings-panel-scrim {
+ background: #ffffff;
+}
+.settings-panel--dark .settings-panel-scrim {
+ background: #0a0a0c;
+}
+
+/* Make settings cards opaque when rendered inside the settings panel */
+.settings-panel--light .settings-card,
+.settings-panel--light .settings-modal-card {
+ background: #ffffff !important;
+ border-color: rgba(0,0,0,0.06) !important;
+ color: #000 !important;
+}
+.settings-panel--dark .settings-card,
+.settings-panel--dark .settings-modal-card {
+ background: #0a0a0c !important;
+ border-color: rgba(255,255,255,0.06) !important;
+ color: #fff !important;
+}
+
+/* Ensure panel foreground sits above the scrim */
+.settings-panel > *:not(.settings-panel-scrim) {
+ position: relative;
+ z-index: 1;
 }
 
 @keyframes swipe-hint-pulse {
@@ -1947,6 +1981,39 @@ select.app-input--dark {
   background: #10b981;
   box-shadow: 0 4px 14px rgba(16, 185, 129, 0.32);
 }
+.invoice-switcher-card__print-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.9rem;
+  border: none;
+  border-radius: 999px;
+  background: #10b981;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.32);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.invoice-switcher-card__print-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.invoice-switcher-card__print-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.invoice-switcher-card__print-btn--copied {
+  background: #059669;
+}
+.invoice-switcher-card__print-btn--failed {
+  background: #dc2626;
+}
 .password-field {
   position: relative;
 }
@@ -2528,6 +2595,19 @@ select.app-input--dark {
   transform-origin: center center;
 }
 
+/* Wholesale hold menu — morph trio; keep centered under chip */
+.wholesale-hold-menu.morph-panel {
+  transform-origin: top center;
+}
+
+.wholesale-hold-menu.morph-panel--in {
+  transform: translateX(-50%) scale(1) translateY(0);
+}
+
+.wholesale-hold-menu.morph-panel--out {
+  transform: translateX(-50%) scale(0.94) translateY(-6px);
+}
+
 /* Settings — fluid segment controls (distinct from app pill toggles) */
 .fluid-segment {
   backdrop-filter: blur(12px);
@@ -2649,7 +2729,9 @@ select.app-input--dark {
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.02em;
-  min-width: 4.5rem;
+  min-width: 0;
+  width: max-content;
+  max-width: 6rem;
   text-align: left;
   transition: color 120ms ease;
 }

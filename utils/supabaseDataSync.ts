@@ -42,6 +42,8 @@ type DbInventoryRow = {
   image_url: string | null;
   date_added: string;
   last_stocked: string;
+  wholesale_id?: string | null;
+  grams?: number | string | null;
 };
 
 type DbActivityRow = {
@@ -76,6 +78,8 @@ const mapInventoryItem = (row: DbInventoryRow, activities: DbActivityRow[]): Inv
   dateAdded: row.date_added,
   lastStocked: row.last_stocked,
   image: row.image_url ?? '',
+  grams: Number(row.grams) || 0,
+  wholesaleId: row.wholesale_id ?? 'wholesale-1',
   activities: activities
     .filter((activity) => activity.item_id === row.id)
     .sort((a, b) => Date.parse(b.logged_at) - Date.parse(a.logged_at))
@@ -90,7 +94,7 @@ export const fetchInventoryFromSupabase = async (
   const { data: rows, error } = await supabase
     .from('inventory_items')
     .select(
-      'id, name, stock, price, threshold, category, supplier, image_url, date_added, last_stocked'
+      'id, name, stock, price, threshold, category, supplier, image_url, date_added, last_stocked, wholesale_id, grams'
     )
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
@@ -137,6 +141,8 @@ export const syncInventoryToSupabase = async (
     image_url: sanitizeImageRefForDb(item.image),
     date_added: item.dateAdded,
     last_stocked: item.lastStocked,
+    wholesale_id: item.wholesaleId || 'wholesale-1',
+    grams: item.grams ?? 0,
   }));
 
   const { error: inventoryError } = await supabase

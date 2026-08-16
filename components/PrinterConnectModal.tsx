@@ -5,10 +5,11 @@ import {
   KnownPrinter,
   getBluetoothSupport,
   getUsbSupport,
+  getNetworkPrinterSupport,
+  getPrinterCapabilities,
   normalizeBluetoothError,
 } from '../utils/bluetoothPrinter';
 import { MorphPresence } from './MorphCrossfade';
-
 
 interface PrinterConnectModalProps {
   isOpen: boolean;
@@ -18,6 +19,12 @@ interface PrinterConnectModalProps {
   isPrinting?: boolean;
   autoPrintOnConnect?: boolean;
 }
+
+const transportLabel = (transport?: string) => {
+  if (transport === 'usb') return 'USB';
+  if (transport === 'network') return 'WiFi';
+  return 'Bluetooth';
+};
 
 const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
   isOpen,
@@ -31,16 +38,29 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
   const [knownPrinters, setKnownPrinters] = useState<KnownPrinter[]>([]);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [isAutoScanning, setIsAutoScanning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [printFormat, setPrintFormat] = useState<string | null>(null);
   const [bluetoothSupport, setBluetoothSupport] = useState(getBluetoothSupport);
   const [usbSupport, setUsbSupport] = useState(getUsbSupport);
+  const [networkSupport, setNetworkSupport] = useState(getNetworkPrinterSupport);
+  const [wifiHost, setWifiHost] = useState('');
+  const [wifiPort, setWifiPort] = useState('9100');
+  const [wifiName, setWifiName] = useState('');
+  const [showWifiForm, setShowWifiForm] = useState(false);
+  const [showReqs, setShowReqs] = useState(false);
+
+  const capabilities = getPrinterCapabilities();
+
   const refreshPrinterState = useCallback(async () => {
     const known = await printerInstance.getKnownPrinters();
     setKnownPrinters(known);
     if (printerInstance.isConnected) {
       setPrinterName(printerInstance.getConnectedDeviceName());
+      setPrintFormat(printerInstance.getActivePrintFormat().summary);
     } else {
       setPrinterName(null);
+      setPrintFormat(null);
     }
   }, []);
 
@@ -48,6 +68,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
     if (!isOpen) return;
     setBluetoothSupport(getBluetoothSupport());
     setUsbSupport(getUsbSupport());
+    setNetworkSupport(getNetworkPrinterSupport());
     void refreshPrinterState();
 
     const bt = navigator.bluetooth;
@@ -65,6 +86,36 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
     return () => printerInstance.removeConnectionChangeListener(onChange);
   }, [isOpen, refreshPrinterState]);
 
+  // Auto-scan known printers when modal opens (USB → BT → WiFi)
+  useEffect(() => {
+    if (!isOpen) return;
+    if (printerInstance.isConnected) {
+      void refreshPrinterState();
+      return;
+    }
+    let cancelled = false;
+    setIsAutoScanning(true);
+    setErrorMessage(null);
+    (async () => {
+      try {
+        const result = await printerInstance.autoConnectPreferredSequence(10000);
+        if (cancelled) return;
+        setPrinterName(result.name);
+        setPrintFormat(result.format);
+        await refreshPrinterState();
+      } catch {
+        // stay idle — user can scan manually
+      } finally {
+        if (!cancelled) setIsAutoScanning(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Only re-run when modal opens; avoid onPrint/onClose identity churn
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   const handleScanAndConnect = async () => {
     setIsScanning(true);
     setConnectingId(null);
@@ -72,6 +123,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
     try {
       const connectedName = await printerInstance.scanAndConnect();
       setPrinterName(connectedName);
+      setPrintFormat(printerInstance.getActivePrintFormat().summary);
       await refreshPrinterState();
       if (autoPrintOnConnect) {
         await handlePrint();
@@ -93,6 +145,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
     try {
       const connectedName = await printerInstance.scanAndConnectUsb();
       setPrinterName(connectedName);
+      setPrintFormat(printerInstance.getActivePrintFormat().summary);
       await refreshPrinterState();
       if (autoPrintOnConnect) {
         await handlePrint();
@@ -107,12 +160,38 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
     }
   };
 
+  const handleWifiConnect = async () => {
+    setIsScanning(true);
+    setConnectingId(null);
+    setErrorMessage(null);
+    try {
+      const port = parseInt(wifiPort, 10) || 9100;
+      const connectedName = await printerInstance.connectNetworkPrinter({
+        host: wifiHost,
+        port,
+        name: wifiName || undefined,
+      });
+      setPrinterName(connectedName);
+      setPrintFormat(printerInstance.getActivePrintFormat().summary);
+      setShowWifiForm(false);
+      await refreshPrinterState();
+      if (autoPrintOnConnect) {
+        await handlePrint();
+      }
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'WiFi printer connection failed.');
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
   const handleConnectSaved = async (printerId: string) => {
     setConnectingId(printerId);
     setErrorMessage(null);
     try {
       const connectedName = await printerInstance.connectToSavedPrinter(printerId);
       setPrinterName(connectedName);
+      setPrintFormat(printerInstance.getActivePrintFormat().summary);
       await refreshPrinterState();
       if (autoPrintOnConnect) {
         await handlePrint();
@@ -139,6 +218,9 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
 
   const panelBg = isLight ? 'bg-[#f2f2f7] text-zinc-900' : 'bg-[#1c1c1e] text-white';
   const rowBg = isLight ? 'bg-white border-zinc-200' : 'bg-white/5 border-white/5';
+  const inputClass = isLight
+    ? 'bg-white border-zinc-200 text-zinc-900'
+    : 'bg-white/5 border-white/10 text-white';
 
   return (
     <MorphPresence show={isOpen}>
@@ -172,22 +254,30 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
           </button>
         </div>
 
-        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
-          {bluetoothSupport.message && (
-            <div className={`p-3 rounded-lg text-xs font-bold leading-normal border ${
-              bluetoothSupport.supported
-                ? 'bg-blue-500/10 border-blue-500/20 text-blue-600'
-                : 'bg-amber-500/10 border-amber-500/20 text-amber-600'
-            }`}>
-              {bluetoothSupport.message}
+        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+          <div className={`p-3 rounded-lg text-[11px] font-bold leading-normal border ${
+            isLight ? 'bg-zinc-50 border-zinc-200 text-zinc-700' : 'bg-white/5 border-white/10 text-white/80'
+          }`}>
+            <div className="font-black mb-1">Auto-connect order</div>
+            <div>1. USB · 2. Bluetooth (BLE) · 3. WiFi / network</div>
+            <div className={`mt-1.5 font-medium ${isLight ? 'text-black/55' : 'text-white/55'}`}>
+              Print format: ESC/POS text + ESC/POS raster (GS v 0). Works with classic and modern ESC/POS thermals.
             </div>
-          )}
+            {isAutoScanning && (
+              <div className="mt-2 text-blue-500">Scanning for known printers…</div>
+            )}
+          </div>
 
           {printerName && (
             <div className="flex items-center justify-between p-3 rounded-xl bg-green-500/10 border border-green-500/20">
               <div className="min-w-0">
                 <span className="app-subtext text-xs font-bold text-green-500">Connected</span>
                 <div className="text-sm font-black truncate">{printerName}</div>
+                {printFormat && (
+                  <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+                    {printFormat}
+                  </div>
+                )}
               </div>
               <span className="text-green-500 shrink-0"><Icons.Check size={18} /></span>
             </div>
@@ -212,7 +302,8 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-black truncate">{entry.saved.name}</div>
                       <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
-                        {(entry.saved.transport === 'usb' ? 'USB · ' : 'BLE · ') + statusLabel}
+                        {transportLabel(entry.saved.transport)} · {statusLabel}
+                        {entry.saved.host ? ` · ${entry.saved.host}:${entry.saved.port ?? 9100}` : ''}
                       </div>
                     </div>
                     {isConnected ? (
@@ -221,7 +312,12 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleConnectSaved(entry.saved.id)}
-                        disabled={isBusy || isScanning || (entry.saved.transport !== 'usb' && !bluetoothSupport.supported)}
+                        disabled={
+                          isBusy ||
+                          isScanning ||
+                          (entry.saved.transport === 'ble' && !bluetoothSupport.supported) ||
+                          (entry.saved.transport === 'usb' && !usbSupport.supported)
+                        }
                         className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 shrink-0"
                       >
                         {isBusy ? '...' : 'Connect'}
@@ -233,28 +329,9 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             </div>
           )}
 
-          {knownPrinters.length === 0 && (
+          {knownPrinters.length === 0 && !isAutoScanning && (
             <div className={`app-subtext text-[10px] opacity-45 p-4 rounded-xl text-center ${isLight ? 'text-black' : 'text-white'}`}>
-              No printers yet. Search to pair your first device.
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={handleScanAndConnect}
-            disabled={isScanning || connectingId !== null || !bluetoothSupport.supported}
-            className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all"
-          >
-            {isScanning ? 'Searching...' : 'Search for Bluetooth Printer'}
-          </button>
-
-          {usbSupport.message && (
-            <div className={`p-3 rounded-lg text-xs font-bold leading-normal border ${
-              usbSupport.supported
-                ? 'bg-violet-500/10 border-violet-500/20 text-violet-600'
-                : 'bg-amber-500/10 border-amber-500/20 text-amber-600'
-            }`}>
-              {usbSupport.message}
+              No printers yet. Connect USB, search Bluetooth, or add a WiFi IP.
             </div>
           )}
 
@@ -267,12 +344,111 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             {isScanning ? 'Connecting...' : 'Connect USB Printer'}
           </button>
 
+          <button
+            type="button"
+            onClick={handleScanAndConnect}
+            disabled={isScanning || connectingId !== null || !bluetoothSupport.supported}
+            className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all"
+          >
+            {isScanning ? 'Searching...' : 'Search for Bluetooth Printer'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowWifiForm((v) => !v)}
+            disabled={isScanning || connectingId !== null}
+            className="w-full py-3.5 rounded-xl bg-teal-600 text-white text-xs font-black uppercase tracking-widest hover:bg-teal-700 active:scale-95 disabled:opacity-50 transition-all"
+          >
+            {showWifiForm ? 'Hide WiFi form' : 'Add WiFi / Network Printer'}
+          </button>
+
+          {showWifiForm && (
+            <div className={`space-y-2 p-3 rounded-xl border ${rowBg}`}>
+              {networkSupport.message && (
+                <p className={`text-[10px] font-bold leading-normal ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  {networkSupport.message}
+                </p>
+              )}
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="Printer IP (e.g. 192.168.1.50)"
+                value={wifiHost}
+                onChange={(e) => setWifiHost(e.target.value)}
+                className={`w-full px-3 py-2.5 rounded-lg border text-sm font-bold ${inputClass}`}
+              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Port"
+                  value={wifiPort}
+                  onChange={(e) => setWifiPort(e.target.value)}
+                  className={`w-24 px-3 py-2.5 rounded-lg border text-sm font-bold ${inputClass}`}
+                />
+                <input
+                  type="text"
+                  placeholder="Name (optional)"
+                  value={wifiName}
+                  onChange={(e) => setWifiName(e.target.value)}
+                  className={`flex-1 px-3 py-2.5 rounded-lg border text-sm font-bold ${inputClass}`}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleWifiConnect()}
+                disabled={isScanning || !wifiHost.trim()}
+                className="w-full py-2.5 rounded-lg bg-teal-600 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50"
+              >
+                {isScanning ? 'Connecting...' : 'Connect WiFi Printer'}
+              </button>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowReqs((v) => !v)}
+            className={`w-full text-left text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black/50' : 'text-white/50'}`}
+          >
+            {showReqs ? 'Hide' : 'Show'} print requirements & format
+          </button>
+
+          {showReqs && (
+            <div className={`p-3 rounded-lg text-[10px] font-bold leading-relaxed border space-y-2 ${
+              isLight ? 'bg-zinc-50 border-zinc-200 text-zinc-700' : 'bg-white/5 border-white/10 text-white/75'
+            }`}>
+              <div>
+                <span className="font-black">Formats: </span>
+                {capabilities.formats.text.name}; {capabilities.formats.raster.name}
+              </div>
+              <ul className="list-disc pl-4 space-y-1">
+                {capabilities.necessities.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {bluetoothSupport.message && !bluetoothSupport.supported && (
+            <div className="p-3 rounded-lg text-xs font-bold leading-normal border bg-amber-500/10 border-amber-500/20 text-amber-600">
+              {bluetoothSupport.message}
+            </div>
+          )}
+
+          {usbSupport.message && !usbSupport.supported && (
+            <div className="p-3 rounded-lg text-xs font-bold leading-normal border bg-amber-500/10 border-amber-500/20 text-amber-600">
+              {usbSupport.message}
+            </div>
+          )}
+
           {errorMessage && (
             <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold">
               {errorMessage}
             </div>
           )}
 
+          {/* When opened from invoice switcher print, autoPrintOnConnect handles the job.
+              Only show a print button for manual connect-then-print flows. */}
           {printerName && !autoPrintOnConnect && (
             <button
               type="button"

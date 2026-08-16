@@ -14,6 +14,13 @@ export const clearAppSessionData = (): void => {
   storage.set('pos_suppliers', []);
   storage.set('pos_requests', []);
   storage.set('pos_restock_notes', []);
+  storage.set('pos_wholesales', [
+    { id: 'wholesale-1', name: 'Wholesale 1' },
+    { id: 'wholesale-2', name: 'Wholesale 2' },
+    { id: 'wholesale-3', name: 'Wholesale 3' },
+  ]);
+  storage.set('pos_active_wholesale', 'wholesale-1');
+  storage.set('pos_wholesale_archive', []);
   storage.set('calc_history', []);
   storage.set('invoice_name', FRESH_INVOICE_NAME);
   storage.set('past_invoice_logs', []);

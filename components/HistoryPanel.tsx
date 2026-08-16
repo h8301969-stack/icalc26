@@ -16,8 +16,12 @@ import InvoiceAttendantPicker from './InvoiceAttendantPicker';
 import InvoiceReceiptPreview from './InvoiceReceiptPreview';
 import BusinessReceiptIdentity from './BusinessReceiptIdentity';
 import PrinterConnectModal from './PrinterConnectModal';
-import { shareInvoiceAsImage, type ShareReceiptSettings } from '../utils/invoiceShareImage';
+import {
+  copyInvoiceImageToClipboard,
+  type ShareReceiptSettings,
+} from '../utils/invoiceShareImage';
 import { MORPH_EXIT_MS, MorphPresence, useMorphModeSwap } from './MorphCrossfade';
+import FluidSegmentControl from './FluidSegmentControl';
 
 const ATTENDANT_NAMES_KEY = 'invoice_attendant_names';
 
@@ -114,7 +118,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const [printerModalOpen, setPrinterModalOpen] = useState(false);
   const [pendingPrintCard, setPendingPrintCard] = useState<InvoiceCard | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [attendantPickerInvoice, setAttendantPickerInvoice] = useState<string | null>(null);
   const [receiptPaperWidth, setReceiptPaperWidth] = useState<PaperWidth>(() => printerInstance.paperWidth);
   const [wallpaperSlide, setWallpaperSlide] = useState(0);
@@ -270,29 +275,17 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     [currency, getAttendantForInvoice, resolvePrintCard, shareReceiptSettings.layoutMode]
   );
 
-  const handleShareClick = useCallback(
-    async (card: InvoiceCard) => {
-      if (isSharing || (shareReceiptSettings.layoutMode === 'full' && card.items.length === 0)) return;
-      setIsSharing(true);
-      try {
-        const result = await shareInvoiceAsImage(
-          {
-            invoiceName: card.name,
-            total: card.total,
-            currency,
-            attendantName: getAttendantForInvoice(card.name),
-            items: card.items,
-          },
-          shareReceiptSettings
-        );
-        if (!result.ok) {
-          alert(result.error || 'Could not share invoice.');
-        }
-      } finally {
-        setIsSharing(false);
-      }
+  const flashCopyFeedback = useCallback((state: 'copied' | 'failed') => {
+    setCopyFeedback(state);
+    if (copyFeedbackTimerRef.current) clearTimeout(copyFeedbackTimerRef.current);
+    copyFeedbackTimerRef.current = setTimeout(() => setCopyFeedback('idle'), 1800);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (copyFeedbackTimerRef.current) clearTimeout(copyFeedbackTimerRef.current);
     },
-    [currency, getAttendantForInvoice, isSharing, shareReceiptSettings]
+    []
   );
 
   const handlePrintClick = useCallback(
@@ -309,6 +302,25 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       }
       setIsPrinting(true);
       try {
+        // Count toward dashboard stats on Print click (paid invoice).
+        onInvoicePrinted?.(printCard.name, printCard.total, printCard.items);
+
+        // Always copy receipt image to clipboard on click
+        const copyResult = await copyInvoiceImageToClipboard(
+          {
+            invoiceName: printCard.name,
+            total: printCard.total,
+            currency,
+            attendantName: getAttendantForInvoice(printCard.name),
+            items: printCard.items,
+          },
+          shareReceiptSettings
+        );
+        flashCopyFeedback(copyResult.ok ? 'copied' : 'failed');
+        if (!copyResult.ok) {
+          console.warn('[iCalc] clipboard image copy failed', copyResult.error);
+        }
+
         const connected =
           printerInstance.isConnected || (await printerInstance.ensureConnected());
         if (!connected) {
@@ -316,7 +328,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             context: 'invoice_switcher',
             reason: 'printer_not_connected',
             invoiceName: printCard.name,
-            message: 'Opening printer connect modal.',
+            message: 'Image copied; opening printer connect modal.',
           });
           setPendingPrintCard(printCard);
           setPrinterModalOpen(true);
@@ -324,10 +336,9 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         }
         setReceiptPaperWidth(printerInstance.paperWidth);
         const result = await executePrint(card);
-        if (result.ok) {
-          onInvoicePrinted?.(printCard.name, printCard.total, printCard.items);
-        } else {
+        if (!result.ok) {
           const detail = result.errors.join(' ');
+          // Image may still have been copied — only alert if print failed
           alert(detail || 'Print failed. Check the browser console for [iCalc Receipt] details.');
         }
       } catch (err: unknown) {
@@ -343,7 +354,17 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         setIsPrinting(false);
       }
     },
-    [canPrintCard, executePrint, isPrinting, onInvoicePrinted, resolvePrintCard]
+    [
+      canPrintCard,
+      currency,
+      executePrint,
+      flashCopyFeedback,
+      getAttendantForInvoice,
+      isPrinting,
+      onInvoicePrinted,
+      resolvePrintCard,
+      shareReceiptSettings,
+    ]
   );
 
   const handleModalPrint = useCallback(async () => {
@@ -355,6 +376,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       if (!result.ok) {
         throw new Error(result.errors.join(' ') || 'Printer is busy or receipt invalid. See console [iCalc Receipt].');
       }
+      // Already recorded on Print click; refresh timestamp if user reprints from modal.
       onInvoicePrinted?.(pendingPrintCard.name, pendingPrintCard.total, pendingPrintCard.items);
     } catch (err: unknown) {
       logReceiptPrint('failure', {
@@ -828,17 +850,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const renderSwitcherLayoutToolbar = () => {
     if (!mounted || !onSwitcherModeChange) return null;
 
-    const modeBtnClass = (active: boolean) =>
-      `w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-90 border ${
-        active
-          ? isLight
-            ? 'bg-blue-500 text-white border-blue-500 shadow-[0_8px_24px_rgba(59,130,246,0.45)]'
-            : 'bg-white text-black border-white shadow-[0_0_24px_rgba(255,255,255,0.35)]'
-          : isLight
-            ? 'bg-white/70 backdrop-blur-xl text-black border-black/10 hover:bg-white/90'
-            : 'bg-white/10 backdrop-blur-xl text-white border-white/15 hover:bg-white/20'
-      }`;
-
     return (
       <div
         className={`absolute top-0 left-0 right-0 z-30 pt-5 px-4 sm:px-5 flex items-center justify-between gap-3 pointer-events-none invoice-switcher-toolbar ${
@@ -850,24 +861,20 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       >
         <div className="w-11 shrink-0" aria-hidden="true" />
 
-        <div className={`flex items-center gap-2 ${sheetIn ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-          {SWITCHER_LAYOUT_OPTIONS.map(({ id, label, icon: Icon }) => {
-            const active = switcherMode === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => handleSwitcherModeChange(id)}
-                aria-label={label}
-                aria-pressed={active}
-                title={label}
-                className={modeBtnClass(active)}
-              >
-                <Icon size={18} />
-              </button>
-            );
-          })}
-
+        <div className={`${sheetIn ? 'pointer-events-auto' : 'pointer-events-none'}`}>
+          <FluidSegmentControl
+            isLight={isLight}
+            size="sm"
+            variant="slide"
+            ariaLabel="Invoice switcher layout"
+            value={switcherMode}
+            onChange={(id) => handleSwitcherModeChange(id as SwitcherMode)}
+            options={SWITCHER_LAYOUT_OPTIONS.map(({ id, label, icon: Icon }) => ({
+              id,
+              label: label.split(' ')[0] ?? label,
+              icon: <Icon size={14} />,
+            }))}
+          />
         </div>
 
         <div className="pointer-events-auto shrink-0">
@@ -1160,29 +1167,30 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            void handleShareClick(card);
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          disabled={isSharing || isPrinting || card.items.length === 0}
-          className="invoice-switcher-card__action-btn invoice-switcher-card__action-btn--share"
-          aria-label="Share invoice as image"
-          title="Share (WhatsApp, etc.)"
-        >
-          <Icons.Share size={16} />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
             void handlePrintClick(card);
           }}
           onPointerDown={(e) => e.stopPropagation()}
-          disabled={isPrinting || isSharing || !canPrintCard(card)}
-          className="invoice-switcher-card__action-btn invoice-switcher-card__action-btn--print"
-          aria-label="Print invoice"
-          title="Print invoice"
+          disabled={isPrinting || !canPrintCard(card)}
+          className={`invoice-switcher-card__print-btn ${
+            copyFeedback === 'copied'
+              ? 'invoice-switcher-card__print-btn--copied'
+              : copyFeedback === 'failed'
+                ? 'invoice-switcher-card__print-btn--failed'
+                : ''
+          }`}
+          aria-label="Print invoice and copy image"
+          title="Copies receipt image to clipboard, then prints"
         >
           <Icons.Printer size={16} />
+          <span>
+            {copyFeedback === 'copied'
+              ? 'Copied'
+              : copyFeedback === 'failed'
+                ? 'Copy failed'
+                : isPrinting
+                  ? 'Printing…'
+                  : 'Print'}
+          </span>
         </button>
       </div>
     );
