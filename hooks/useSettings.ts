@@ -29,7 +29,7 @@ export const DEFAULT_SETTINGS = {
   invoiceSwitcherMode: 'horizontal' as 'horizontal' | 'grid' | 'vertical' | 'list',
   expressionViewMode: 'auto' as ExpressionViewMode,
   receiptLayoutMode: 'summary' as ReceiptLayoutMode,
-  visionHubDrawerMode: 'drag' as 'drag' | 'click',
+  visionHubDrawerMode: 'click' as 'drag' | 'click',
   standbyTimerSeconds: 0,
   profiles: [] as UserProfile[],
   activeProfileId: '',

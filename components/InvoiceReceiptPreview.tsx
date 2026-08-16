@@ -22,7 +22,7 @@ export interface InvoiceReceiptPreviewProps {
 }
 
 const InvoiceReceiptPreview: React.FC<InvoiceReceiptPreviewProps> = ({
-  brandLabel = 'iCalc POS',
+  brandLabel = '',
   title,
   status,
   items,
@@ -40,16 +40,21 @@ const InvoiceReceiptPreview: React.FC<InvoiceReceiptPreviewProps> = ({
   const visibleItems = maxItemLines != null ? items.slice(0, maxItemLines) : items;
   const overflowCount =
     maxItemLines != null && items.length > maxItemLines ? items.length - maxItemLines : 0;
+  const brand = brandLabel.trim();
 
   return (
     <div
       className={`invoice-switcher-card invoice-receipt-preview invoice-receipt-preview--${variant} ${className}`.trim()}
     >
       <header className="invoice-switcher-card__header">
-        <div className="invoice-switcher-card__brand-row">
-          <span className="invoice-switcher-card__brand" title={brandLabel}>
-            {brandLabel}
-          </span>
+        <div className={`invoice-switcher-card__brand-row ${brand ? '' : 'invoice-switcher-card__brand-row--badge-only'}`}>
+          {brand ? (
+            <span className="invoice-switcher-card__brand" title={brand}>
+              {brand}
+            </span>
+          ) : (
+            <span aria-hidden="true" />
+          )}
           <span
             className={`invoice-switcher-card__badge ${isPaid ? 'invoice-switcher-card__badge--paid' : ''}`}
           >

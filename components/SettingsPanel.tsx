@@ -22,6 +22,7 @@ import FluidToggle from './FluidToggle';
 import BusinessInfoReceiptCard from './BusinessInfoReceiptCard';
 import PasswordField from './PasswordField';
 import { updateUserBusinessInfo } from '../utils/accessControl';
+import { MorphPresence } from './MorphCrossfade';
 
 
 interface SettingsSlice {
@@ -56,7 +57,7 @@ const settingsFingerprint = (s: SettingsSlice): string =>
     invoiceSwitcherMode: s.invoiceSwitcherMode ?? 'horizontal',
     expressionViewMode: s.expressionViewMode ?? 'auto',
     receiptLayoutMode: s.receiptLayoutMode ?? 'summary',
-    visionHubDrawerMode: s.visionHubDrawerMode ?? 'drag',
+    visionHubDrawerMode: s.visionHubDrawerMode ?? 'click',
     standbyTimerSeconds: s.standbyTimerSeconds ?? 0,
     profiles: s.profiles ?? [],
     activeProfileId: s.activeProfileId ?? '',
@@ -623,26 +624,32 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           Settings
         </h2>
         <div className="flex items-center gap-2 shrink-0">
-          {isDirty && (
-            <>
-              <button
-                type="button"
-                onClick={handleDiscard}
-                disabled={isSaving}
-                className="settings-panel-action settings-panel-action--discard"
+          <MorphPresence show={isDirty}>
+            {(visible) => (
+              <div
+                className={`settings-panel-actions morph-panel flex items-center gap-2 ${
+                  visible ? 'morph-panel--in' : 'morph-panel--out'
+                }`}
               >
-                Discard
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSave()}
-                disabled={isSaving}
-                className="settings-panel-action settings-panel-action--save"
-              >
-                {isSaving ? 'Saving…' : 'Save'}
-              </button>
-            </>
-          )}
+                <button
+                  type="button"
+                  onClick={handleDiscard}
+                  disabled={isSaving}
+                  className="settings-panel-action settings-panel-action--discard"
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSave()}
+                  disabled={isSaving}
+                  className="settings-panel-action settings-panel-action--save"
+                >
+                  {isSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            )}
+          </MorphPresence>
           <button 
             ref={closeRef}
             onClick={handleClose} 
@@ -800,27 +807,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 value={draft.expressionViewMode ?? 'auto'}
                 onChange={(expressionViewMode) => patchDraft({ expressionViewMode })}
                 options={EXPRESSION_VIEW_OPTIONS.map(({ id, label }) => ({ id, label }))}
-              />
-            </div>
-
-            {/* Vision Hub drawer */}
-            <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-black">Vision Hub drawer</span>
-                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                  Drag to printer, or tap to print
-                </span>
-              </div>
-              <FluidSegmentControl
-                isLight={isLight}
-                size="sm"
-                ariaLabel="Vision Hub drawer mode"
-                value={draft.visionHubDrawerMode ?? 'drag'}
-                onChange={(visionHubDrawerMode) => patchDraft({ visionHubDrawerMode })}
-                options={[
-                  { id: 'drag', label: 'Drag', icon: <Icons.Printer size={14} /> },
-                  { id: 'click', label: 'Click', icon: <Icons.List size={14} /> },
-                ]}
               />
             </div>
 

@@ -813,6 +813,45 @@ body {
   background: #0a0a0c;
 }
 
+/* Asset Hub dark mode — brief white flash (scheduled in POSDashboard) */
+.asset-hub-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  background: #fff;
+  opacity: 0;
+  mix-blend-mode: normal;
+  animation: asset-hub-white-flash 0.2s ease-out both;
+}
+
+@keyframes asset-hub-white-flash {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.92;
+  }
+  28% {
+    opacity: 0.05;
+  }
+  42% {
+    opacity: 0.78;
+  }
+  62% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .asset-hub-flash {
+    display: none;
+  }
+}
+
 .pos-dashboard-shell--dimmed {
   transform: translateZ(0) scale(0.985);
   filter: brightness(0.92) saturate(0.95);
@@ -2236,6 +2275,9 @@ select.app-input--dark {
   gap: 0.5rem;
   margin-bottom: 0.55rem;
 }
+.invoice-switcher-card__brand-row--badge-only {
+  justify-content: flex-end;
+}
 .invoice-switcher-card__brand {
   font-size: 0.62rem;
   font-weight: 900;
@@ -2595,6 +2637,16 @@ select.app-input--dark {
   transform-origin: center center;
 }
 
+/* Asset drawer — top-right corner, morph from + button */
+.asset-drawer-panel.morph-panel {
+  transform-origin: top right;
+}
+
+.asset-drawer-panel.morph-panel--out {
+  transform: scale(0.94) translateY(-8px);
+  filter: blur(4px);
+}
+
 /* Wholesale hold menu — morph trio; keep centered under chip */
 .wholesale-hold-menu.morph-panel {
   transform-origin: top center;
@@ -2820,6 +2872,16 @@ select.app-input--dark {
 .settings-panel--dark .settings-panel-close:hover {
   background: rgba(255, 255, 255, 0.14) !important;
   border-color: rgba(255, 255, 255, 0.22);
+}
+
+/* Dirty-state Discard / Save — trio morph (opacity + scale + blur) via MorphPresence */
+.settings-panel-actions.morph-panel {
+  transform-origin: top right;
+}
+
+.settings-panel-actions.morph-panel--out {
+  transform: scale(0.94) translateY(-6px);
+  filter: blur(4px);
 }
 
 /* Dirty-state Discard / Save (top-right) */

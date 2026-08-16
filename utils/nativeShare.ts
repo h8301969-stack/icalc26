@@ -72,7 +72,7 @@ export const shareReceiptImage = async (
 
     const result = await Share.share({
       title: 'Share Receipt',
-      text: 'Receipt from iCalc POS',
+      text: 'Receipt',
       url: imagePath,
       dialogTitle: `Share ${fileName}`,
     });

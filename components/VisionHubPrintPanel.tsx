@@ -57,7 +57,6 @@ const PRINT_SWIPE_THRESHOLD = 112;
 const TAP_MOVE_THRESHOLD = 10;
 const RECONNECT_PROMPT_MS = 4200;
 
-const DRAWER_HEIGHT_DRAG = 320;
 const DRAWER_HEIGHT_CLICK = 380;
 
 const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
@@ -69,7 +68,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
   accentColor,
   invoices,
   attendantName,
-  drawerMode = 'drag',
+  drawerMode = 'click',
   printDrawerEnabled = true,
   queuedNotepad = null,
   onQueuedNotepadConsumed,
@@ -88,7 +87,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
   businessPhone = '',
   businessAddress = '',
 }) => {
-  const invoiceBrandLabel = 'iCalc POS';
+  const invoiceBrandLabel = '';
   const [expanded, setExpanded] = useState(false);
   const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -110,8 +109,8 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
   const reconnectTimerRef = useRef<number | null>(null);
   const printSuccessTimerRef = useRef<number | null>(null);
 
-  const isClickMode = drawerMode === 'click';
-  const drawerHeight = isClickMode ? DRAWER_HEIGHT_CLICK : DRAWER_HEIGHT_DRAG;
+  // Print hub is click-only (drag-to-printer mode removed).
+  const drawerHeight = DRAWER_HEIGHT_CLICK;
 
   const hubActive =
     printDrawerEnabled && (expanded || isDragging || dragY > 4 || focusedInvoiceId !== null);
@@ -795,9 +794,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
 
             {printDrawerEnabled && (
             <div
-              className={`vision-hub-drawer ${expanded ? 'vision-hub-drawer--open' : 'overflow-hidden'} ${
-                isClickMode ? 'vision-hub-drawer--click' : ''
-              }`}
+              className={`vision-hub-drawer vision-hub-drawer--click ${expanded ? 'vision-hub-drawer--open' : 'overflow-hidden'}`}
               style={{
                 height: expanded ? drawerHeight : `${drawerProgress * drawerHeight}px`,
                 maxHeight: expanded ? drawerHeight : `${drawerProgress * drawerHeight}px`,
@@ -813,10 +810,8 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
                   >
                     <p className="pos-subtext text-[10px] opacity-45 py-8 text-center">No invoices yet</p>
                   </div>
-                ) : isClickMode ? (
-                  renderClickDrawer()
                 ) : (
-                  renderDragDrawer()
+                  renderClickDrawer()
                 )
               )}
             </div>

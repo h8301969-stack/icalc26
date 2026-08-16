@@ -204,8 +204,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   items,
   setItems,
   purchases,
-  suppliers,
-  setSuppliers,
+  suppliers: _suppliers,
+  setSuppliers: _setSuppliers,
   requests,
   setRequests,
   restocks,
@@ -268,6 +268,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [stockEditValue, setStockEditValue] = useState('');
   const [priceEditValue, setPriceEditValue] = useState('');
   const [inventoryExpanded, setInventoryExpanded] = useState(false);
+  /** Dark-mode Asset Hub: brief white flash key (remounts animation). */
+  const [assetHubFlashKey, setAssetHubFlashKey] = useState(0);
   const [purchasesExpanded, setPurchasesExpanded] = useState(false);
   const [avgCustomerExpanded, setAvgCustomerExpanded] = useState(false);
   const [invoicesTodayExpanded, setInvoicesTodayExpanded] = useState(false);
@@ -341,7 +343,33 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const restockDragStartY = useRef(0);
   const restockDragAxis = useRef<'none' | 'x' | 'y'>('none');
   const restockStageRef = useRef<HTMLDivElement>(null);
-  const [showSuppliersPanel, setShowSuppliersPanel] = useState(false);
+  // Dark-mode Asset Hub: random white flashes every 10–40s
+  useEffect(() => {
+    if (!isOpen || !inventoryExpanded || isLight || selectedItem) return;
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+
+    let cancelled = false;
+    let activeTimer: number | null = null;
+
+    const scheduleNext = () => {
+      const delayMs = 10_000 + Math.random() * 30_000; // 10–40s
+      activeTimer = window.setTimeout(() => {
+        if (cancelled) return;
+        setAssetHubFlashKey((k) => k + 1);
+        activeTimer = window.setTimeout(() => {
+          if (!cancelled) scheduleNext();
+        }, 220);
+      }, delayMs);
+    };
+
+    scheduleNext();
+    return () => {
+      cancelled = true;
+      if (activeTimer !== null) window.clearTimeout(activeTimer);
+    };
+  }, [isOpen, inventoryExpanded, isLight, selectedItem]);
 
   // Keyboard accessibility: close on Escape
   useEffect(() => {
@@ -357,8 +385,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         } else if (showAssetMenu) {
           setShowAssetMenu(false);
           setAssetActionMode('add');
-        } else if (showSuppliersPanel) {
-          setShowSuppliersPanel(false);
         } else if (namingUnidentified) {
           setNamingUnidentified(null);
         } else if (actionLogsExpanded) {
@@ -391,7 +417,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // closeAssetAction defined later; Escape closes form via setState
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, onClose, showAssetMenu, showSuppliersPanel, namingUnidentified, actionLogsExpanded, selectedItem, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded, wholesaleDeleteConfirmId, wholesaleHoldMenuId, showWholesaleArchive]);
+  }, [isOpen, onClose, showAssetMenu, namingUnidentified, actionLogsExpanded, selectedItem, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded, wholesaleDeleteConfirmId, wholesaleHoldMenuId, showWholesaleArchive]);
 
   useEffect(() => {
     if (!canViewTransactions) {
@@ -2348,7 +2374,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   return (
     <div className={`pos-dashboard-root fixed inset-0 z-200 flex flex-col ${isOpen ? 'pos-dashboard-root--open' : 'pos-dashboard-root--closed'}`}>
-      <div className={`pos-dashboard pos-dashboard-shell relative w-full h-full flex flex-col ${isLight ? 'pos-dashboard-shell--light' : 'pos-dashboard-shell--dark'} ${visionHubFocus ? 'pos-dashboard-shell--hub-focus' : ''} ${showSuppliersPanel ? 'pos-dashboard-shell--dimmed' : ''}`}>
+      <div className={`pos-dashboard pos-dashboard-shell relative w-full h-full flex flex-col ${isLight ? 'pos-dashboard-shell--light' : 'pos-dashboard-shell--dark'} ${visionHubFocus ? 'pos-dashboard-shell--hub-focus' : ''}`}>
 
         {hubCollapsed && (
           <VisionHubPrintPanel
@@ -2374,7 +2400,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             onThemeAnimationEnd={() => setIsThemeAnimating(false)}
             onSettingsAnimationEnd={() => setIsSettingsAnimating(false)}
             onCloseAnimationEnd={() => setIsCloseAnimating(false)}
-            drawerMode={settings.visionHubDrawerMode ?? 'drag'}
+            drawerMode="click"
             businessName={typeof settings.businessName === 'string' ? settings.businessName : ''}
             businessPhone={typeof settings.businessPhone === 'string' ? settings.businessPhone : ''}
             businessAddress={typeof settings.businessAddress === 'string' ? settings.businessAddress : ''}
@@ -2671,38 +2697,35 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             </div>
           ) : inventoryExpanded ? (
             selectedItem ? renderInventoryItemPage() : (
-            <div className="morph-panel-content morph-panel-content--in space-y-6" role="tabpanel" aria-label="Asset Hub inventory">
+            <div className="relative morph-panel-content morph-panel-content--in space-y-6" role="tabpanel" aria-label="Asset Hub inventory">
+              {!isLight && assetHubFlashKey > 0 && (
+                <div
+                  key={assetHubFlashKey}
+                  className="asset-hub-flash"
+                  aria-hidden="true"
+                />
+              )}
               <div className={`sticky top-0 z-50 -mx-4 px-4 pt-2 pb-4 mb-2 backdrop-blur-3xl ${isLight ? 'bg-[#f2f2f7]/92' : 'bg-black/70'}`}>
                 {/* Row 1: back + actions */}
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <button
                     onClick={() => { setSelectedItem(null); setInventoryExpanded(false); }}
                     aria-label="Back to Vision Hub"
-                    className={`flex items-center gap-2 p-3 pr-4 rounded-2xl ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                    className={`inline-flex items-center justify-center gap-1.5 h-11 px-3.5 rounded-full ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
                   </button>
-                  <div className="relative flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowSuppliersPanel(true)}
-                      className={`px-3 py-2 rounded-full font-black text-[9px] tracking-[0.15em] uppercase active:scale-95 transition-all ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
-                      aria-label="Open suppliers list"
-                    >
-                      Suppliers
-                    </button>
-                    <button
-                      type="button"
-                      onClick={toggleAssetMenu}
-                      className="p-3 rounded-full shadow-2xl text-white active:scale-90 transition-all"
-                      style={{ backgroundColor: accentColor }}
-                      aria-label="Add asset actions"
-                      aria-expanded={showAssetMenu}
-                      aria-haspopup="dialog"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleAssetMenu}
+                    className="inline-flex items-center justify-center h-11 w-11 rounded-full shadow-2xl text-white active:scale-90 transition-all"
+                    style={{ backgroundColor: accentColor }}
+                    aria-label="Add asset actions"
+                    aria-expanded={showAssetMenu}
+                    aria-haspopup="dialog"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
                 </div>
 
                 {/* Row 2: centered Asset Hub title */}
@@ -2951,57 +2974,39 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         </div>
       </div>
 
-      {/* Asset drawer — single panel, MorphPresence trio (opacity + scale + blur) */}
+      {/* Asset drawer — top-right, MorphPresence trio (opacity + scale + blur) */}
       <MorphPresence show={showAssetMenu}>
-        {(visible) => (
+        {(visible) => {
+          const fieldLabelClass = `pos-subtext text-[9px] font-black uppercase tracking-widest ${
+            isLight ? 'text-black/50' : 'text-white/50'
+          }`;
+          return (
           <div
-            className={`fixed inset-0 z-[250] flex items-end sm:items-center justify-center p-4 ${
+            className={`fixed inset-0 z-[250] ${
               visible ? 'pointer-events-auto' : 'pointer-events-none'
             }`}
             role="presentation"
           >
             <button
               type="button"
-              className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${
-                isLight ? 'bg-black/25' : 'bg-black/55'
-              }`}
+              className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} bg-transparent`}
               aria-label="Close asset drawer"
               onClick={closeAssetAction}
             />
             <div
               role="dialog"
               aria-modal="true"
-              aria-labelledby="asset-drawer-title"
-              className={`relative w-full max-w-md rounded-[28px] p-5 shadow-[0_40px_120px_rgba(0,0,0,0.55)] morph-panel max-h-[min(85vh,36rem)] overflow-y-auto custom-scrollbar ${
+              aria-label={assetActionMode === 'restock' ? 'Restock item' : 'Add item'}
+              className={`asset-drawer-panel morph-panel fixed z-[251] w-[min(19rem,calc(100vw-1.25rem))] rounded-2xl p-4 shadow-2xl border max-h-[min(80vh,34rem)] overflow-y-auto custom-scrollbar ${
                 visible ? 'morph-panel--in' : 'morph-panel--out'
-              } ${isLight ? 'bg-white text-zinc-900' : 'bg-zinc-900 text-white'} ${levitateClass}`}
+              } ${isLight ? 'bg-white border-zinc-200 text-zinc-900' : 'bg-zinc-900 border-white/10 text-white'}`}
+              style={{
+                top: 'max(0.75rem, env(safe-area-inset-top))',
+                right: 'max(0.75rem, env(safe-area-inset-right))',
+              }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-start justify-between gap-3 mb-4">
-                <div className="min-w-0">
-                  <h3
-                    id="asset-drawer-title"
-                    className={`pos-dashboard-section-title text-xl tracking-tighter ${textColorClass}`}
-                  >
-                    {assetActionMode === 'restock' ? 'Restock item' : 'Add new item'}
-                  </h3>
-                  <p className={`pos-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
-                    {activeWholesaleName}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={closeAssetAction}
-                  aria-label="Close asset drawer"
-                  className={`p-2 rounded-full shrink-0 active:scale-90 ${
-                    isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'
-                  }`}
-                >
-                  <Icons.X size={18} />
-                </button>
-              </div>
-
-              <div className="flex justify-center mb-4">
+              <div className="flex items-center justify-between gap-2 mb-3">
                 <FluidSegmentControl
                   isLight={isLight}
                   size="sm"
@@ -3017,14 +3022,22 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     { id: 'restock', label: 'Restock' },
                   ]}
                 />
+                <button
+                  type="button"
+                  onClick={closeAssetAction}
+                  aria-label="Close asset drawer"
+                  className={`p-1.5 rounded-full shrink-0 active:scale-90 ${
+                    isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'
+                  }`}
+                >
+                  <Icons.X size={16} />
+                </button>
               </div>
 
               {assetActionMode === 'add' ? (
                 <div className="space-y-3">
                   <label className="block space-y-1.5">
-                    <span className={`pos-subtext text-[9px] font-black uppercase tracking-widest ${isLight ? 'text-black/50' : 'text-white/50'}`}>
-                      Item image
-                    </span>
+                    <span className={fieldLabelClass}>Item image</span>
                     <div className="flex items-center gap-2">
                       <div className="w-12 h-12 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-800 shrink-0">
                         <img src={resolveInventoryImage(newItemImage)} alt="" className="w-full h-full object-cover" />
@@ -3041,60 +3054,84 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       />
                     </div>
                   </label>
-                  <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="Item name" aria-label="Item name" className={formInputClass(isLight, { size: 'md' })} />
-                  <input type="number" min={0} step={1} value={newItemStock} onChange={(e) => setNewItemStock(e.target.value)} placeholder="Stock quantity" aria-label="Stock quantity" className={formInputClass(isLight, { size: 'md' })} />
-                  <input type="number" min={0} step="0.01" value={newItemPrice} onChange={(e) => setNewItemPrice(e.target.value)} placeholder="Price" aria-label="Price" className={formInputClass(isLight, { size: 'md' })} />
-                  <input type="number" min={0} step="0.01" value={newItemGrams} onChange={(e) => setNewItemGrams(e.target.value)} placeholder="Grams" aria-label="Grams" className={formInputClass(isLight, { size: 'md' })} />
+                  <label className="block space-y-1.5">
+                    <span className={fieldLabelClass}>Item name</span>
+                    <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="e.g. Rice 5kg" aria-label="Item name" className={formInputClass(isLight, { size: 'md' })} />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className={fieldLabelClass}>Stock quantity</span>
+                    <input type="number" min={0} step={1} value={newItemStock} onChange={(e) => setNewItemStock(e.target.value)} placeholder="0" aria-label="Stock quantity" className={formInputClass(isLight, { size: 'md' })} />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className={fieldLabelClass}>Price</span>
+                    <input type="number" min={0} step="0.01" value={newItemPrice} onChange={(e) => setNewItemPrice(e.target.value)} placeholder="0.00" aria-label="Price" className={formInputClass(isLight, { size: 'md' })} />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className={fieldLabelClass}>Grams</span>
+                    <input type="number" min={0} step="0.01" value={newItemGrams} onChange={(e) => setNewItemGrams(e.target.value)} placeholder="0" aria-label="Grams" className={formInputClass(isLight, { size: 'md' })} />
+                  </label>
                   <button type="button" onClick={handleAddItem} disabled={!newItemName.trim()} className="w-full py-3 rounded-xl text-black font-black uppercase tracking-[0.2em] text-[10px] active:scale-95 transition-all disabled:opacity-40" style={{ backgroundColor: accentColor }}>
                     Save item
                   </button>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <input
-                    type="search"
-                    value={restockSearch}
-                    onChange={(e) => {
-                      setRestockSearch(e.target.value);
-                      setRestockItemId(null);
-                    }}
-                    placeholder="Search item name"
-                    aria-label="Search item name"
-                    className={formInputClass(isLight, { size: 'md' })}
-                  />
-                  <div className={`rounded-xl border max-h-36 overflow-y-auto custom-scrollbar ${isLight ? 'border-zinc-200' : 'border-white/10'}`}>
-                    {restockSearchResults.length === 0 ? (
-                      <p className={`p-2.5 text-[10px] font-bold ${isLight ? 'text-black/45' : 'text-white/45'}`}>No items in this wholesale list.</p>
-                    ) : (
-                      restockSearchResults.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => {
-                            setRestockItemId(item.id);
-                            setRestockSearch(item.name);
-                            setRestockGrams(String(item.grams ?? 0));
-                          }}
-                          className={`w-full text-left px-2.5 py-2 border-b last:border-0 flex items-center justify-between gap-2 ${
-                            restockItemId === item.id
-                              ? isLight
-                                ? 'bg-zinc-900 text-white'
-                                : 'bg-white text-black'
-                              : isLight
-                                ? 'border-zinc-100 hover:bg-zinc-50'
-                                : 'border-white/5 hover:bg-white/5'
-                          }`}
-                        >
-                          <span className="text-xs font-black truncate">{item.name}</span>
-                          <span className="text-[9px] font-bold opacity-70 shrink-0">
-                            {item.stock}u{item.grams ? ` · ${item.grams}g` : ''}
-                          </span>
-                        </button>
-                      ))
-                    )}
+                  <label className="block space-y-1.5">
+                    <span className={fieldLabelClass}>Search item</span>
+                    <input
+                      type="search"
+                      value={restockSearch}
+                      onChange={(e) => {
+                        setRestockSearch(e.target.value);
+                        setRestockItemId(null);
+                      }}
+                      placeholder="Type to find an item"
+                      aria-label="Search item name"
+                      className={formInputClass(isLight, { size: 'md' })}
+                    />
+                  </label>
+                  <div className="space-y-1.5">
+                    <span className={fieldLabelClass}>Select item</span>
+                    <div className={`rounded-xl border max-h-36 overflow-y-auto custom-scrollbar ${isLight ? 'border-zinc-200' : 'border-white/10'}`}>
+                      {restockSearchResults.length === 0 ? (
+                        <p className={`p-2.5 text-[10px] font-bold ${isLight ? 'text-black/45' : 'text-white/45'}`}>No items in this wholesale list.</p>
+                      ) : (
+                        restockSearchResults.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              setRestockItemId(item.id);
+                              setRestockSearch(item.name);
+                              setRestockGrams(String(item.grams ?? 0));
+                            }}
+                            className={`w-full text-left px-2.5 py-2 border-b last:border-0 flex items-center justify-between gap-2 ${
+                              restockItemId === item.id
+                                ? isLight
+                                  ? 'bg-zinc-900 text-white'
+                                  : 'bg-white text-black'
+                                : isLight
+                                  ? 'border-zinc-100 hover:bg-zinc-50'
+                                  : 'border-white/5 hover:bg-white/5'
+                            }`}
+                          >
+                            <span className="text-xs font-black truncate">{item.name}</span>
+                            <span className="text-[9px] font-bold opacity-70 shrink-0">
+                              {item.stock}u{item.grams ? ` · ${item.grams}g` : ''}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
                   </div>
-                  <input type="number" min={0} step={1} value={restockQty} onChange={(e) => setRestockQty(e.target.value)} placeholder="Stock quantity" aria-label="Stock quantity to add" className={formInputClass(isLight, { size: 'md' })} />
-                  <input type="number" min={0} step="0.01" value={restockGrams} onChange={(e) => setRestockGrams(e.target.value)} placeholder="Grams" aria-label="Grams" className={formInputClass(isLight, { size: 'md' })} />
+                  <label className="block space-y-1.5">
+                    <span className={fieldLabelClass}>Stock quantity</span>
+                    <input type="number" min={0} step={1} value={restockQty} onChange={(e) => setRestockQty(e.target.value)} placeholder="0" aria-label="Stock quantity to add" className={formInputClass(isLight, { size: 'md' })} />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className={fieldLabelClass}>Grams</span>
+                    <input type="number" min={0} step="0.01" value={restockGrams} onChange={(e) => setRestockGrams(e.target.value)} placeholder="0" aria-label="Grams" className={formInputClass(isLight, { size: 'md' })} />
+                  </label>
                   <button
                     type="button"
                     onClick={handleRestockExisting}
@@ -3106,29 +3143,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   </button>
                 </div>
               )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  closeAssetAction();
-                  setShowWholesaleArchive(true);
-                }}
-                className={`mt-4 w-full text-center px-3 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider active:scale-[0.98] border ${
-                  isLight
-                    ? 'border-zinc-200 text-zinc-700 hover:bg-zinc-50'
-                    : 'border-white/10 text-white/80 hover:bg-white/5'
-                }`}
-              >
-                Archive
-                {archivedWholesales.length > 0 ? (
-                  <span className="ml-1.5 opacity-60 normal-case tracking-normal">
-                    ({archivedWholesales.length})
-                  </span>
-                ) : null}
-              </button>
             </div>
           </div>
-        )}
+          );
+        }}
       </MorphPresence>
 
       {/* Wholesale hold: Edit / Remove — morph trio animation */}
@@ -3430,62 +3448,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   emptyHint="Type to add products…"
                   showUpdateButton
                 />
-              </div>
-            </div>
-          </div>
-        </div>
-        )}
-      </MorphPresence>
-
-      {/* SUPPLIERS LIST */}
-      <MorphPresence show={showSuppliersPanel}>
-        {(visible) => (
-        <div className={`fixed inset-0 z-[410] flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} role="presentation">
-          <div
-            className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
-            onClick={() => setShowSuppliersPanel(false)}
-            aria-hidden="true"
-          />
-          <div className={`relative w-full max-w-md morph-panel ${visible ? 'morph-panel--in' : 'morph-panel--out'}`}>
-            <div
-              className={`rounded-[28px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.55)] ${levitateClass}`}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="suppliers-panel-title"
-            >
-              <div className={`px-6 py-5 flex items-center justify-between border-b ${isLight ? 'border-zinc-200' : 'border-white/10'}`}>
-                <h3 id="suppliers-panel-title" className={`text-xl font-black tracking-tight ${textColorClass}`}>Suppliers list</h3>
-                <button
-                  type="button"
-                  onClick={() => setShowSuppliersPanel(false)}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-all ${iconLiftLight} ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
-                  aria-label="Close suppliers list"
-                >
-                  <Icons.X size={18} />
-                </button>
-              </div>
-              <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
-                {suppliers.length > 0 ? (
-                  suppliers.map((supplier, idx) => (
-                    <div
-                      key={supplier.id}
-                      className={`px-6 py-5 ${idx !== suppliers.length - 1 ? `border-b ${isLight ? 'border-zinc-100' : 'border-white/10'}` : ''}`}
-                    >
-                      <div className={`font-black tracking-tight ${textColorClass}`}>{supplier.name}</div>
-                      <div className={`pos-subtext text-[10px] font-black mt-2 ${cardSubtextClass}`}>
-                        {supplier.totalItemsReceived} items received
-                      </div>
-                      <div className={`pos-subtext text-[10px] font-black mt-1 ${cardSubtextMutedClass}`}>
-                        Last: {formatCreatedStamp(new Date(supplier.lastReceivedAt))}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-12 text-center">
-                    <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No suppliers yet</p>
-                    <p className={`app-subtext text-[10px] opacity-45 mt-2 ${textColorClass}`}>Suppliers appear when stock is received</p>
-                  </div>
-                )}
               </div>
             </div>
           </div>

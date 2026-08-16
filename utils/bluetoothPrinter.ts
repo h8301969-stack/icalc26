@@ -1357,8 +1357,6 @@ export class BLEPrinter {
     commands.push(...Array.from(encoder.encode(title)));
 
     commands.push(0x1B, 0x45, 0x00);
-    const subTitle = `iCalc Spatial POS Receipt\n`;
-    commands.push(...Array.from(encoder.encode(subTitle)));
     if (attendantName) {
       commands.push(...Array.from(encoder.encode(`${formatServedByLine(attendantName, spec)}\n`)));
     }

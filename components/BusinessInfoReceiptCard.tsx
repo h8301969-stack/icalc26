@@ -20,7 +20,7 @@ const BusinessInfoReceiptCard: React.FC<BusinessInfoReceiptCardProps> = ({
   businessName,
   businessPhone = '',
   businessAddress = '',
-  brandLabel = 'iCalc POS',
+  brandLabel = '',
   badgeLabel = 'Business',
   variant = 'modal',
   className = '',
@@ -35,10 +35,14 @@ const BusinessInfoReceiptCard: React.FC<BusinessInfoReceiptCardProps> = ({
       className={`business-receipt-card business-receipt-card--${variant} ${editable ? 'business-receipt-card--editable' : ''} ${className}`.trim()}
     >
       <header className="business-receipt-card__header invoice-switcher-card__header">
-        <div className="invoice-switcher-card__brand-row">
-          <span className="invoice-switcher-card__brand" title={brandLabel}>
-            {brandLabel}
-          </span>
+        <div className={`invoice-switcher-card__brand-row ${brandLabel.trim() ? '' : 'invoice-switcher-card__brand-row--badge-only'}`}>
+          {brandLabel.trim() ? (
+            <span className="invoice-switcher-card__brand" title={brandLabel}>
+              {brandLabel}
+            </span>
+          ) : (
+            <span aria-hidden="true" />
+          )}
           <span className="invoice-switcher-card__badge">{badgeLabel}</span>
         </div>
         <BusinessReceiptIdentity

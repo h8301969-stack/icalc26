@@ -110,7 +110,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   businessPhone = '',
   businessAddress = '',
 }) => {
-  const invoiceBrandLabel = 'iCalc POS';
+  const invoiceBrandLabel = '';
   const [attendantNames, setAttendantNames] = useState<Record<string, string>>(() =>
     storage.get(ATTENDANT_NAMES_KEY, {})
   );
@@ -1206,10 +1206,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       <div className="invoice-switcher-shell__row flex flex-1 min-h-0">
         <div className="invoice-switcher-printable invoice-switcher-printable--full flex flex-col min-h-0 min-w-0 flex-1">
           <header className="invoice-switcher-card__header relative">
-            <div className="invoice-switcher-card__brand-row">
-              <span className="invoice-switcher-card__brand" title={invoiceBrandLabel}>
-                {invoiceBrandLabel}
-              </span>
+            <div className="invoice-switcher-card__brand-row invoice-switcher-card__brand-row--badge-only">
+              <span aria-hidden="true" />
               <span className={`invoice-switcher-card__badge ${isPaid ? 'invoice-switcher-card__badge--paid' : ''}`}>
                 {statusLabel}
               </span>

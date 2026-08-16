@@ -84,10 +84,8 @@ export const renderInvoiceShareImage = (
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillStyle = RECEIPT_THEME.headerText;
-  ctx.font = `700 ${SHARE_FONTS.brand}px Montserrat`;
-  ctx.fillText('ICALC', CANVAS_WIDTH / 2, 34);
   ctx.font = `700 ${SHARE_FONTS.title}px Montserrat`;
-  ctx.fillText(invoiceName, CANVAS_WIDTH / 2, 64);
+  ctx.fillText(invoiceName, CANVAS_WIDTH / 2, 52);
 
   let y = HEADER_HEIGHT + 32;
   ctx.fillStyle = RECEIPT_THEME.bodyText;

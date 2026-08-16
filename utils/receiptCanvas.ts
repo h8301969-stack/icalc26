@@ -65,7 +65,7 @@ export async function drawThermalReceiptCanvas(
     attendantName,
     layoutMode,
     spec,
-    brandLabel = 'iCalc',
+    brandLabel = '',
   } = input;
 
   const width = spec.widthPx;
@@ -114,14 +114,19 @@ export async function drawThermalReceiptCanvas(
 
   ctx.fillStyle = RECEIPT_THEME.headerText;
   ctx.textAlign = 'center';
-  ctx.font = `700 ${brandFontPx}px Montserrat, Candara`;
-  ctx.fillText(brandLabel.toUpperCase(), width / 2, headerOffset);
+  const brand = brandLabel.trim();
+  let titleY = headerOffset;
+  if (brand) {
+    ctx.font = `700 ${brandFontPx}px Montserrat, Candara`;
+    ctx.fillText(brand.toUpperCase(), width / 2, headerOffset);
+    titleY = headerOffset + Math.round(titleFontPx * 0.78);
+  }
 
   ctx.font = `700 ${titleFontPx}px Montserrat, Candara`;
   ctx.fillText(
     truncateReceiptText(invoiceName.toUpperCase(), spec.maxInvoiceTitleChars),
     width / 2,
-    headerOffset + Math.round(titleFontPx * 0.78)
+    titleY
   );
 
   if (attendantName) {
@@ -130,7 +135,7 @@ export async function drawThermalReceiptCanvas(
     ctx.fillText(
       formatServedByLine(attendantName, spec),
       width / 2,
-      headerOffset + Math.round(titleFontPx * 1.85)
+      titleY + Math.round(titleFontPx * 1.05)
     );
   }
 
