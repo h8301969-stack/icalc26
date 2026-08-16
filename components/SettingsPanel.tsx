@@ -5,6 +5,9 @@ import {
   printerInstance,
   KnownPrinter,
   getBluetoothSupport,
+  getUsbSupport,
+  getNetworkPrinterSupport,
+  getPrinterCapabilities,
   normalizeBluetoothError,
 } from '../utils/bluetoothPrinter';
 import { CartLineItem, NewProfileInput, UserProfile } from '../types';
@@ -120,7 +123,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       ? (isLightProp ?? false)
       : draft.themeMode === 'light';
 
-  // Bluetooth states
+  // Printer connectivity states
   const [printerName, setPrinterName] = useState<string | null>(null);
   const [, setConnectedId] = useState<string | null>(null);
   const [knownPrinters, setKnownPrinters] = useState<KnownPrinter[]>([]);
@@ -129,6 +132,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [printSuccess, setPrintSuccess] = useState(false);
   const [bluetoothSupport, setBluetoothSupport] = useState(getBluetoothSupport);
+  const [usbSupport, setUsbSupport] = useState(getUsbSupport);
+  const [networkSupport, setNetworkSupport] = useState(getNetworkPrinterSupport);
+  const [printFormatSummary, setPrintFormatSummary] = useState<string | null>(null);
+  const [wifiHost, setWifiHost] = useState('');
+  const [wifiPort, setWifiPort] = useState('9100');
+  const [wifiName, setWifiName] = useState('');
+  const [showWifiForm, setShowWifiForm] = useState(false);
   const [detectedPaperWidth, setDetectedPaperWidth] = useState(() => printerInstance.paperWidth);
   const [isProfilePickerOpen, setIsProfilePickerOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -254,9 +264,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     if (printerInstance.isConnected) {
       setPrinterName(printerInstance.getConnectedDeviceName());
       setConnectedId(printerInstance.getConnectedDeviceId());
+      setPrintFormatSummary(printerInstance.getActivePrintFormat().summary);
     } else {
       setPrinterName(null);
       setConnectedId(null);
+      setPrintFormatSummary(null);
     }
   }, []);
 
@@ -271,6 +283,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setBluetoothSupport(getBluetoothSupport());
+    setUsbSupport(getUsbSupport());
+    setNetworkSupport(getNetworkPrinterSupport());
     void refreshPrinterState();
 
     const bt = navigator.bluetooth;
@@ -288,12 +302,58 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       const connectedName = await printerInstance.scanAndConnect();
       setPrinterName(connectedName);
       setConnectedId(printerInstance.getConnectedDeviceId());
+      setPrintFormatSummary(printerInstance.getActivePrintFormat().summary);
       await refreshPrinterState();
     } catch (err: unknown) {
       const message = normalizeBluetoothError(err).message;
       if (!message.toLowerCase().includes('cancel')) {
         setErrorMessage(message);
       }
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleUsbConnect = async () => {
+    setIsScanning(true);
+    setConnectingId(null);
+    setErrorMessage(null);
+    setPrintSuccess(false);
+    try {
+      const connectedName = await printerInstance.scanAndConnectUsb();
+      setPrinterName(connectedName);
+      setConnectedId(printerInstance.getConnectedDeviceId());
+      setPrintFormatSummary(printerInstance.getActivePrintFormat().summary);
+      await refreshPrinterState();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'USB connection failed.';
+      if (!message.toLowerCase().includes('cancel')) {
+        setErrorMessage(message);
+      }
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleWifiConnect = async () => {
+    setIsScanning(true);
+    setConnectingId(null);
+    setErrorMessage(null);
+    setPrintSuccess(false);
+    try {
+      const port = parseInt(wifiPort, 10) || 9100;
+      const connectedName = await printerInstance.connectNetworkPrinter({
+        host: wifiHost,
+        port,
+        name: wifiName || undefined,
+      });
+      setPrinterName(connectedName);
+      setConnectedId(printerInstance.getConnectedDeviceId());
+      setPrintFormatSummary(printerInstance.getActivePrintFormat().summary);
+      setShowWifiForm(false);
+      await refreshPrinterState();
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'WiFi printer connection failed.');
     } finally {
       setIsScanning(false);
     }
@@ -307,6 +367,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       const connectedName = await printerInstance.connectToSavedPrinter(printerId);
       setPrinterName(connectedName);
       setConnectedId(printerInstance.getConnectedDeviceId());
+      setPrintFormatSummary(printerInstance.getActivePrintFormat().summary);
       await refreshPrinterState();
     } catch (err: unknown) {
       const message = normalizeBluetoothError(err).message;
@@ -322,9 +383,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     printerInstance.disconnect();
     setPrinterName(null);
     setConnectedId(null);
+    setPrintFormatSummary(null);
     setPrintSuccess(false);
     void refreshPrinterState();
   };
+
+  const printerCaps = getPrinterCapabilities();
+  const transportLabel = (t?: string) =>
+    t === 'usb' ? 'USB' : t === 'network' ? 'WiFi' : 'Bluetooth';
 
   const profiles = draft.profiles ?? [];
   const activeProfile =
@@ -541,6 +607,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       aria-modal={isOpen}
       aria-labelledby="settings-title"
     >
+      {/* Solid scrim so settings don't show underlying app background */}
+      <div aria-hidden className={`settings-panel-scrim`} />
+
       <div
         className="settings-panel-header shrink-0 flex items-center justify-between gap-3"
         style={{
@@ -717,16 +786,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
 
             {/* Expression view */}
-            <div className="pt-2 border-t border-white/10 space-y-3">
-              <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+              <div className="flex flex-col min-w-0">
                 <span className="text-sm font-black">Expression view</span>
                 <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                  Auto wraps to fit · List breaks after each +
+                  Auto wraps · List after each +
                 </span>
               </div>
               <FluidSegmentControl
                 isLight={isLight}
-                className="w-full"
+                size="sm"
                 ariaLabel="Expression view mode"
                 value={draft.expressionViewMode ?? 'auto'}
                 onChange={(expressionViewMode) => patchDraft({ expressionViewMode })}
@@ -735,16 +804,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
 
             {/* Vision Hub drawer */}
-            <div className="pt-2 border-t border-white/10 space-y-3">
-              <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+              <div className="flex flex-col min-w-0">
                 <span className="text-sm font-black">Vision Hub drawer</span>
                 <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                  Drag invoices to the printer, or tap to focus and print
+                  Drag to printer, or tap to print
                 </span>
               </div>
               <FluidSegmentControl
                 isLight={isLight}
-                className="w-full"
+                size="sm"
                 ariaLabel="Vision Hub drawer mode"
                 value={draft.visionHubDrawerMode ?? 'drag'}
                 onChange={(visionHubDrawerMode) => patchDraft({ visionHubDrawerMode })}
@@ -756,16 +825,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
 
             {/* Share & print receipt */}
-            <div className="pt-2 border-t border-white/10 space-y-3">
-              <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+              <div className="flex flex-col min-w-0">
                 <span className="text-sm font-black">Invoice print style</span>
                 <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                  Share image and Bluetooth receipt layout
+                  Share image and receipt layout
                 </span>
               </div>
               <FluidSegmentControl
                 isLight={isLight}
-                className="w-full"
+                size="sm"
                 ariaLabel="Invoice print style"
                 value={draft.receiptLayoutMode ?? 'summary'}
                 onChange={(receiptLayoutMode) => patchDraft({ receiptLayoutMode })}
@@ -774,16 +843,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
 
             {(draft.currency ?? currency ?? 'GHS') === 'GHS' && (
-              <div className="pt-2 border-t border-white/10 space-y-3">
-                <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+                <div className="flex flex-col min-w-0">
                   <span className="text-sm font-black">Calculator currency style</span>
                   <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                    How amounts appear in the live result
+                    Live result amounts
                   </span>
                 </div>
                 <FluidSegmentControl
                   isLight={isLight}
-                  className="w-full"
+                  size="sm"
                   ariaLabel="Calculator GHS display style"
                   value={draft.ghsCalculatorStyle ?? 'ghs'}
                   onChange={(ghsCalculatorStyle) => patchDraft({ ghsCalculatorStyle })}
@@ -836,14 +905,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
 
-        {/* Bluetooth and connectivity */}
+        {/* Printer connectivity — USB → Bluetooth → WiFi */}
         <div
           ref={(el) => { sectionRefs.current[2] = el; }}
           className="settings-card p-6 shadow-2xl"
         >
-          {renderSettingsCardHeader('Bluetooth and connectivity', <Icons.Printer size={22} />)}
+          {renderSettingsCardHeader('Printers & connectivity', <Icons.Printer size={22} />)}
 
           <div className="space-y-4">
+            <div className={`p-3 rounded-lg text-[11px] font-bold leading-normal border ${
+              isLight ? 'bg-zinc-50 border-zinc-200 text-zinc-700' : 'bg-white/5 border-white/10 text-white/80'
+            }`}>
+              <div className="font-black mb-1">Auto-connect while using calculator</div>
+              <div>USB first → Bluetooth (BLE) → WiFi / network (saved IPs)</div>
+              <div className={`mt-1.5 ${isLight ? 'text-black/55' : 'text-white/55'}`}>
+                Format: <span className="font-black">ESC/POS text</span> and{' '}
+                <span className="font-black">ESC/POS raster (GS v 0)</span> — classic and modern ESC/POS thermals.
+              </div>
+              {printFormatSummary && (
+                <div className="mt-1.5 text-green-600">Active: {printFormatSummary}</div>
+              )}
+            </div>
+
             {bluetoothSupport.message && (
               <div className={`p-3 rounded-lg text-xs font-bold leading-normal border ${
                 bluetoothSupport.supported
@@ -851,11 +934,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   : 'bg-amber-500/10 border-amber-500/20 text-amber-600'
               }`}>
                 {bluetoothSupport.message}
-                {!bluetoothSupport.secureContext && (
-                  <span className="block mt-1 opacity-80">
-                    HTTP on localhost works; HTTPS works everywhere supported.
-                  </span>
-                )}
               </div>
             )}
 
@@ -889,7 +967,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 className="flex items-center justify-between p-3 rounded-xl bg-green-500/10 border border-green-500/20"
               >
                 <div className="flex flex-col min-w-0">
-                  <span className="app-subtext text-xs font-bold text-green-500">Connected</span>
+                  <span className="app-subtext text-xs font-bold text-green-500">
+                    Connected · {transportLabel(entry.saved.transport)}
+                  </span>
                   <span className="text-sm font-black truncate">{entry.saved.name}</span>
                 </div>
                 <button
@@ -901,95 +981,139 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </div>
             ))}
 
-            {knownPrinters.filter((e) => e.status === 'available').length > 0 && (
-              <div className="space-y-2">
-                <span className={`app-subtext text-[10px] font-black ${isLight ? 'text-black' : 'text-white'}`}>
-                  Available (paired in browser)
-                </span>
-                {knownPrinters.filter((e) => e.status === 'available').map((entry) => {
-                  const isBusy = connectingId === entry.saved.id;
-                  return (
-                    <div
-                      key={`available-${entry.saved.id}`}
-                      className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${
-                        isLight ? 'bg-zinc-50 border-zinc-200' : 'bg-white/5 border-white/5'
-                      }`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-black truncate">{entry.saved.name}</div>
-                        <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                          Ready to connect
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleConnectSaved(entry.saved.id)}
-                        disabled={isBusy || isScanning || !bluetoothSupport.supported}
-                        className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 transition-all shrink-0"
-                      >
-                        {isBusy ? '...' : 'Connect'}
-                      </button>
+            {knownPrinters.filter((e) => e.status !== 'connected').map((entry) => {
+              const isBusy = connectingId === entry.saved.id;
+              const needsBt = entry.saved.transport === 'ble' || !entry.saved.transport;
+              const needsUsb = entry.saved.transport === 'usb';
+              const disabled =
+                isBusy ||
+                isScanning ||
+                (needsBt && !bluetoothSupport.supported) ||
+                (needsUsb && !usbSupport.supported);
+              return (
+                <div
+                  key={`known-${entry.saved.id}`}
+                  className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${
+                    isLight ? 'bg-zinc-50 border-zinc-200' : 'bg-white/5 border-white/5'
+                  }`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-black truncate">{entry.saved.name}</div>
+                    <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                      {transportLabel(entry.saved.transport)} ·{' '}
+                      {entry.status === 'available' ? 'Ready' : 'Saved'}
+                      {entry.saved.host ? ` · ${entry.saved.host}:${entry.saved.port ?? 9100}` : ''}
                     </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {knownPrinters.filter((e) => e.status === 'saved').length > 0 && (
-              <div className="space-y-2">
-                <span className={`app-subtext text-[10px] font-black ${isLight ? 'text-black' : 'text-white'}`}>
-                  Saved printers
-                </span>
-                {knownPrinters.filter((e) => e.status === 'saved').map((entry) => {
-                  const isBusy = connectingId === entry.saved.id;
-                  return (
-                    <div
-                      key={`saved-${entry.saved.id}`}
-                      className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${
-                        isLight ? 'bg-zinc-50 border-zinc-200' : 'bg-white/5 border-white/5'
-                      }`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-black truncate">{entry.saved.name}</div>
-                        <div className={`app-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                          {entry.saved.lastConnected > 0
-                            ? `Last used ${new Date(entry.saved.lastConnected).toLocaleDateString()}`
-                            : 'Tap connect to pair again'}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleConnectSaved(entry.saved.id)}
-                        disabled={isBusy || isScanning || !bluetoothSupport.supported}
-                        className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 transition-all shrink-0"
-                      >
-                        {isBusy ? '...' : 'Connect'}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                  </div>
+                  <button
+                    onClick={() => handleConnectSaved(entry.saved.id)}
+                    disabled={disabled}
+                    className="py-1.5 px-3 rounded-lg bg-blue-500 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50 transition-all shrink-0"
+                  >
+                    {isBusy ? '...' : 'Connect'}
+                  </button>
+                </div>
+              );
+            })}
 
             {knownPrinters.length === 0 && (
               <div className={`app-subtext text-[10px] opacity-45 p-4 rounded-xl text-center ${isLight ? 'text-black' : 'text-white'}`}>
-                No printers yet. Scan to pair your first device.
+                No printers yet. Connect USB, scan Bluetooth, or add a WiFi IP.
               </div>
             )}
+
+            <button
+              type="button"
+              onClick={() => void handleUsbConnect()}
+              disabled={isScanning || connectingId !== null || !usbSupport.supported}
+              className="w-full py-3.5 rounded-xl bg-violet-600 text-white text-xs font-black uppercase tracking-widest hover:bg-violet-700 active:scale-95 disabled:opacity-50 transition-all shadow-md"
+            >
+              {isScanning ? 'Connecting...' : 'Connect USB Printer'}
+            </button>
 
             <button
               onClick={handleScanAndConnect}
               disabled={isScanning || connectingId !== null || !bluetoothSupport.supported}
               className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all shadow-md"
             >
-              {isScanning ? 'Searching...' : knownPrinters.length > 0 ? 'Scan for new printer' : 'Scan & Connect Printer'}
+              {isScanning ? 'Searching...' : knownPrinters.length > 0 ? 'Scan Bluetooth printer' : 'Scan & Connect Bluetooth'}
             </button>
 
-            {/* Test Invoice / Print Action */}
+            <button
+              type="button"
+              onClick={() => setShowWifiForm((v) => !v)}
+              disabled={isScanning || connectingId !== null}
+              className="w-full py-3.5 rounded-xl bg-teal-600 text-white text-xs font-black uppercase tracking-widest hover:bg-teal-700 active:scale-95 disabled:opacity-50 transition-all shadow-md"
+            >
+              {showWifiForm ? 'Hide WiFi form' : 'Add WiFi / Network Printer'}
+            </button>
+
+            {showWifiForm && (
+              <div className={`space-y-2 p-3 rounded-xl border ${isLight ? 'bg-zinc-50 border-zinc-200' : 'bg-white/5 border-white/5'}`}>
+                {networkSupport.message && (
+                  <p className={`text-[10px] font-bold leading-normal ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                    {networkSupport.message}
+                  </p>
+                )}
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Printer IP (e.g. 192.168.1.50)"
+                  value={wifiHost}
+                  onChange={(e) => setWifiHost(e.target.value)}
+                  className={`w-full px-3 py-2.5 rounded-lg border text-sm font-bold ${
+                    isLight ? 'bg-white border-zinc-200 text-zinc-900' : 'bg-white/5 border-white/10 text-white'
+                  }`}
+                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Port"
+                    value={wifiPort}
+                    onChange={(e) => setWifiPort(e.target.value)}
+                    className={`w-24 px-3 py-2.5 rounded-lg border text-sm font-bold ${
+                      isLight ? 'bg-white border-zinc-200 text-zinc-900' : 'bg-white/5 border-white/10 text-white'
+                    }`}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Name (optional)"
+                    value={wifiName}
+                    onChange={(e) => setWifiName(e.target.value)}
+                    className={`flex-1 px-3 py-2.5 rounded-lg border text-sm font-bold ${
+                      isLight ? 'bg-white border-zinc-200 text-zinc-900' : 'bg-white/5 border-white/10 text-white'
+                    }`}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleWifiConnect()}
+                  disabled={isScanning || !wifiHost.trim()}
+                  className="w-full py-2.5 rounded-lg bg-teal-600 text-white text-xs font-black uppercase active:scale-95 disabled:opacity-50"
+                >
+                  {isScanning ? 'Connecting...' : 'Connect WiFi Printer'}
+                </button>
+              </div>
+            )}
+
+            <details className={`rounded-xl border px-3 py-2 ${isLight ? 'border-zinc-200' : 'border-white/10'}`}>
+              <summary className={`text-[10px] font-black uppercase tracking-wider cursor-pointer ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                Print requirements
+              </summary>
+              <ul className={`mt-2 list-disc pl-4 space-y-1 text-[10px] font-bold ${isLight ? 'text-black/65' : 'text-white/65'}`}>
+                {printerCaps.necessities.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </details>
+
             {printerName && (
               <button
                 onClick={handlePrintReceipt}
                 className={`w-full py-3 rounded-xl border text-xs font-black uppercase tracking-widest transition-all active:scale-95 ${
-                  printSuccess 
-                    ? 'bg-green-500 text-white border-green-500' 
+                  printSuccess
+                    ? 'bg-green-500 text-white border-green-500'
                     : (isLight ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-900 border-white')
                 }`}
               >
@@ -997,7 +1121,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </button>
             )}
 
-            {/* Error Message Display */}
             {errorMessage && (
               <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold leading-normal">
                 {errorMessage}

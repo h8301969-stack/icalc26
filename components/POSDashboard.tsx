@@ -11,10 +11,18 @@ import {
 } from '../types';
 import { formatPosLineItemDisplay, formatPriceLabel } from '../utils/posExpression';
 import { Icons } from '../constants';
-import { InventoryItem, ActivityLogEntry, PurchaseRecord } from '../hooks/usePOS';
+import {
+  InventoryItem,
+  ActivityLogEntry,
+  PurchaseRecord,
+  WholesaleList,
+  ArchivedWholesale,
+  defaultWholesaleId,
+} from '../hooks/usePOS';
 import { isAdminProfile } from '../utils/auth';
 
 import SettingsPanel from './SettingsPanel';
+import { printerInstance } from '../utils/bluetoothPrinter';
 import VisionHubPrintPanel, { HubInvoice, HubNotepadJob } from './VisionHubPrintPanel';
 import InventoryNotepad from './InventoryNotepad';
 import {
@@ -25,6 +33,7 @@ import {
 import { DEFAULT_INVENTORY_IMAGE, resolveInventoryImage, WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
 import { formInputClass } from '../utils/formFields';
 import { MorphPresence } from './MorphCrossfade';
+import FluidSegmentControl from './FluidSegmentControl';
 
 interface POSDashboardProps {
   history: HistoryItem[];
@@ -38,6 +47,14 @@ interface POSDashboardProps {
   setRequests: React.Dispatch<React.SetStateAction<POSRequest[]>>;
   restocks: RestockNote[];
   setRestocks: React.Dispatch<React.SetStateAction<RestockNote[]>>;
+  wholesales: WholesaleList[];
+  activeWholesaleId: string;
+  setActiveWholesaleId: (id: string) => void;
+  renameWholesale: (id: string, name: string) => void;
+  addWholesale: () => WholesaleList | null;
+  archivedWholesales: ArchivedWholesale[];
+  archiveWholesale: (id: string) => { ok: true } | { ok: false; error: string };
+  restoreWholesale: (id: string) => { ok: true } | { ok: false; error: string };
   invoiceActionLogs: InvoiceActionLog[];
   invoiceName: string;
   cartItems: CartLineItem[];
@@ -88,21 +105,14 @@ interface DashboardLogEntry {
 }
 
 type SortOption = 'a-z' | 'high-stock' | 'low-stock';
-type FilterOption = 'all' | '24h' | '48h' | '3d' | '7d' | '14d' | 'custom';
+
+/** Press-and-hold duration to rename a wholesale chip. */
+const WHOLESALE_HOLD_MS = 480;
 
 const INVENTORY_SORT_OPTIONS: { id: SortOption; label: string }[] = [
   { id: 'a-z', label: 'A-Z' },
   { id: 'high-stock', label: 'Stock ↓' },
   { id: 'low-stock', label: 'Stock ↑' },
-];
-
-const INVENTORY_FILTER_OPTIONS: { id: FilterOption; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: '24h', label: '24h' },
-  { id: '48h', label: '48h' },
-  { id: '3d', label: '3d' },
-  { id: '7d', label: '7d' },
-  { id: '14d', label: '14d' },
 ];
 
 
@@ -200,6 +210,14 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   setRequests,
   restocks,
   setRestocks,
+  wholesales,
+  activeWholesaleId,
+  setActiveWholesaleId,
+  renameWholesale,
+  addWholesale,
+  archivedWholesales,
+  archiveWholesale,
+  restoreWholesale,
   invoiceActionLogs,
   invoiceName,
   cartItems,
@@ -222,6 +240,20 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   onVerifyAdminPassword,
 }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [renamingWholesaleId, setRenamingWholesaleId] = useState<string | null>(null);
+  const [renamingWholesaleName, setRenamingWholesaleName] = useState('');
+  const [wholesaleHoldMenuId, setWholesaleHoldMenuId] = useState<string | null>(null);
+  const [wholesaleHoldMenuPos, setWholesaleHoldMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [wholesaleDeleteConfirmId, setWholesaleDeleteConfirmId] = useState<string | null>(null);
+  const [wholesaleActionError, setWholesaleActionError] = useState<string | null>(null);
+  const [showWholesaleArchive, setShowWholesaleArchive] = useState(false);
+  const wholesaleHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wholesaleHoldFiredRef = useRef(false);
+  const wholesaleHoldTargetRef = useRef<string | null>(null);
+  const wholesaleTrackRef = useRef<HTMLDivElement>(null);
+  const wholesaleBtnRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const [wholesaleThumb, setWholesaleThumb] = useState({ width: 0, left: 0 });
+  const [wholesaleThumbReady, setWholesaleThumbReady] = useState(false);
 
   const activeProfile = useMemo(() => {
     const profiles = settings.profiles ?? [];
@@ -248,8 +280,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [namingUnidentified, setNamingUnidentified] = useState<{ price: number; quantity: number } | null>(null);
   const [requestsExpanded, setRequestsExpanded] = useState(false);
   const [restockExpanded, setRestockExpanded] = useState(false);
-  const [isAddingItem, setIsAddingItem] = useState(false);
-  const [showPlusMenu, setShowPlusMenu] = useState(false);
+  /** Asset Hub + menu: dropdown for add item / restock forms */
+  type AssetActionMode = 'add' | 'restock';
+  const [assetActionMode, setAssetActionMode] = useState<AssetActionMode>('add');
+  const [showAssetMenu, setShowAssetMenu] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isThemeAnimating, setIsThemeAnimating] = useState(false);
   const [isSettingsAnimating, setIsSettingsAnimating] = useState(false);
@@ -257,9 +291,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [visionHubFocus, setVisionHubFocus] = useState(false);
   
   const [sortOption, setSortOption] = useState<SortOption>('a-z');
-  const [filterOption, setFilterOption] = useState<FilterOption>('all');
-  const [customDateStart] = useState('');
-  const [customDateEnd] = useState('');
 
   const [searchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -274,6 +305,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('0');
   const [newItemTag, setNewItemTag] = useState('');
+  const [newItemStock, setNewItemStock] = useState('0');
+  const [newItemGrams, setNewItemGrams] = useState('0');
+  const [newItemImage, setNewItemImage] = useState(DEFAULT_INVENTORY_IMAGE);
+  const [restockSearch, setRestockSearch] = useState('');
+  const [restockItemId, setRestockItemId] = useState<string | null>(null);
+  const [restockQty, setRestockQty] = useState('0');
+  const [restockGrams, setRestockGrams] = useState('0');
   // Requests feature states
   const [requestTab, setRequestTab] = useState<'pending' | 'delivered' | 'outofstock'>('pending');
   const [showAddRequestPopup, setShowAddRequestPopup] = useState(false);
@@ -310,26 +348,23 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (showAddRequestPopup) {
-          closeRequestPopup();
+        if (wholesaleDeleteConfirmId) {
+          setWholesaleDeleteConfirmId(null);
+        } else if (wholesaleHoldMenuId) {
+          setWholesaleHoldMenuId(null);
+        } else if (showWholesaleArchive) {
+          setShowWholesaleArchive(false);
+        } else if (showAssetMenu) {
+          setShowAssetMenu(false);
+          setAssetActionMode('add');
         } else if (showSuppliersPanel) {
           setShowSuppliersPanel(false);
-        } else if (showAddRestockPopup) {
-          closeRestockPopup();
         } else if (namingUnidentified) {
           setNamingUnidentified(null);
         } else if (actionLogsExpanded) {
           setActionLogsExpanded(false);
           setShowActionLogSearch(false);
           setActionLogSearchQuery('');
-        } else if (requestsExpanded) {
-          setRequestsExpanded(false);
-        } else if (restockExpanded) {
-          if (restockGridZoomed) {
-            setRestockGridZoomed(false);
-          } else {
-            setRestockExpanded(false);
-          }
         } else if (selectedItem && inventoryExpanded) {
           setSelectedItem(null);
         } else if (inventoryExpanded) {
@@ -354,7 +389,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     return () => window.removeEventListener('keydown', onKey);
     // closeRestockPopup is stable (useCallback below); omit to avoid TDZ — handler calls it by reference at runtime
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, onClose, showAddRequestPopup, showAddRestockPopup, showSuppliersPanel, namingUnidentified, actionLogsExpanded, selectedItem, requestsExpanded, restockExpanded, restockGridZoomed, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded]);
+    // closeAssetAction defined later; Escape closes form via setState
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, onClose, showAssetMenu, showSuppliersPanel, namingUnidentified, actionLogsExpanded, selectedItem, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded, wholesaleDeleteConfirmId, wholesaleHoldMenuId, showWholesaleArchive]);
 
   useEffect(() => {
     if (!canViewTransactions) {
@@ -393,6 +430,33 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       setDailySalesExpanded(false);
       setVisionHubFocus(false);
     }
+  }, [isOpen]);
+
+  // Re-check printers when POS opens (may wake Bluetooth for printing).
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (printerInstance.isConnected) return;
+        // ensureConnected clears idle-suspend and allows BLE again
+        const ok = await printerInstance.ensureConnected();
+        if (cancelled || !ok) return;
+        console.info(
+          '[Printer] POS auto-connected',
+          printerInstance.transport,
+          printerInstance.getConnectedDeviceName()
+        );
+      } catch (err) {
+        console.info(
+          '[Printer] POS auto-scan idle',
+          err instanceof Error ? err.message : String(err)
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   const paidInvoiceCards = useMemo(() => {
@@ -534,8 +598,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     return rows.sort((a, b) => b.timestamp - a.timestamp);
   }, [paidInvoiceCards, todayStart]);
 
-  const hubCollapsed = !inventoryExpanded && !purchasesExpanded && !requestsExpanded
-    && !restockExpanded && !avgCustomerExpanded && !invoicesTodayExpanded
+  const hubCollapsed = !inventoryExpanded && !purchasesExpanded
+    && !avgCustomerExpanded && !invoicesTodayExpanded
     && !monthlyRevExpanded && !dailySalesExpanded && !actionLogsExpanded && !namingUnidentified;
 
   const printedInvoiceNames = useMemo(
@@ -663,28 +727,19 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     return result;
   }, [systemLogs, actionLogFilter, actionLogSearchQuery]);
 
+  const fallbackWholesaleId = defaultWholesaleId(wholesales);
+
+  const activeWholesaleName = useMemo(
+    () => wholesales.find((w) => w.id === activeWholesaleId)?.name ?? 'Wholesale',
+    [wholesales, activeWholesaleId]
+  );
+
   const filteredInventory = useMemo(() => {
-    let result = [...items];
-    if (searchQuery) result = result.filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    if (filterOption !== 'all') {
-      const now = Date.now();
-      const oneDay = 86400000;
-      result = result.filter(item => {
-        const lastTs = new Date(item.lastStocked).getTime();
-        const diff = now - lastTs;
-        if (filterOption === '24h') return diff <= oneDay;
-        if (filterOption === '48h') return diff <= oneDay * 2;
-        if (filterOption === '3d') return diff <= oneDay * 3;
-        if (filterOption === '7d') return diff <= oneDay * 7;
-        if (filterOption === '14d') return diff <= oneDay * 14;
-        if (filterOption === 'custom' && customDateStart && customDateEnd) {
-          const start = new Date(customDateStart).getTime();
-          const end = new Date(customDateEnd).getTime() + (86400000 - 1);
-          return lastTs >= start && lastTs <= end;
-        }
-        return true;
-      });
+    let result = items.filter(
+      (item) => (item.wholesaleId || fallbackWholesaleId) === activeWholesaleId
+    );
+    if (searchQuery) {
+      result = result.filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()));
     }
 
     result.sort((a, b) => {
@@ -694,7 +749,265 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       return 0;
     });
     return result;
-  }, [items, searchQuery, sortOption, filterOption, customDateStart, customDateEnd]);
+  }, [items, searchQuery, sortOption, activeWholesaleId, fallbackWholesaleId]);
+
+  const beginRenameWholesale = useCallback(
+    (id: string) => {
+      const current = wholesales.find((w) => w.id === id);
+      if (!current) return;
+      setWholesaleHoldMenuId(null);
+      setWholesaleHoldMenuPos(null);
+      setRenamingWholesaleId(id);
+      setRenamingWholesaleName(current.name);
+    },
+    [wholesales]
+  );
+
+  const commitRenameWholesale = useCallback(() => {
+    if (!renamingWholesaleId) return;
+    renameWholesale(renamingWholesaleId, renamingWholesaleName);
+    setRenamingWholesaleId(null);
+    setRenamingWholesaleName('');
+  }, [renamingWholesaleId, renamingWholesaleName, renameWholesale]);
+
+  const clearWholesaleHold = useCallback(() => {
+    if (wholesaleHoldTimerRef.current) {
+      clearTimeout(wholesaleHoldTimerRef.current);
+      wholesaleHoldTimerRef.current = null;
+    }
+  }, []);
+
+  const openWholesaleHoldMenu = useCallback((id: string, el: HTMLElement | null) => {
+    if (!el) {
+      setWholesaleHoldMenuId(id);
+      setWholesaleHoldMenuPos(null);
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    setWholesaleHoldMenuPos({
+      top: rect.bottom + 6,
+      left: rect.left + rect.width / 2,
+    });
+    setWholesaleHoldMenuId(id);
+    setWholesaleActionError(null);
+  }, []);
+
+  const startWholesaleHold = useCallback(
+    (id: string, el: HTMLElement | null) => {
+      clearWholesaleHold();
+      wholesaleHoldFiredRef.current = false;
+      wholesaleHoldTargetRef.current = id;
+      wholesaleHoldTimerRef.current = setTimeout(() => {
+        wholesaleHoldFiredRef.current = true;
+        wholesaleHoldTimerRef.current = null;
+        if ('vibrate' in navigator) navigator.vibrate(12);
+        openWholesaleHoldMenu(id, el);
+      }, WHOLESALE_HOLD_MS);
+    },
+    [clearWholesaleHold, openWholesaleHoldMenu]
+  );
+
+  const endWholesaleHold = useCallback(
+    (id: string, select: boolean) => {
+      clearWholesaleHold();
+      if (wholesaleHoldFiredRef.current) {
+        wholesaleHoldFiredRef.current = false;
+        wholesaleHoldTargetRef.current = null;
+        return;
+      }
+      wholesaleHoldTargetRef.current = null;
+      if (select) {
+        setActiveWholesaleId(id);
+        setSelectedItem(null);
+        setWholesaleHoldMenuId(null);
+        setWholesaleHoldMenuPos(null);
+      }
+    },
+    [clearWholesaleHold, setActiveWholesaleId]
+  );
+
+  const closeWholesaleHoldMenu = useCallback(() => {
+    setWholesaleHoldMenuId(null);
+    setWholesaleHoldMenuPos(null);
+  }, []);
+
+  useEffect(
+    () => () => {
+      clearWholesaleHold();
+    },
+    [clearWholesaleHold]
+  );
+
+  const handleAddWholesale = useCallback(() => {
+    setWholesaleActionError(null);
+    const created = addWholesale();
+    if (created) {
+      setSelectedItem(null);
+      setRenamingWholesaleId(created.id);
+      setRenamingWholesaleName(created.name);
+    }
+  }, [addWholesale]);
+
+  const confirmArchiveWholesale = useCallback(() => {
+    if (!wholesaleDeleteConfirmId) return;
+    const result = archiveWholesale(wholesaleDeleteConfirmId);
+    if (result.ok === false) {
+      setWholesaleActionError(result.error);
+      return;
+    }
+    setWholesaleDeleteConfirmId(null);
+    setWholesaleHoldMenuId(null);
+    setWholesaleActionError(null);
+    setSelectedItem(null);
+  }, [archiveWholesale, wholesaleDeleteConfirmId]);
+
+  const wholesaleLists = wholesales?.length
+    ? wholesales
+    : [
+        { id: 'wholesale-1', name: 'Wholesale 1' },
+        { id: 'wholesale-2', name: 'Wholesale 2' },
+        { id: 'wholesale-3', name: 'Wholesale 3' },
+      ];
+  const activeWholesaleIdx = Math.max(
+    0,
+    wholesaleLists.findIndex((w) => w.id === activeWholesaleId)
+  );
+
+  const measureWholesaleThumb = useCallback(() => {
+    const track = wholesaleTrackRef.current;
+    const btn = wholesaleBtnRefs.current[activeWholesaleIdx];
+    if (!track || !btn) return;
+    const trackRect = track.getBoundingClientRect();
+    const btnRect = btn.getBoundingClientRect();
+    setWholesaleThumb({
+      width: btnRect.width,
+      left: btnRect.left - trackRect.left,
+    });
+    setWholesaleThumbReady(true);
+  }, [activeWholesaleIdx]);
+
+  useEffect(() => {
+    measureWholesaleThumb();
+    const track = wholesaleTrackRef.current;
+    if (!track) return;
+    const ro = new ResizeObserver(() => measureWholesaleThumb());
+    ro.observe(track);
+    return () => ro.disconnect();
+  }, [measureWholesaleThumb, wholesaleLists.length, activeWholesaleId, renamingWholesaleId]);
+
+  /**
+   * Content-width fluid segment (hugs labels) + green + beside it.
+   * Active stays under the sliding thumb; press-and-hold → Edit / Remove.
+   */
+  const renderWholesaleToggleBar = () => (
+    <div className="w-full flex flex-col items-center gap-2">
+      <div className="flex items-center justify-center gap-2 max-w-full">
+        <div
+          ref={wholesaleTrackRef}
+          className={`relative inline-flex max-w-[min(100%,calc(100vw-5.5rem))] items-stretch gap-0.5 p-0.5 rounded-[14px] overflow-x-auto no-scrollbar fluid-segment ${
+            isLight ? 'fluid-segment--light' : 'fluid-segment--dark'
+          }`}
+          role="tablist"
+          aria-label="Wholesale inventory lists"
+        >
+          <span
+            aria-hidden
+            className={`fluid-segment-thumb absolute top-0.5 bottom-0.5 rounded-[11px] pointer-events-none z-0 ${
+              wholesaleThumbReady ? 'fluid-segment-thumb--ready' : ''
+            }`}
+            style={{
+              width: wholesaleThumb.width,
+              transform: `translateX(${wholesaleThumb.left}px)`,
+            }}
+          />
+          {wholesaleLists.map((list, index) => {
+            const isActive = list.id === activeWholesaleId;
+            const isRenaming = renamingWholesaleId === list.id;
+            if (isRenaming) {
+              return (
+                <input
+                  key={list.id}
+                  autoFocus
+                  value={renamingWholesaleName}
+                  onChange={(e) => setRenamingWholesaleName(e.target.value)}
+                  onBlur={commitRenameWholesale}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      commitRenameWholesale();
+                    }
+                    if (e.key === 'Escape') {
+                      setRenamingWholesaleId(null);
+                      setRenamingWholesaleName('');
+                    }
+                  }}
+                  aria-label="Rename wholesale list"
+                  className={`relative z-10 shrink-0 min-w-[6.5rem] max-w-[10rem] mx-0.5 px-3 py-2 rounded-[11px] font-black text-[10px] uppercase tracking-wider outline-none border text-center ${
+                    isLight
+                      ? 'bg-white border-zinc-300 text-zinc-900'
+                      : 'bg-black/40 border-white/20 text-white'
+                  }`}
+                />
+              );
+            }
+            return (
+              <div key={list.id} className="relative z-10 shrink-0">
+                <button
+                  ref={(el) => {
+                    wholesaleBtnRefs.current[index] = el;
+                  }}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  title="Press and hold for Edit or Remove"
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.currentTarget.setPointerCapture?.(e.pointerId);
+                    startWholesaleHold(list.id, e.currentTarget);
+                  }}
+                  onPointerUp={(e) => {
+                    try {
+                      e.currentTarget.releasePointerCapture?.(e.pointerId);
+                    } catch {
+                      // ignore
+                    }
+                    endWholesaleHold(list.id, true);
+                  }}
+                  onPointerCancel={() => clearWholesaleHold()}
+                  onContextMenu={(e) => e.preventDefault()}
+                  className={`relative px-3.5 py-2 rounded-[11px] font-semibold text-[11px] tracking-normal whitespace-nowrap select-none touch-manipulation fluid-segment-btn ${
+                    isActive
+                      ? 'fluid-segment-btn--active text-white'
+                      : `fluid-segment-btn--idle ${isLight ? 'text-zinc-700' : 'text-white/85'}`
+                  }`}
+                >
+                  {list.name}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={handleAddWholesale}
+          aria-label="Add wholesale list"
+          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-black text-lg active:scale-95 transition-all bg-emerald-500 text-white shadow-md"
+        >
+          +
+        </button>
+      </div>
+
+      <p className={`pos-subtext text-[9px] font-bold text-center ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+        {filteredInventory.length} item{filteredInventory.length !== 1 ? 's' : ''} in {activeWholesaleName}
+        <span className="opacity-60"> · hold for edit / remove</span>
+      </p>
+
+      {wholesaleActionError && !wholesaleDeleteConfirmId && (
+        <p className="text-center text-[10px] font-bold text-red-500">{wholesaleActionError}</p>
+      )}
+    </div>
+  );
 
   const filteredRequests = useMemo(() => {
     return requests
@@ -1217,38 +1530,25 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   );
 
   const renderRestockViewToggle = () => (
-    <div className="flex flex-wrap gap-2">
-      {([
-        { id: 'list' as const, label: 'List', icon: Icons.List },
-        { id: 'horizontal' as const, label: 'Horizontal', icon: Icons.Carousel },
-        { id: 'vertical' as const, label: 'Vertical', icon: Icons.Stack },
-        { id: 'grid' as const, label: 'Grid', icon: Icons.Grid },
-      ]).map(({ id, label, icon: Icon }) => {
-        const active = restockViewMode === id;
-        return (
-          <button
-            key={id}
-            type="button"
-            onClick={() => {
-              setRestockViewMode(id);
-              setRestockGridZoomed(false);
-              setRestockActiveIdx(0);
-              setRestockDragDelta(0);
-            }}
-            className={`px-3 py-2 rounded-xl pos-subtext text-[10px] font-black border transition-all active:scale-95 flex items-center gap-1.5 ${
-              active
-                ? 'bg-amber-500 text-white border-amber-500'
-                : isLight
-                  ? 'bg-zinc-100 border-zinc-200 text-black'
-                  : 'bg-white/5 border-white/10 text-white'
-            }`}
-          >
-            <Icon size={14} />
-            {label}
-          </button>
-        );
-      })}
-    </div>
+    <FluidSegmentControl
+      isLight={isLight}
+      size="sm"
+      variant="slide"
+      ariaLabel="Restock view mode"
+      value={restockViewMode}
+      onChange={(id) => {
+        setRestockViewMode(id as RestockViewMode);
+        setRestockGridZoomed(false);
+        setRestockActiveIdx(0);
+        setRestockDragDelta(0);
+      }}
+      options={[
+        { id: 'list', label: 'List', icon: <Icons.List size={14} /> },
+        { id: 'horizontal', label: 'Horizontal', icon: <Icons.Carousel size={14} /> },
+        { id: 'vertical', label: 'Vertical', icon: <Icons.Stack size={14} /> },
+        { id: 'grid', label: 'Grid', icon: <Icons.Grid size={14} /> },
+      ]}
+    />
   );
 
   const renderRestockNotesSwitcher = () => {
@@ -1435,34 +1735,127 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     </div>
   );
 
+  const resetAssetFormFields = useCallback(() => {
+    setNewItemName('');
+    setNewItemPrice('0');
+    setNewItemTag('');
+    setNewItemStock('0');
+    setNewItemGrams('0');
+    setNewItemImage(DEFAULT_INVENTORY_IMAGE);
+    setRestockSearch('');
+    setRestockItemId(null);
+    setRestockQty('0');
+    setRestockGrams('0');
+  }, []);
+
+  const closeAssetAction = useCallback(() => {
+    setShowAssetMenu(false);
+    setAssetActionMode('add');
+    resetAssetFormFields();
+  }, [resetAssetFormFields]);
+
+  /** Open single asset drawer (Add / Restock) with trio morph animation. */
+  const openAssetAction = useCallback((mode: AssetActionMode = 'add') => {
+    resetAssetFormFields();
+    setAssetActionMode(mode);
+    setShowAssetMenu(true);
+  }, [resetAssetFormFields]);
+
+  const toggleAssetMenu = useCallback(() => {
+    setShowAssetMenu((open) => {
+      if (open) {
+        setAssetActionMode('add');
+        resetAssetFormFields();
+        return false;
+      }
+      setAssetActionMode('add');
+      resetAssetFormFields();
+      return true;
+    });
+  }, [resetAssetFormFields]);
+
+  const handlePickItemImage = useCallback((file: File | null) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') setNewItemImage(reader.result);
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
   const handleAddItem = () => {
     if (!newItemName.trim()) return;
     const now = new Date();
+    const stock = Math.max(0, Math.floor(parseFloat(newItemStock) || 0));
+    const grams = Math.max(0, parseFloat(newItemGrams) || 0);
     const newItem: InventoryItem = {
       id: Date.now().toString(),
-      name: newItemName,
-      stock: 50,
+      name: newItemName.trim(),
+      stock,
       price: parseFloat(newItemPrice) || 0,
       threshold: 20,
       category: newItemTag.trim(),
       dateAdded: now.toLocaleDateString(),
       supplier: 'Generic Systems',
       lastStocked: now.toISOString(),
-      image: DEFAULT_INVENTORY_IMAGE,
+      image: newItemImage || DEFAULT_INVENTORY_IMAGE,
+      grams,
+      wholesaleId: activeWholesaleId || fallbackWholesaleId,
       activities: [{
         id: Math.random().toString(),
         type: 'restock',
-        action: 'Initial entry created',
+        action: `Added item · stock ${stock}${grams > 0 ? ` · ${grams}g` : ''}`,
         time: 'Just now',
         timestamp: Date.now(),
         profileName: activeProfileName,
       }]
     };
     setItems(prev => [newItem, ...prev]);
-    setNewItemName('');
-    setNewItemPrice('0');
-    setNewItemTag('');
-    setIsAddingItem(false);
+    closeAssetAction();
+  };
+
+  const restockSearchResults = useMemo(() => {
+    const q = restockSearch.trim().toLowerCase();
+    const list = items.filter(
+      (item) => (item.wholesaleId || fallbackWholesaleId) === activeWholesaleId
+    );
+    if (!q) return list.slice(0, 8);
+    return list
+      .filter((item) => item.name.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [items, restockSearch, activeWholesaleId, fallbackWholesaleId]);
+
+  const handleRestockExisting = () => {
+    if (!restockItemId) return;
+    const addQty = Math.max(0, Math.floor(parseFloat(restockQty) || 0));
+    const grams = Math.max(0, parseFloat(restockGrams) || 0);
+    if (addQty <= 0 && grams <= 0) return;
+    const now = Date.now();
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== restockItemId) return item;
+        const nextStock = item.stock + addQty;
+        const nextGrams = grams > 0 ? grams : item.grams;
+        return {
+          ...item,
+          stock: nextStock,
+          grams: nextGrams,
+          lastStocked: new Date(now).toISOString(),
+          activities: [
+            {
+              id: `restock-${now}`,
+              type: 'restock' as const,
+              action: `Restocked +${addQty}${grams > 0 ? ` · ${grams}g` : ''} (now ${nextStock})`,
+              time: 'Just now',
+              timestamp: now,
+              profileName: activeProfileName,
+            },
+            ...item.activities,
+          ],
+        };
+      })
+    );
+    closeAssetAction();
   };
 
   const getLogIcon = (type: DashboardLogEntry['type']) => {
@@ -1503,6 +1896,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       supplier: 'Generic Systems',
       lastStocked: new Date(now).toISOString(),
       image: DEFAULT_INVENTORY_IMAGE,
+      grams: 0,
+      wholesaleId: activeWholesaleId || fallbackWholesaleId,
       activities: [{
         id: `${now}-identified`,
         type: 'restock',
@@ -1518,7 +1913,16 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     setNewItemName('');
     setNewItemPrice('0');
     setNewItemTag('');
-  }, [namingUnidentified, newItemName, newItemTag, setItems, onResolveUnidentifiedPrice, activeProfileName]);
+  }, [
+    namingUnidentified,
+    newItemName,
+    newItemTag,
+    setItems,
+    onResolveUnidentifiedPrice,
+    activeProfileName,
+    activeWholesaleId,
+    fallbackWholesaleId,
+  ]);
 
   const levitateClass = isLight
     ? 'bg-white/90 shadow-[0_16px_36px_rgba(0,0,0,0.12)] hover:shadow-[0_24px_48px_rgba(0,0,0,0.16)] pos-dashboard-card-motion'
@@ -1706,17 +2110,28 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         />
       )}
 
-      <div className="flex gap-2 flex-wrap pb-1">
-        {(['all', 'restock', 'sale', 'invoice', 'unidentified', 'updates', '24h', '48h', '7d'] as const).map((opt) => (
-          <button
-            key={opt}
-            type="button"
-            onClick={() => setActionLogFilter(opt)}
-            className={`px-3 py-2 rounded-full pos-subtext text-[9px] font-black transition-all ${actionLogFilter === opt ? (isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black') : (isLight ? 'bg-zinc-100 text-black' : 'bg-white/5 text-white')}`}
-          >
-            {opt === 'unidentified' ? 'Unidentified' : opt === 'updates' ? 'Updates' : opt}
-          </button>
-        ))}
+      <div className="overflow-x-auto no-scrollbar pb-1">
+        <FluidSegmentControl
+          isLight={isLight}
+          size="sm"
+          variant="slide"
+          ariaLabel="Filter action logs"
+          value={actionLogFilter}
+          onChange={(id) => setActionLogFilter(id as DashboardLogFilter)}
+          options={(
+            [
+              { id: 'all', label: 'all' },
+              { id: 'restock', label: 'restock' },
+              { id: 'sale', label: 'sale' },
+              { id: 'invoice', label: 'invoice' },
+              { id: 'unidentified', label: 'Unidentified' },
+              { id: 'updates', label: 'Updates' },
+              { id: '24h', label: '24h' },
+              { id: '48h', label: '48h' },
+              { id: '7d', label: '7d' },
+            ] as const
+          ).map((opt) => ({ id: opt.id, label: opt.label }))}
+        />
       </div>
 
       <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
@@ -1788,53 +2203,47 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     </div>
   );
 
-  const renderInventoryProductTile = (item: InventoryItem, idx: number, showAllLogs = false) => {
-    const logs: DashboardLogEntry[] = getItemActivityLogs(item).map((log) => ({
-      id: log.id,
-      timestamp: log.timestamp,
-      action: log.action,
-      itemName: item.name,
-      type: log.type,
-      profileName: log.profileName,
-      source: 'inventory',
-    }));
-    return (
-      <div key={item.id} className="flex flex-col gap-2 min-w-0">
-        <div
-          role="listitem"
-          tabIndex={0}
-          aria-label={`Inventory item ${idx + 1}: ${item.name}, stock ${item.stock} units, price ¢${item.price}`}
-          onClick={() => setSelectedItem(item)}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedItem(item); } }}
-          className={`group rounded-xl overflow-hidden cursor-pointer ${levitateClass} relative focus:outline-none focus:ring-2 focus:ring-white/40`}
-        >
-          <div className="relative aspect-square overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-            <img src={resolveInventoryImage(item.image)} alt={item.name} className="w-full h-full object-cover" />
-            <div className="absolute inset-x-0 bottom-0 h-[42%] bg-linear-to-t from-black/95 via-black/40 to-transparent pointer-events-none" aria-hidden="true" />
-            <div className="absolute bottom-3 left-3 right-3 flex flex-col pointer-events-none" aria-hidden="true">
-              <div className="flex flex-col items-start gap-0.5">
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-[11px] font-black tracking-tight leading-tight truncate text-white">{item.name}</h4>
-                  {item.category ? (
-                    <p className={`pos-subtext text-[8px] font-black truncate ${heroSubtextClass}`}>{item.category}</p>
-                  ) : null}
-                </div>
-                <span className="text-[10px] font-black text-white whitespace-nowrap">¢{item.price}</span>
-              </div>
+  const renderInventoryProductTile = (item: InventoryItem, idx: number) => (
+    <div key={item.id} className="flex flex-col gap-1.5 min-w-0">
+      <div
+        role="listitem"
+        tabIndex={0}
+        aria-label={`Inventory item ${idx + 1}: ${item.name}, stock ${item.stock} units, price ¢${item.price}`}
+        onClick={() => setSelectedItem(item)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setSelectedItem(item);
+          }
+        }}
+        className={`group rounded-xl overflow-hidden cursor-pointer ${levitateClass} relative focus:outline-none focus:ring-2 focus:ring-white/40`}
+      >
+        <div className="relative aspect-square overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+          <img src={resolveInventoryImage(item.image)} alt={item.name} className="w-full h-full object-cover" />
+          <div className="absolute top-2 right-2 flex flex-col items-end gap-1" aria-hidden="true">
+            <div
+              className={`pos-subtext px-2 py-1 rounded-lg text-[9px] font-black backdrop-blur-3xl shadow-xl ${
+                item.stock < item.threshold ? 'bg-red-500 text-white' : 'bg-black/60 text-white'
+              }`}
+            >
+              {item.stock}u
             </div>
-            <div className="absolute top-2 right-2" aria-hidden="true">
-              <div className={`pos-subtext px-2 py-1 rounded-lg text-[9px] font-black backdrop-blur-3xl shadow-xl ${item.stock < item.threshold ? 'bg-red-500 text-white' : 'bg-black/60 text-white'}`}>
-                {item.stock}u
+            {(item.grams ?? 0) > 0 && (
+              <div className="pos-subtext px-2 py-1 rounded-lg text-[8px] font-black backdrop-blur-3xl shadow-xl bg-black/50 text-white">
+                {item.grams}g
               </div>
-            </div>
+            )}
           </div>
         </div>
-        <div className="space-y-1.5 px-0.5">
-          {renderActivityLogRows(logs, showAllLogs ? undefined : 3)}
-        </div>
       </div>
-    );
-  };
+      <p
+        className={`px-0.5 text-[11px] font-black tracking-tight leading-tight truncate ${textColorClass}`}
+        title={item.name}
+      >
+        {item.name}
+      </p>
+    </div>
+  );
 
   const renderInventoryItemPage = () => {
     const item = items.find((i) => i.id === selectedItem!.id) ?? selectedItem!;
@@ -1897,6 +2306,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 ) : (
                   <p className={`text-3xl font-black ${item.stock < item.threshold ? 'text-red-500' : ''}`}>{item.stock} U</p>
                 )}
+                {(item.grams ?? 0) > 0 && (
+                  <p className={`pos-subtext text-[11px] font-black mt-2 ${cardSubtextMutedClass}`}>{item.grams} g</p>
+                )}
               </div>
               <div>
                 <p className={`pos-subtext text-[10px] font-black mb-2 ${cardSubtextMutedClass}`}>Credit Rate</p>
@@ -1936,7 +2348,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   return (
     <div className={`pos-dashboard-root fixed inset-0 z-200 flex flex-col ${isOpen ? 'pos-dashboard-root--open' : 'pos-dashboard-root--closed'}`}>
-      <div className={`pos-dashboard pos-dashboard-shell relative w-full h-full flex flex-col ${isLight ? 'pos-dashboard-shell--light' : 'pos-dashboard-shell--dark'} ${visionHubFocus ? 'pos-dashboard-shell--hub-focus' : ''} ${(isAddingItem || showAddRequestPopup || showAddRestockPopup || showSuppliersPanel) ? 'pos-dashboard-shell--dimmed' : ''}`}>
+      <div className={`pos-dashboard pos-dashboard-shell relative w-full h-full flex flex-col ${isLight ? 'pos-dashboard-shell--light' : 'pos-dashboard-shell--dark'} ${visionHubFocus ? 'pos-dashboard-shell--hub-focus' : ''} ${showSuppliersPanel ? 'pos-dashboard-shell--dimmed' : ''}`}>
 
         {hubCollapsed && (
           <VisionHubPrintPanel
@@ -2027,45 +2439,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     <div className="pt-2">
                       <p className={`app-subtext leading-relaxed max-w-[280px] ${heroSubtextClass}`}>Inventory flow optimized within margins. Real-time neural processing active.</p>
                     </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* TWO CARDS BELOW INVENTORY: Requests + Restocking */}
-              <div 
-                onClick={() => setRequestsExpanded(true)} 
-                className={`col-span-1 aspect-[16/10] rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer active:scale-[0.985] p-6 flex flex-col justify-between`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className={`p-3.5 rounded-2xl bg-emerald-500/20 text-emerald-500 ${iconLiftLight}`}>
-                    <Icons.Requests size={26} />
-                  </div>
-                  <div className={`pos-subtext text-[10px] font-black px-3 py-1 rounded-full bg-emerald-500/10 ${cardSubtextClass}`}>Requests</div>
-                </div>
-                <div>
-                  <div className={`pos-dashboard-section-title text-3xl tracking-tighter ${textColorClass}`}>Requests</div>
-                  <p className={`app-subtext mt-0.5 ${cardSubtextMutedClass}`}>Pending • Delivered • Out of Stock</p>
-                  <div className={`mt-2 text-xs font-black ${cardSubtextClass}`}>
-                    {requests.filter(r => r.status === 'pending').length} active
-                  </div>
-                </div>
-              </div>
-
-              <div 
-                onClick={() => setRestockExpanded(true)} 
-                className={`col-span-1 aspect-[16/10] rounded-2xl ${levitateClass} relative overflow-hidden group cursor-pointer active:scale-[0.985] p-6 flex flex-col justify-between`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className={`p-3.5 rounded-2xl bg-amber-500/20 text-amber-500 ${iconLiftLight}`}>
-                    <Icons.Restock size={26} />
-                  </div>
-                  <div className={`pos-subtext text-[10px] font-black px-3 py-1 rounded-full bg-amber-500/10 ${cardSubtextClass}`}>Restocking</div>
-                </div>
-                <div>
-                  <div className={`pos-dashboard-section-title text-3xl tracking-tighter ${textColorClass}`}>Restocking</div>
-                  <p className={`app-subtext mt-0.5 ${cardSubtextMutedClass}`}>Low stock replenishment</p>
-                  <div className={`mt-2 text-xs font-black ${cardSubtextClass}`}>
-                    {items.filter(i => i.stock < i.threshold).length} items need attention
                   </div>
                 </div>
               </div>
@@ -2298,73 +2671,80 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             </div>
           ) : inventoryExpanded ? (
             selectedItem ? renderInventoryItemPage() : (
-            <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Asset Hub inventory">
-              {/* Original inventory expanded view is preserved here */}
-              <div className="sticky top-0 z-50 py-4 backdrop-blur-3xl bg-current/5 rounded-3xl -mx-4 px-6 mb-6">
-                <div className="flex flex-col gap-5">
-                  <div className="flex items-center justify-between">
-                    <button 
-                      onClick={() => { setSelectedItem(null); setInventoryExpanded(false); }} 
-                      aria-label="Back to Vision Hub"
-                      className={`flex items-center gap-3 p-3 pr-5 rounded-2xl ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+            <div className="morph-panel-content morph-panel-content--in space-y-6" role="tabpanel" aria-label="Asset Hub inventory">
+              <div className={`sticky top-0 z-50 -mx-4 px-4 pt-2 pb-4 mb-2 backdrop-blur-3xl ${isLight ? 'bg-[#f2f2f7]/92' : 'bg-black/70'}`}>
+                {/* Row 1: back + actions */}
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <button
+                    onClick={() => { setSelectedItem(null); setInventoryExpanded(false); }}
+                    aria-label="Back to Vision Hub"
+                    className={`flex items-center gap-2 p-3 pr-4 rounded-2xl ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
+                  </button>
+                  <div className="relative flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowSuppliersPanel(true)}
+                      className={`px-3 py-2 rounded-full font-black text-[9px] tracking-[0.15em] uppercase active:scale-95 transition-all ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
+                      aria-label="Open suppliers list"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
+                      Suppliers
                     </button>
-                    <div className={`flex items-center gap-3 ${textColorClass}`}>
-                      <h3 className="pos-dashboard-section-title text-2xl tracking-tighter">Asset Hub</h3>
-                      <button
-                        type="button"
-                        onClick={() => setShowSuppliersPanel(true)}
-                        className={`px-4 py-2 rounded-full font-black text-[9px] tracking-[0.2em] uppercase active:scale-95 transition-all ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
-                        aria-label="Open suppliers list"
-                      >
-                        Suppliers list
-                      </button>
-                      <button onClick={() => setShowPlusMenu(!showPlusMenu)} className="p-4 rounded-full shadow-2xl text-white active:scale-90 transition-all" style={{ backgroundColor: accentColor }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={toggleAssetMenu}
+                      className="p-3 rounded-full shadow-2xl text-white active:scale-90 transition-all"
+                      style={{ backgroundColor: accentColor }}
+                      aria-label="Add asset actions"
+                      aria-expanded={showAssetMenu}
+                      aria-haspopup="dialog"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
                   </div>
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-                      <div className="flex items-center gap-1 shrink-0" role="group" aria-label="Sort inventory">
-                        {INVENTORY_SORT_OPTIONS.map((opt) => (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => setSortOption(opt.id)}
-                            aria-pressed={sortOption === opt.id}
-                            className={`px-3 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${sortOption === opt.id ? hubChipActiveClass : hubChipInactiveClass}`}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex items-center gap-1" role="group" aria-label="Time filter options">
-                        {INVENTORY_FILTER_OPTIONS.map((opt) => (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => setFilterOption(opt.id)}
-                            aria-pressed={filterOption === opt.id}
-                            className={`px-3 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${filterOption === opt.id ? hubChipActiveClass : hubChipInactiveClass}`}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                </div>
+
+                {/* Row 2: centered Asset Hub title */}
+                <h3 className={`pos-dashboard-section-title text-2xl tracking-tighter text-center mb-3 ${textColorClass}`}>
+                  Asset Hub
+                </h3>
+
+                {/* Row 3: wholesale toggles — centered, level right under title */}
+                {renderWholesaleToggleBar()}
+
+                {/* Row 4: sort (settings-style segment) */}
+                <div className="mt-3 flex justify-center">
+                  <FluidSegmentControl
+                    isLight={isLight}
+                    size="sm"
+                    variant="slide"
+                    ariaLabel="Sort inventory"
+                    value={sortOption}
+                    onChange={(id) => setSortOption(id as SortOption)}
+                    options={INVENTORY_SORT_OPTIONS.map((opt) => ({
+                      id: opt.id,
+                      label: opt.label,
+                    }))}
+                  />
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3 pb-20" role="list" aria-label="Inventory items">
-                {filteredInventory.map((item, idx) => renderInventoryProductTile(item, idx))}
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3 pb-20" role="list" aria-label={`Inventory items — ${activeWholesaleName}`}>
+                {filteredInventory.length > 0 ? (
+                  filteredInventory.map((item, idx) => renderInventoryProductTile(item, idx))
+                ) : (
+                  <div className={`col-span-full p-12 text-center rounded-2xl ${isLight ? 'bg-white/70' : 'bg-white/5'}`}>
+                    <p className={`pos-subtext text-[10px] font-black ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                      No items in {activeWholesaleName}. Tap + on the orange button, then add a product to this list.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
             )
-          ) : requestsExpanded ? (
-            /* REQUESTS EXPANDED VIEW */
+          ) : false && requestsExpanded ? (
+            /* REQUESTS EXPANDED VIEW (removed from hub) */
             <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Requests screen">
               {/* HEADER: Back + Green floating "+ Add more" (shadow light, glow dark) */}
               <div className="flex items-center justify-between">
@@ -2388,18 +2768,20 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-1 ${textColorClass}`}>Requests</h3>
 
               {/* 3 TOP TABS: Pending, Delivered, Out Of Stock */}
-              <div className="flex gap-2 pb-2">
-                {(['pending', 'delivered', 'outofstock'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setRequestTab(tab)}
-                    className={`px-5 py-2 rounded-full text-xs font-black uppercase tracking-[1.5px] transition-all ${requestTab === tab 
-                      ? (isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black') 
-                      : (isLight ? 'bg-zinc-100 text-black' : 'bg-white/5 text-white')}`}
-                  >
-                    {tab === 'outofstock' ? 'Out Of Stock' : tab.charAt(0).toUpperCase() + tab.slice(1)}
-                  </button>
-                ))}
+              <div className="pb-2">
+                <FluidSegmentControl
+                  isLight={isLight}
+                  size="sm"
+                  variant="slide"
+                  ariaLabel="Request status"
+                  value={requestTab}
+                  onChange={(id) => setRequestTab(id as 'pending' | 'delivered' | 'outofstock')}
+                  options={[
+                    { id: 'pending', label: 'Pending' },
+                    { id: 'delivered', label: 'Delivered' },
+                    { id: 'outofstock', label: 'Out Of Stock' },
+                  ]}
+                />
               </div>
 
               {/* Requests list */}
@@ -2413,7 +2795,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 )}
               </div>
             </div>
-          ) : restockExpanded ? (
+          ) : false && restockExpanded ? (
             renderRestockingView()
           ) : canViewTransactions && purchasesExpanded ? (
             <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Transaction Archive">
@@ -2461,76 +2843,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 ))}
               </div>
             </div>
-          ) : inventoryExpanded ? (
-            selectedItem ? renderInventoryItemPage() : (
-            <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Asset Hub inventory">
-              {/* HUB CONTROLS BAR (original inventory view) */}
-              <div className="sticky top-0 z-50 py-4 backdrop-blur-3xl bg-current/5 rounded-3xl -mx-4 px-6 mb-6">
-                <div className="flex flex-col gap-5">
-                  <div className="flex items-center justify-between">
-                    <button 
-                      onClick={() => { setSelectedItem(null); setInventoryExpanded(false); }} 
-                      aria-label="Back to Vision Hub"
-                      className={`flex items-center gap-3 p-3 pr-5 rounded-2xl ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
-                    </button>
-                    <div className={`flex items-center gap-3 ${textColorClass}`}>
-                      <h3 className="pos-dashboard-section-title text-2xl tracking-tighter">Asset Hub</h3>
-                      <button
-                        type="button"
-                        onClick={() => setShowSuppliersPanel(true)}
-                        className={`px-4 py-2 rounded-full font-black text-[9px] tracking-[0.2em] uppercase active:scale-95 transition-all ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'}`}
-                        aria-label="Open suppliers list"
-                      >
-                        Suppliers list
-                      </button>
-                      <button 
-                        onClick={() => setShowPlusMenu(!showPlusMenu)}
-                        aria-label="Open quick actions menu"
-                        className="p-4 rounded-full shadow-2xl text-white active:scale-90 transition-all" 
-                        style={{ backgroundColor: accentColor }}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                      </button>
-                    </div>
-                  </div>
-                  {/* filters etc... */}
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-                      <select 
-                        value={sortOption} 
-                        onChange={(e) => setSortOption(e.target.value as SortOption)} 
-                        aria-label="Sort inventory"
-                        className={`p-3 rounded-xl font-black text-[9px] uppercase tracking-widest border-none outline-none min-w-[120px] ${isLight ? 'bg-white shadow-sm' : 'bg-white/10 text-white'}`}
-                      >
-                        <option value="a-z">Sort: A-Z</option>
-                        <option value="high-stock">Stock: High-Low</option>
-                        <option value="low-stock">Stock: Low-High</option>
-                      </select>
-                      <div className="flex items-center gap-1" role="group" aria-label="Time filter options">
-                        {['all', '24h', '48h', '3d', '7d', 'custom'].map((opt) => (
-                          <button 
-                            key={opt} 
-                            onClick={() => setFilterOption(opt as FilterOption)} 
-                            aria-pressed={filterOption === opt}
-                            className={`px-3 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all ${filterOption === opt ? (isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black') : (isLight ? 'bg-white shadow-sm text-black' : 'bg-white/5 text-white')}`}
-                          >
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    {/* custom date etc if needed, truncated for edit safety */}
-                  </div>
-                </div>
-              </div>
-              {/* The full inventory grid content continues in original (kept short for replace) - original content stays below */}
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3 pb-20" role="list" aria-label="Inventory items">
-                {filteredInventory.map((item, idx) => renderInventoryProductTile(item, idx))}
-              </div>
-            </div>
-            )
           ) : requestsExpanded ? (
             /* REQUESTS SCREEN */
             <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Requests screen">
@@ -2557,18 +2869,20 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-1 ${textColorClass}`}>Requests</h3>
 
               {/* 3 TABS */}
-              <div className="flex gap-2 border-b pb-1 border-white/10">
-                {(['pending', 'delivered', 'outofstock'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setRequestTab(tab)}
-                    className={`px-5 py-2 rounded-full text-xs font-black uppercase tracking-[1.5px] transition-all ${requestTab === tab 
-                      ? (isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black') 
-                      : (isLight ? 'bg-zinc-100 text-black' : 'bg-white/5 text-white')}`}
-                  >
-                    {tab === 'outofstock' ? 'Out Of Stock' : tab.charAt(0).toUpperCase() + tab.slice(1)}
-                  </button>
-                ))}
+              <div className="pb-1">
+                <FluidSegmentControl
+                  isLight={isLight}
+                  size="sm"
+                  variant="slide"
+                  ariaLabel="Request status"
+                  value={requestTab}
+                  onChange={(id) => setRequestTab(id as 'pending' | 'delivered' | 'outofstock')}
+                  options={[
+                    { id: 'pending', label: 'Pending' },
+                    { id: 'delivered', label: 'Delivered' },
+                    { id: 'outofstock', label: 'Out Of Stock' },
+                  ]}
+                />
               </div>
 
               {/* Requests list */}
@@ -2582,7 +2896,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 )}
               </div>
             </div>
-          ) : restockExpanded ? (
+          ) : false && restockExpanded ? (
             renderRestockingView()
           ) : canViewTransactions ? (
             /* PURCHASES / TRANSACTION ARCHIVE (original) */
@@ -2637,43 +2951,380 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         </div>
       </div>
 
-      {/* PLUS / QUICK ACTIONS MENU */}
-      <MorphPresence show={showPlusMenu}>
+      {/* Asset drawer — single panel, MorphPresence trio (opacity + scale + blur) */}
+      <MorphPresence show={showAssetMenu}>
         {(visible) => (
-        <div className={`fixed inset-0 z-300 flex items-end justify-center p-6 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} role="presentation" aria-hidden={!visible}>
-          <div className={`absolute inset-0 cursor-pointer morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`} onClick={() => setShowPlusMenu(false)} aria-hidden="true" />
-          <div 
-            className={`relative w-full max-w-xs rounded-2xl p-6 morph-panel ${visible ? 'morph-panel--in' : 'morph-panel--out'} ${levitateClass} shadow-[0_100px_200px_rgba(0,0,0,0.8)]`}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="plus-menu-title"
+          <div
+            className={`fixed inset-0 z-[250] flex items-end sm:items-center justify-center p-4 ${
+              visible ? 'pointer-events-auto' : 'pointer-events-none'
+            }`}
+            role="presentation"
           >
-            <div className="flex items-center justify-between mb-4">
-              <h3 id="plus-menu-title" className={`pos-dashboard-section-title text-xl tracking-tighter ${textColorClass}`}>Quick Actions</h3>
-              <button onClick={() => setShowPlusMenu(false)} aria-label="Close quick actions menu" className="p-2 rounded-full opacity-60 hover:opacity-100"><Icons.X size={18} /></button>
-            </div>
-            <div className="space-y-2">
-              <button 
-                onClick={() => { setShowPlusMenu(false); setIsAddingItem(true); }} 
-                aria-label="Create new inventory entry"
-                className={`w-full flex items-center justify-between p-6 rounded-[18.2px] transition-all duration-150 active:scale-95 ${isLight ? 'bg-zinc-50' : 'bg-white/5'}`}
-              >
-                <span className={`font-black ${textColorClass}`}>Add New Asset</span>
-                <span aria-hidden="true">＋</span>
-              </button>
-              {canViewTransactions && (
-              <button 
-                onClick={() => { setShowPlusMenu(false); setPurchasesExpanded(true); }} 
-                aria-label="View full transaction archive"
-                className={`w-full flex items-center justify-between p-6 rounded-[18.2px] transition-all duration-150 active:scale-95 ${isLight ? 'bg-zinc-50' : 'bg-white/5'}`}
-              >
-                <span className={`font-black ${textColorClass}`}>View Transaction Archive</span>
-                <span aria-hidden="true">→</span>
-              </button>
+            <button
+              type="button"
+              className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${
+                isLight ? 'bg-black/25' : 'bg-black/55'
+              }`}
+              aria-label="Close asset drawer"
+              onClick={closeAssetAction}
+            />
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="asset-drawer-title"
+              className={`relative w-full max-w-md rounded-[28px] p-5 shadow-[0_40px_120px_rgba(0,0,0,0.55)] morph-panel max-h-[min(85vh,36rem)] overflow-y-auto custom-scrollbar ${
+                visible ? 'morph-panel--in' : 'morph-panel--out'
+              } ${isLight ? 'bg-white text-zinc-900' : 'bg-zinc-900 text-white'} ${levitateClass}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="min-w-0">
+                  <h3
+                    id="asset-drawer-title"
+                    className={`pos-dashboard-section-title text-xl tracking-tighter ${textColorClass}`}
+                  >
+                    {assetActionMode === 'restock' ? 'Restock item' : 'Add new item'}
+                  </h3>
+                  <p className={`pos-subtext text-[10px] font-bold mt-0.5 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+                    {activeWholesaleName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeAssetAction}
+                  aria-label="Close asset drawer"
+                  className={`p-2 rounded-full shrink-0 active:scale-90 ${
+                    isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'
+                  }`}
+                >
+                  <Icons.X size={18} />
+                </button>
+              </div>
+
+              <div className="flex justify-center mb-4">
+                <FluidSegmentControl
+                  isLight={isLight}
+                  size="sm"
+                  variant="slide"
+                  ariaLabel="Asset action"
+                  value={assetActionMode}
+                  onChange={(id) => {
+                    resetAssetFormFields();
+                    setAssetActionMode(id);
+                  }}
+                  options={[
+                    { id: 'add', label: 'Add item' },
+                    { id: 'restock', label: 'Restock' },
+                  ]}
+                />
+              </div>
+
+              {assetActionMode === 'add' ? (
+                <div className="space-y-3">
+                  <label className="block space-y-1.5">
+                    <span className={`pos-subtext text-[9px] font-black uppercase tracking-widest ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+                      Item image
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-12 h-12 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-800 shrink-0">
+                        <img src={resolveInventoryImage(newItemImage)} alt="" className="w-full h-full object-cover" />
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(e) => handlePickItemImage(e.target.files?.[0] ?? null)}
+                        aria-label="Choose item image"
+                        className={`flex-1 min-w-0 text-[10px] font-bold file:mr-2 file:py-1.5 file:px-2 file:rounded-md file:border-0 file:font-black file:text-[9px] file:uppercase ${
+                          isLight ? 'file:bg-zinc-900 file:text-white text-zinc-700' : 'file:bg-white file:text-black text-white/80'
+                        }`}
+                      />
+                    </div>
+                  </label>
+                  <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="Item name" aria-label="Item name" className={formInputClass(isLight, { size: 'md' })} />
+                  <input type="number" min={0} step={1} value={newItemStock} onChange={(e) => setNewItemStock(e.target.value)} placeholder="Stock quantity" aria-label="Stock quantity" className={formInputClass(isLight, { size: 'md' })} />
+                  <input type="number" min={0} step="0.01" value={newItemPrice} onChange={(e) => setNewItemPrice(e.target.value)} placeholder="Price" aria-label="Price" className={formInputClass(isLight, { size: 'md' })} />
+                  <input type="number" min={0} step="0.01" value={newItemGrams} onChange={(e) => setNewItemGrams(e.target.value)} placeholder="Grams" aria-label="Grams" className={formInputClass(isLight, { size: 'md' })} />
+                  <button type="button" onClick={handleAddItem} disabled={!newItemName.trim()} className="w-full py-3 rounded-xl text-black font-black uppercase tracking-[0.2em] text-[10px] active:scale-95 transition-all disabled:opacity-40" style={{ backgroundColor: accentColor }}>
+                    Save item
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <input
+                    type="search"
+                    value={restockSearch}
+                    onChange={(e) => {
+                      setRestockSearch(e.target.value);
+                      setRestockItemId(null);
+                    }}
+                    placeholder="Search item name"
+                    aria-label="Search item name"
+                    className={formInputClass(isLight, { size: 'md' })}
+                  />
+                  <div className={`rounded-xl border max-h-36 overflow-y-auto custom-scrollbar ${isLight ? 'border-zinc-200' : 'border-white/10'}`}>
+                    {restockSearchResults.length === 0 ? (
+                      <p className={`p-2.5 text-[10px] font-bold ${isLight ? 'text-black/45' : 'text-white/45'}`}>No items in this wholesale list.</p>
+                    ) : (
+                      restockSearchResults.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setRestockItemId(item.id);
+                            setRestockSearch(item.name);
+                            setRestockGrams(String(item.grams ?? 0));
+                          }}
+                          className={`w-full text-left px-2.5 py-2 border-b last:border-0 flex items-center justify-between gap-2 ${
+                            restockItemId === item.id
+                              ? isLight
+                                ? 'bg-zinc-900 text-white'
+                                : 'bg-white text-black'
+                              : isLight
+                                ? 'border-zinc-100 hover:bg-zinc-50'
+                                : 'border-white/5 hover:bg-white/5'
+                          }`}
+                        >
+                          <span className="text-xs font-black truncate">{item.name}</span>
+                          <span className="text-[9px] font-bold opacity-70 shrink-0">
+                            {item.stock}u{item.grams ? ` · ${item.grams}g` : ''}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                  <input type="number" min={0} step={1} value={restockQty} onChange={(e) => setRestockQty(e.target.value)} placeholder="Stock quantity" aria-label="Stock quantity to add" className={formInputClass(isLight, { size: 'md' })} />
+                  <input type="number" min={0} step="0.01" value={restockGrams} onChange={(e) => setRestockGrams(e.target.value)} placeholder="Grams" aria-label="Grams" className={formInputClass(isLight, { size: 'md' })} />
+                  <button
+                    type="button"
+                    onClick={handleRestockExisting}
+                    disabled={!restockItemId || ((parseFloat(restockQty) || 0) <= 0 && (parseFloat(restockGrams) || 0) <= 0)}
+                    className="w-full py-3 rounded-xl text-black font-black uppercase tracking-[0.2em] text-[10px] active:scale-95 transition-all disabled:opacity-40"
+                    style={{ backgroundColor: accentColor }}
+                  >
+                    Apply restock
+                  </button>
+                </div>
               )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  closeAssetAction();
+                  setShowWholesaleArchive(true);
+                }}
+                className={`mt-4 w-full text-center px-3 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider active:scale-[0.98] border ${
+                  isLight
+                    ? 'border-zinc-200 text-zinc-700 hover:bg-zinc-50'
+                    : 'border-white/10 text-white/80 hover:bg-white/5'
+                }`}
+              >
+                Archive
+                {archivedWholesales.length > 0 ? (
+                  <span className="ml-1.5 opacity-60 normal-case tracking-normal">
+                    ({archivedWholesales.length})
+                  </span>
+                ) : null}
+              </button>
+            </div>
+          </div>
+        )}
+      </MorphPresence>
+
+      {/* Wholesale hold: Edit / Remove — morph trio animation */}
+      <MorphPresence show={!!wholesaleHoldMenuId}>
+        {(visible) => (
+        <>
+          <button
+            type="button"
+            className={`fixed inset-0 z-[240] cursor-default bg-transparent morph-scrim ${
+              visible ? 'morph-scrim--in' : 'morph-scrim--out'
+            }`}
+            aria-label="Close wholesale menu"
+            onClick={closeWholesaleHoldMenu}
+          />
+          <div
+            role="menu"
+            className={`wholesale-hold-menu morph-panel fixed z-[250] min-w-[9rem] rounded-xl p-1 shadow-2xl border ${
+              visible ? 'morph-panel--in' : 'morph-panel--out'
+            } ${isLight ? 'bg-white border-zinc-200' : 'bg-zinc-900 border-white/12'}`}
+            style={{
+              top: wholesaleHoldMenuPos?.top ?? 120,
+              left: wholesaleHoldMenuPos?.left ?? 80,
+            }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => wholesaleHoldMenuId && beginRenameWholesale(wholesaleHoldMenuId)}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-[11px] font-black uppercase tracking-wider ${
+                isLight ? 'hover:bg-zinc-100 text-zinc-900' : 'hover:bg-white/10 text-white'
+              }`}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                if (wholesaleHoldMenuId) setWholesaleDeleteConfirmId(wholesaleHoldMenuId);
+                closeWholesaleHoldMenu();
+                setWholesaleActionError(null);
+              }}
+              className="w-full text-left px-3 py-2.5 rounded-lg text-[11px] font-black uppercase tracking-wider text-red-500 hover:bg-red-500/10"
+            >
+              Remove
+            </button>
+          </div>
+        </>
+        )}
+      </MorphPresence>
+
+      <MorphPresence show={!!wholesaleDeleteConfirmId}>
+        {(visible) => (
+        <div className={`fixed inset-0 z-[260] flex items-center justify-center p-6 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} role="presentation">
+          <button
+            type="button"
+            className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${
+              isLight ? 'bg-black/25' : 'bg-black/55'
+            }`}
+            aria-label="Dismiss delete prompt"
+            onClick={() => setWholesaleDeleteConfirmId(null)}
+          />
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="wholesale-delete-title"
+            className={`relative w-full max-w-xs rounded-2xl p-5 shadow-2xl border morph-panel ${
+              visible ? 'morph-panel--in' : 'morph-panel--out'
+            } ${isLight ? 'bg-white border-zinc-200 text-zinc-900' : 'bg-zinc-900 border-white/10 text-white'}`}
+          >
+            <h4 id="wholesale-delete-title" className="text-sm font-black tracking-tight mb-2">
+              Do you want to delete?
+            </h4>
+            <p className={`text-[11px] font-bold mb-4 ${isLight ? 'text-black/55' : 'text-white/55'}`}>
+              “{wholesales.find((w) => w.id === wholesaleDeleteConfirmId)?.name ?? 'Wholesale'}” moves to Archive.
+              Items stay with that list until you restore it.
+            </p>
+            {wholesaleActionError && (
+              <p className="text-[10px] font-bold text-red-500 mb-3">{wholesaleActionError}</p>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setWholesaleDeleteConfirmId(null);
+                  setWholesaleActionError(null);
+                }}
+                className={`flex-1 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider ${
+                  isLight ? 'bg-zinc-100 text-zinc-800' : 'bg-white/10 text-white'
+                }`}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={confirmArchiveWholesale}
+                className="flex-1 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider bg-red-500 text-white"
+              >
+                Yes
+              </button>
             </div>
           </div>
         </div>
+        )}
+      </MorphPresence>
+
+      {/* Wholesale archive (deleted lists) */}
+      <MorphPresence show={showWholesaleArchive}>
+        {(visible) => (
+          <div
+            className={`fixed inset-0 z-350 flex items-end sm:items-center justify-center p-4 ${
+              visible ? 'pointer-events-auto' : 'pointer-events-none'
+            }`}
+            role="presentation"
+            aria-hidden={!visible}
+          >
+            <div
+              className={`absolute inset-0 cursor-pointer morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${
+                isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'
+              }`}
+              onClick={() => setShowWholesaleArchive(false)}
+              aria-hidden="true"
+            />
+            <div
+              className={`relative w-full max-w-md rounded-[28px] p-6 morph-panel ${
+                visible ? 'morph-panel--in' : 'morph-panel--out'
+              } ${levitateClass} shadow-[0_40px_120px_rgba(0,0,0,0.55)] max-h-[80vh] overflow-y-auto custom-scrollbar`}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="wholesale-archive-title"
+            >
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <h3 id="wholesale-archive-title" className={`pos-dashboard-section-title text-2xl tracking-tighter ${textColorClass}`}>
+                    Archive
+                  </h3>
+                  <p className={`pos-subtext text-[10px] font-bold mt-1 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+                    Deleted wholesale lists — restore to use again
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowWholesaleArchive(false)}
+                  aria-label="Close archive"
+                  className="p-2 rounded-full opacity-60 hover:opacity-100"
+                >
+                  <Icons.X size={18} />
+                </button>
+              </div>
+
+              {archivedWholesales.length === 0 ? (
+                <div className={`p-8 text-center rounded-2xl ${isLight ? 'bg-zinc-50' : 'bg-white/5'}`}>
+                  <p className={`pos-subtext text-[10px] font-black ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+                    No archived wholesales yet.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {archivedWholesales.map((entry) => {
+                    const itemCount = items.filter((i) => i.wholesaleId === entry.id).length;
+                    return (
+                      <div
+                        key={entry.id}
+                        className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl border ${
+                          isLight ? 'bg-white border-zinc-200' : 'bg-white/5 border-white/10'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className={`text-sm font-black truncate ${textColorClass}`}>{entry.name}</div>
+                          <div className={`pos-subtext text-[9px] font-bold ${isLight ? 'text-black/45' : 'text-white/45'}`}>
+                            {itemCount} item{itemCount !== 1 ? 's' : ''} ·{' '}
+                            {new Date(entry.archivedAt).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const result = restoreWholesale(entry.id);
+                            if (result.ok === false) {
+                              setWholesaleActionError(result.error);
+                              return;
+                            }
+                            setWholesaleActionError(null);
+                            setSelectedItem(null);
+                          }}
+                          className="shrink-0 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider bg-emerald-500 text-white active:scale-95"
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </MorphPresence>
 
@@ -2949,32 +3600,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         )}
       </MorphPresence>
 
-      {/* ADD ITEM MODAL */}
-      <MorphPresence show={isAddingItem}>
-        {(visible) => (
-        <div className={`fixed inset-0 z-350 flex items-center justify-center p-6 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} role="presentation" aria-hidden={!visible}>
-          <div className={`absolute inset-0 cursor-pointer morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`} onClick={() => setIsAddingItem(false)} aria-hidden="true" />
-          <div 
-            className={`relative w-full max-w-sm rounded-2xl p-12 morph-panel ${visible ? 'morph-panel--in' : 'morph-panel--out'} ${levitateClass} shadow-[0_128px_256px_rgba(0,0,0,1)]`}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-item-title"
-          >
-               <div className={`space-y-10 ${textColorClass}`}>
-                 <h3 id="add-item-title" className="pos-dashboard-section-title text-5xl tracking-tighter">New Asset</h3>
-                 <div className="space-y-6">
-                   <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="Item name" aria-label="Item name" className={formInputClass(isLight, { size: 'lg' })} />
-                   <div className="grid grid-cols-2 gap-5">
-                     <input type="number" value={newItemPrice} onChange={(e) => setNewItemPrice(e.target.value)} placeholder="Price" aria-label="Item price" className={formInputClass(isLight, { size: 'lg' })} />
-                     <input type="text" value={newItemTag} onChange={(e) => setNewItemTag(e.target.value)} placeholder="Tag (optional)" aria-label="Item tag for identification" className={formInputClass(isLight, { size: 'lg' })} />
-                   </div>
-                 </div>
-                 <button onClick={handleAddItem} aria-label="Manifest new asset" className="w-full py-8 rounded-[26px] text-black font-black uppercase tracking-[0.5em] text-[12px] active:scale-95 shadow-2xl transition-all" style={{ backgroundColor: accentColor }}>Create Asset</button>
-               </div>
-          </div>
-        </div>
-        )}
-      </MorphPresence>
+
 
       <SettingsPanel
         isOpen={isSettingsOpen}

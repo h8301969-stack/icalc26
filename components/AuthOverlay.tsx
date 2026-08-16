@@ -20,10 +20,11 @@ import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
 type AuthMode = 'signup' | 'login';
 type AuthPane = 'idle' | 'auth' | 'settings';
 
-const AUTH_MIN_LOADING_MS = 1200;
-const AUTH_SIGNUP_LOADING_MS = 15000;
-const AUTH_ADMIN_PORTAL_LOADING_MS = 3000;
-const AUTH_SUCCESS_HOLD_MS = 700;
+/** Cap artificial loading/hold delays (real network time can still run longer). */
+const AUTH_MIN_LOADING_MS = 600;
+const AUTH_SIGNUP_LOADING_MS = 600;
+const AUTH_ADMIN_PORTAL_LOADING_MS = 600;
+const AUTH_SUCCESS_HOLD_MS = 600;
 const AUTH_MODE_MS = 200;
 const EDGE_ZONE_PX = 56;
 const EDGE_SWIPE_MIN = 48;
@@ -72,7 +73,11 @@ interface AuthOverlayProps {
   onAuthComplete: (account: AppAccount) => void;
   onAdminPortal?: () => void;
   onFinalizeAccess?: (accessCode: string, username: string) => Promise<AuthResult>;
-  onDevSkip?: () => Promise<{ adminPortal?: true; error?: string } | null | undefined>;
+  onDevSkip?: () => Promise<{
+    account?: AppAccount;
+    adminPortal?: true;
+    error?: string;
+  } | null | undefined>;
   onQuickUnlock?: () => void;
   onExitComplete?: () => void;
 }
@@ -426,15 +431,22 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   };
 
   const handleDevSkip = useCallback(async () => {
-    if (!isDev || isLoading || isExiting || existingAccount || !onDevSkip) return;
+    if (!isDev || isLoading || isExiting || !onDevSkip) return;
+    // Allow skip even when a stale session exists — always get into the calculator.
 
     flushSync(() => {
       setIsSubmitting(true);
+      setError(null);
     });
 
     try {
       const result = await onDevSkip();
-      if (result && result.adminPortal) {
+      if (result?.error) {
+        setIsSubmitting(false);
+        setError(result.error);
+        return;
+      }
+      if (result?.adminPortal) {
         setLoadingPhase('admin_breached');
         if ('vibrate' in navigator) navigator.vibrate([20, 40, 20]);
         await wait(AUTH_ADMIN_PORTAL_LOADING_MS);
@@ -443,16 +455,25 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         onAdminPortal?.();
         return;
       }
-      if (result && result.error) {
-        setIsSubmitting(false);
-        setError(result.error);
+      if (result?.account) {
+        flushSync(() => setIsEntering(true));
+        if ('vibrate' in navigator) navigator.vibrate([10, 30]);
+        await wait(AUTH_SUCCESS_HOLD_MS);
+        flushSync(() => {
+          setIsEntering(false);
+          setIsSubmitting(false);
+          setIsExiting(true);
+        });
+        onAuthComplete(result.account);
         return;
       }
+      setIsSubmitting(false);
+      setError('Dev skip did not return a session.');
     } catch {
       setIsSubmitting(false);
-      setError('Could not open admin portal.');
+      setError('Could not skip auth in dev.');
     }
-  }, [isDev, isLoading, isExiting, existingAccount, onDevSkip, onAdminPortal]);
+  }, [isDev, isLoading, isExiting, onDevSkip, onAdminPortal, onAuthComplete]);
 
   const dismissSignupConfirmation = useCallback(() => {
     const confirmedEmail = signupConfirmation?.email ?? '';
@@ -568,7 +589,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       if (status === 'denied' || status === 'unused') {
         stopPendingWatch();
         setLoadingPhase('access_denied');
-        await wait(1800);
+        await wait(600);
         setIsSubmitting(false);
         setLoadingPhase('default');
         setError('Access was denied.');
@@ -1022,7 +1043,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                     />
                   </button>
 
-                  {isDev && onDevSkip && !existingAccount && (
+                  {isDev && onDevSkip && (
                     <button
                       type="button"
                       onClick={handleDevSkip}
@@ -1159,7 +1180,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
             <div className="w-1 h-1 rounded-full bg-current" />
             <Icons.Trends size={20} />
           </div>
-          {isDev && onDevSkip && !existingAccount && (
+          {isDev && onDevSkip && (
             <button
               type="button"
               onClick={handleDevSkip}

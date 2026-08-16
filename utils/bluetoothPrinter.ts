@@ -1,6 +1,11 @@
-// Web Bluetooth + Native BLE (Capacitor) + WebUSB ESC/POS Printer Utility
+// Web Bluetooth + Native BLE (Capacitor) + WebUSB + WiFi/network ESC/POS Printer Utility
 import { storage } from '../hooks/storage';
 import { getUsbSupport, UsbPrinterTransport, usbDeviceId, usbDeviceLabel } from './usbPrinter';
+import {
+  getNetworkPrinterSupport,
+  NetworkPrinterTransport,
+  type NetworkPrinterConfig,
+} from './networkPrinter';
 import { drawThermalReceiptCanvas } from './receiptCanvas';
 import {
   detectPaperWidthFromDeviceName,
@@ -33,7 +38,8 @@ export interface BLEDevice {
   device: BluetoothDevice;
 }
 
-export type PrinterTransport = 'ble' | 'usb';
+/** Connection path: USB first, then Bluetooth BLE, then WiFi/network. */
+export type PrinterTransport = 'usb' | 'ble' | 'network';
 
 export interface SavedPrinter {
   id: string;
@@ -41,6 +47,10 @@ export interface SavedPrinter {
   paperWidth: '58mm' | '25mm';
   lastConnected: number;
   transport?: PrinterTransport;
+  /** For network printers: host IP */
+  host?: string;
+  /** For network printers: raw port (default 9100) */
+  port?: number;
 }
 
 export type PrinterDeviceStatus = 'connected' | 'available' | 'saved';
@@ -71,6 +81,8 @@ const DEFAULT_PAPER_WIDTH_KEY = 'ble_default_paper_width';
 const PRINTER_TRANSPORT_KEY = 'printer_transport_mode';
 
 export { getUsbSupport };
+export { getNetworkPrinterSupport };
+export type { NetworkPrinterConfig };
 
 /** Common BLE thermal-printer GATT services (must be listed in optionalServices). */
 const PRINTER_SERVICE_UUIDS = [
@@ -197,15 +209,22 @@ export class BLEPrinter {
   private nativeChannel: NativeWriteChannel | null = null;
   private nativeDeviceName: string | null = null;
   private usb = new UsbPrinterTransport();
+  private network = new NetworkPrinterTransport();
   private connectionListeners = new Set<() => void>();
   private disconnectHandler: ((event: Event) => void) | null = null;
   private isBluetoothBusy = false;
+  private autoConnectTimer: ReturnType<typeof setInterval> | null = null;
+  private autoConnectRunning = false;
+  private autoConnectStarted = false;
 
   public paperWidth: PaperWidth = storage.get<PaperWidth>(DEFAULT_PAPER_WIDTH_KEY, '58mm');
   public transport: PrinterTransport = storage.get<PrinterTransport>(PRINTER_TRANSPORT_KEY, 'ble');
 
   get isConnected(): boolean {
-    return this.transport === 'usb' ? this.usb.isConnected : this.bleConnected;
+    if (this.transport === 'usb') return this.usb.isConnected;
+    if (this.transport === 'network') return this.network.isConnected;
+    if (this.usesNativeBle) return this.bleConnected && !!this.nativeChannel;
+    return this.bleConnected && !!this.device?.gatt?.connected && !!this.characteristic;
   }
 
   private get usesNativeBle(): boolean {
@@ -235,22 +254,81 @@ export class BLEPrinter {
 
   getConnectedDeviceId(): string | null {
     if (this.transport === 'usb') return this.usb.getConnectedDeviceId();
+    if (this.transport === 'network') return this.network.getConnectedDeviceId();
     if (this.usesNativeBle) return this.nativeChannel?.deviceId ?? null;
     return this.device?.id ?? null;
   }
 
   getConnectedDeviceName(): string | null {
     if (this.transport === 'usb') return this.usb.getConnectedDeviceName();
+    if (this.transport === 'network') return this.network.getConnectedDeviceName();
     if (this.usesNativeBle) return this.nativeDeviceName ?? this.nativeChannel?.deviceName ?? null;
     return this.device?.name ?? null;
   }
 
+  /** Active print format for the current transport (shown in UI). */
+  getActivePrintFormat(): {
+    transport: PrinterTransport;
+    protocol: string;
+    modes: string[];
+    paperWidth: PaperWidth;
+    summary: string;
+  } {
+    const protocol =
+      this.transport === 'network'
+        ? 'ESC/POS over TCP (raw port 9100)'
+        : this.transport === 'usb'
+          ? 'ESC/POS over USB bulk transfer'
+          : 'ESC/POS over Bluetooth LE GATT';
+    return {
+      transport: this.transport,
+      protocol,
+      modes: ['escpos_text', 'raster_image (GS v 0)'],
+      paperWidth: this.paperWidth,
+      summary: `${protocol} · paper ${this.paperWidth} · text + raster bitmap`,
+    };
+  }
+
+  /**
+   * Switch transport without tearing down the target path.
+   * Only disconnects other transports so auto-connect can hand off cleanly.
+   */
   setTransport(mode: PrinterTransport) {
-    if (this.transport === mode) return;
-    this.disconnect();
+    if (this.transport === mode) {
+      storage.set(PRINTER_TRANSPORT_KEY, mode);
+      return;
+    }
+
+    if (mode !== 'ble') this.disconnectBleOnly();
+    if (mode !== 'usb') this.usb.disconnect();
+    if (mode !== 'network') this.network.disconnect();
+
     this.transport = mode;
     storage.set(PRINTER_TRANSPORT_KEY, mode);
     this.notifyConnectionChange();
+  }
+
+  private disconnectBleOnly() {
+    if (this.usesNativeBle && this.nativeChannel) {
+      void nativeDisconnect(this.nativeChannel.deviceId);
+    }
+    this.nativeChannel = null;
+    this.nativeDeviceName = null;
+
+    if (this.device) {
+      this.detachDisconnectHandler(this.device);
+      try {
+        if (this.device.gatt?.connected) {
+          this.device.gatt.disconnect();
+        }
+      } catch {
+        // ignore
+      }
+    }
+    this.device = null;
+    this.server = null;
+    this.characteristic = null;
+    this.bleConnected = false;
   }
 
   getSavedPrinters(): SavedPrinter[] {
@@ -557,10 +635,11 @@ export class BLEPrinter {
     const authorizedBle = this.usesNativeBle ? [] : await this.getAuthorizedDevices();
     const nativeKnown = this.usesNativeBle
       ? await nativeGetBondedOrKnown(
-          saved.filter((p) => p.transport !== 'usb').map((p) => p.id)
+          saved.filter((p) => p.transport === 'ble' || !p.transport).map((p) => p.id)
         )
       : [];
     const authorizedUsb = await this.usb.getAuthorizedDevices();
+    const networkSaved = this.network.listSaved();
     const connectedId = this.getConnectedDeviceId();
     const merged = new Map<string, SavedPrinter>();
 
@@ -602,9 +681,25 @@ export class BLEPrinter {
       });
     }
 
+    for (const net of networkSaved) {
+      const existing = merged.get(net.id);
+      merged.set(net.id, {
+        id: net.id,
+        name: net.name || existing?.name || `WiFi ${net.host}`,
+        paperWidth: existing?.paperWidth ?? this.paperWidth,
+        lastConnected: Math.max(existing?.lastConnected ?? 0, net.lastConnected),
+        transport: 'network',
+        host: net.host,
+        port: net.port,
+      });
+    }
+
     const list = [...merged.values()].sort((a, b) => {
       if (a.id === connectedId) return -1;
       if (b.id === connectedId) return 1;
+      const rank = (t?: PrinterTransport) => (t === 'usb' ? 0 : t === 'ble' ? 1 : t === 'network' ? 2 : 3);
+      const r = rank(a.transport) - rank(b.transport);
+      if (r !== 0) return r;
       return b.lastConnected - a.lastConnected;
     });
 
@@ -621,6 +716,21 @@ export class BLEPrinter {
           device: null,
           isConnected,
           isAuthorized,
+          status,
+        };
+      }
+
+      if (entry.transport === 'network') {
+        const isConnected =
+          entry.id === connectedId && this.transport === 'network' && this.network.isConnected;
+        let status: PrinterDeviceStatus = 'saved';
+        if (isConnected) status = 'connected';
+        else if (entry.lastConnected > 0) status = 'available';
+        return {
+          saved: entry,
+          device: null,
+          isConnected,
+          isAuthorized: true,
           status,
         };
       }
@@ -699,6 +809,9 @@ export class BLEPrinter {
       if (saved?.transport === 'usb') {
         return await this.connectToSavedUsbPrinter(printerId);
       }
+      if (saved?.transport === 'network' || printerId.startsWith('net:')) {
+        return await this.connectToSavedNetworkPrinter(printerId);
+      }
 
       this.setTransport('ble');
       this.assertBluetoothAvailable();
@@ -753,117 +866,246 @@ export class BLEPrinter {
     await this.connectGATT(this.device);
   }
 
-  /** Silently reconnect to a previously paired printer (no browser picker). */
+  /**
+   * Silently reconnect using preferred order: USB → Bluetooth → WiFi/network.
+   * Does not open browser pickers.
+   */
   async ensureConnected(): Promise<boolean> {
-    if (this.transport === 'usb') {
-      if (this.usb.isConnected) return true;
-      const savedUsbIds = this.getSavedPrinters()
-        .filter((p) => p.transport === 'usb')
-        .sort((a, b) => b.lastConnected - a.lastConnected)
-        .map((p) => p.id);
-      return this.usb.ensureConnected(savedUsbIds);
-    }
-
-    if (this.usesNativeBle) {
-      if (this.isConnected && this.nativeChannel) return true;
-
-      const support = getBluetoothSupport();
-      if (!support.supported) return false;
-
-      try {
-        if (this.nativeChannel?.deviceId) {
-          await this.connectNativeBle(
-            this.nativeChannel.deviceId,
-            this.nativeDeviceName || this.nativeChannel.deviceName
-          );
-          return true;
-        }
-
-        const saved = [...this.getSavedPrinters()]
-          .filter((p) => p.transport !== 'usb')
-          .sort((a, b) => b.lastConnected - a.lastConnected);
-
-        for (const entry of saved) {
-          try {
-            await this.connectNativeBle(entry.id, entry.name);
-            return true;
-          } catch {
-            // try next saved printer
-          }
-        }
-      } catch (err) {
-        logPrinterFail('auto_connect', err, {
-          transport: this.transport,
-          native: true,
-          deviceName: this.getConnectedDeviceName(),
-        });
-      }
+    if (this.isConnected) return true;
+    try {
+      await this.autoConnectPreferredSequence(12000);
+      return this.isConnected;
+    } catch {
       return false;
     }
+  }
 
-    if (this.isConnected && this.device?.gatt?.connected && this.characteristic) {
-      return true;
+  /**
+   * Preferred connection sequence: USB → Bluetooth LE → WiFi/network.
+   */
+  async autoConnectPreferredSequence(
+    timeoutMs = 20000
+  ): Promise<{ transport: PrinterTransport; name: string; format: string }> {
+    if (this.isConnected) {
+      const format = this.getActivePrintFormat();
+      return {
+        transport: this.transport,
+        name: this.getConnectedDeviceName() ?? 'Printer',
+        format: format.summary,
+      };
     }
 
-    const support = getBluetoothSupport();
-    if (!support.supported) return false;
+    const stepMs = Math.max(1800, Math.floor(timeoutMs / 5));
+    const raceTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+      ]);
 
+    // 1) USB — authorized devices (saved first, then any WebUSB grant)
     try {
-      if (this.device) {
-        await this.connectGATT(this.device);
-        return true;
-      }
-
-      const authorized = await this.getAuthorizedDevices();
-      const saved = [...this.getSavedPrinters()]
-        .filter((p) => p.transport !== 'usb')
-        .sort((a, b) => b.lastConnected - a.lastConnected);
-
-      for (const entry of saved) {
-        const device = authorized.find((d) => d.id === entry.id);
-        if (device) {
-          await this.connectGATT(device);
-          return true;
+      const usbSupport = getUsbSupport();
+      if (usbSupport.supported) {
+        const savedUsbIds = this.getSavedPrinters()
+          .filter((p) => p.transport === 'usb')
+          .sort((a, b) => b.lastConnected - a.lastConnected)
+          .map((p) => p.id);
+        const ok = await raceTimeout(this.usb.ensureConnected(savedUsbIds), stepMs);
+        if (ok && this.usb.isConnected) {
+          this.setTransport('usb');
+          const name = this.usb.getConnectedDeviceName() ?? 'USB Printer';
+          const id = this.usb.getConnectedDeviceId();
+          if (id) this.saveUsbDevice(name, id);
+          this.notifyConnectionChange();
+          return {
+            transport: 'usb',
+            name,
+            format: this.getActivePrintFormat().summary,
+          };
         }
       }
-
-      const available = authorized.find((d) => d.gatt);
-      if (available) {
-        await this.connectGATT(available);
-        return true;
-      }
     } catch (err) {
-      logPrinterFail('auto_connect', err, {
-        transport: this.transport,
-        deviceName: this.getConnectedDeviceName(),
-      });
+      logPrinterFail('auto_usb_connect', err, { transport: 'usb' });
     }
 
-    return false;
+    // 2a) Native BLE (Capacitor APK)
+    try {
+      if (this.usesNativeBle) {
+        const support = getBluetoothSupport();
+        if (support.supported) {
+          if (this.nativeChannel?.deviceId) {
+            try {
+              await raceTimeout(
+                this.connectNativeBle(
+                  this.nativeChannel.deviceId,
+                  this.nativeDeviceName || this.nativeChannel.deviceName
+                ),
+                stepMs
+              );
+              this.setTransport('ble');
+              return {
+                transport: 'ble',
+                name: this.getConnectedDeviceName() ?? 'BLE Printer',
+                format: this.getActivePrintFormat().summary,
+              };
+            } catch {
+              // fall through to saved list
+            }
+          }
+
+          const saved = [...this.getSavedPrinters()]
+            .filter((p) => p.transport === 'ble' || !p.transport)
+            .sort((a, b) => b.lastConnected - a.lastConnected);
+
+          for (const entry of saved) {
+            try {
+              await raceTimeout(this.connectNativeBle(entry.id, entry.name), stepMs);
+              this.setTransport('ble');
+              return {
+                transport: 'ble',
+                name: this.getConnectedDeviceName() ?? entry.name,
+                format: this.getActivePrintFormat().summary,
+              };
+            } catch {
+              // try next
+            }
+          }
+        }
+      }
+    } catch (err) {
+      logPrinterFail('auto_native_ble_connect', err, { native: true });
+    }
+
+    // 2b) Web Bluetooth saved / authorized (no picker)
+    try {
+      if (!this.usesNativeBle) {
+        const support = getBluetoothSupport();
+        if (support.supported) {
+          if (this.device) {
+            try {
+              await raceTimeout(this.connectGATT(this.device), stepMs);
+              this.setTransport('ble');
+              return {
+                transport: 'ble',
+                name: this.getConnectedDeviceName() ?? 'BLE Printer',
+                format: this.getActivePrintFormat().summary,
+              };
+            } catch {
+              // continue
+            }
+          }
+
+          const authorized = await this.getAuthorizedDevices();
+          const saved = [...this.getSavedPrinters()]
+            .filter((p) => p.transport === 'ble' || !p.transport)
+            .sort((a, b) => b.lastConnected - a.lastConnected);
+
+          for (const entry of saved) {
+            const device = authorized.find((d) => d.id === entry.id);
+            if (!device) continue;
+            try {
+              await raceTimeout(this.connectGATT(device), stepMs);
+              this.setTransport('ble');
+              return {
+                transport: 'ble',
+                name: this.getConnectedDeviceName() ?? entry.name,
+                format: this.getActivePrintFormat().summary,
+              };
+            } catch {
+              // try next
+            }
+          }
+
+          const available = authorized.find((d) => d.gatt);
+          if (available) {
+            await raceTimeout(this.connectGATT(available), stepMs);
+            this.setTransport('ble');
+            return {
+              transport: 'ble',
+              name: this.getConnectedDeviceName() ?? available.name ?? 'BLE Printer',
+              format: this.getActivePrintFormat().summary,
+            };
+          }
+        }
+      }
+    } catch (err) {
+      logPrinterFail('auto_web_ble_connect', err, { transport: 'ble' });
+    }
+
+    // 3) WiFi / network (saved IPs only — no discovery without mDNS)
+    try {
+      const netIds = this.getSavedPrinters()
+        .filter((p) => p.transport === 'network')
+        .sort((a, b) => b.lastConnected - a.lastConnected)
+        .map((p) => p.id);
+      const alsoSaved = this.network.listSaved().map((p) => p.id);
+      const preferred = [...new Set([...netIds, ...alsoSaved])];
+      if (preferred.length > 0) {
+        const ok = await raceTimeout(this.network.ensureConnected(preferred), stepMs);
+        if (ok && this.network.isConnected) {
+          this.setTransport('network');
+          const name = this.network.getConnectedDeviceName() ?? 'WiFi Printer';
+          const cfg = this.network.getActiveConfig();
+          if (cfg) this.saveNetworkDevice(cfg);
+          this.notifyConnectionChange();
+          return {
+            transport: 'network',
+            name,
+            format: this.getActivePrintFormat().summary,
+          };
+        }
+      }
+    } catch (err) {
+      logPrinterFail('auto_network_connect', err, { transport: 'network' });
+    }
+
+    throw new Error(
+      'No printer available. Connect USB, pair Bluetooth (BLE thermal), or add a WiFi printer IP in Settings.'
+    );
+  }
+
+  /**
+   * While the calculator is open: scan known printers on an interval and
+   * auto-connect in USB → Bluetooth → WiFi order. Silent (no pickers).
+   */
+  startBackgroundAutoConnect(intervalMs = 40000): void {
+    if (this.autoConnectStarted) return;
+    this.autoConnectStarted = true;
+
+    const run = async () => {
+      if (this.autoConnectRunning || this.isConnected || this.isBluetoothBusy) return;
+      this.autoConnectRunning = true;
+      try {
+        const result = await this.autoConnectPreferredSequence(12000);
+        console.info('[Printer] Auto-connected', result.transport, result.name, result.format);
+      } catch (err) {
+        console.info(
+          '[Printer] Auto-scan idle',
+          err instanceof Error ? err.message : String(err)
+        );
+      } finally {
+        this.autoConnectRunning = false;
+      }
+    };
+
+    void run();
+    this.autoConnectTimer = setInterval(() => {
+      void run();
+    }, intervalMs);
+  }
+
+  stopBackgroundAutoConnect(): void {
+    if (this.autoConnectTimer) {
+      clearInterval(this.autoConnectTimer);
+      this.autoConnectTimer = null;
+    }
+    this.autoConnectStarted = false;
   }
 
   disconnect() {
-    if (this.usesNativeBle && this.nativeChannel) {
-      void nativeDisconnect(this.nativeChannel.deviceId);
-    }
-    this.nativeChannel = null;
-    this.nativeDeviceName = null;
-
-    if (this.device) {
-      this.detachDisconnectHandler(this.device);
-      try {
-        if (this.device.gatt?.connected) {
-          this.device.gatt.disconnect();
-        }
-      } catch {
-        // ignore
-      }
-    }
-    this.device = null;
-    this.server = null;
-    this.characteristic = null;
-    this.bleConnected = false;
+    this.disconnectBleOnly();
     this.usb.disconnect();
+    this.network.disconnect();
     this.notifyConnectionChange();
   }
 
@@ -876,6 +1118,21 @@ export class BLEPrinter {
       paperWidth: this.paperWidth,
       lastConnected: Date.now(),
       transport: 'usb',
+    });
+    storage.set(PAIRED_PRINTERS_KEY, saved.slice(0, 12));
+  }
+
+  private saveNetworkDevice(cfg: NetworkPrinterConfig) {
+    this.applyAutoPaperWidth(cfg.id, cfg.name);
+    const saved = this.getSavedPrinters().filter((p) => p.id !== cfg.id);
+    saved.unshift({
+      id: cfg.id,
+      name: cfg.name,
+      paperWidth: this.paperWidth,
+      lastConnected: Date.now(),
+      transport: 'network',
+      host: cfg.host,
+      port: cfg.port,
     });
     storage.set(PAIRED_PRINTERS_KEY, saved.slice(0, 12));
   }
@@ -900,6 +1157,33 @@ export class BLEPrinter {
     this.setTransport('usb');
     const name = await this.usb.connectToId(printerId);
     this.saveUsbDevice(name, printerId);
+    this.notifyConnectionChange();
+    return name;
+  }
+
+  async connectNetworkPrinter(opts: {
+    host: string;
+    port?: number;
+    name?: string;
+  }): Promise<string> {
+    try {
+      this.setTransport('network');
+      const name = await this.network.connect(opts);
+      const cfg = this.network.getActiveConfig();
+      if (cfg) this.saveNetworkDevice(cfg);
+      this.notifyConnectionChange();
+      return name;
+    } catch (err: unknown) {
+      logPrinterFail('network_connect', err, { transport: 'network', host: opts.host });
+      throw err instanceof Error ? err : new Error('WiFi printer connection failed.');
+    }
+  }
+
+  async connectToSavedNetworkPrinter(printerId: string): Promise<string> {
+    this.setTransport('network');
+    const name = await this.network.connectToId(printerId);
+    const cfg = this.network.getActiveConfig();
+    if (cfg) this.saveNetworkDevice(cfg);
     this.notifyConnectionChange();
     return name;
   }
@@ -957,17 +1241,26 @@ export class BLEPrinter {
 
   private async writeEscPosData(data: Uint8Array): Promise<void> {
     try {
+      if (!this.isConnected) {
+        const ok = await this.ensureConnected();
+        if (!ok || !this.isConnected) {
+          throw new Error('Printer is not connected.');
+        }
+      }
+
       if (this.transport === 'usb') {
         await this.usb.writeInChunks(data);
         return;
       }
 
+      if (this.transport === 'network') {
+        await this.network.writeInChunks(data);
+        return;
+      }
+
       if (this.usesNativeBle) {
         if (!this.nativeChannel || !this.bleConnected) {
-          const ok = await this.ensureConnected();
-          if (!ok || !this.nativeChannel) {
-            throw new Error('Printer is not connected.');
-          }
+          throw new Error('Printer is not connected.');
         }
         try {
           await nativeWriteChunks(this.nativeChannel, data);
@@ -982,6 +1275,7 @@ export class BLEPrinter {
           this.nativeChannel = null;
           this.bleConnected = false;
           await this.connectNativeBle(id, name);
+          this.setTransport('ble');
           if (!this.nativeChannel) throw writeErr;
           await nativeWriteChunks(this.nativeChannel, data);
         }
@@ -1358,6 +1652,87 @@ function wrapReceiptLine(text: string, maxCols: number): string[] {
   }
   if (current) lines.push(current);
   return lines.length > 0 ? lines : [trimmed.slice(0, maxCols)];
+}
+
+/**
+ * Formats, transports, and necessities for a successful print.
+ *
+ * Wire format (all transports):
+ * - ESC/POS text: ESC @ init, ESC a align, ESC E bold, plain UTF-8 lines, GS V partial cut
+ * - ESC/POS raster: ESC @ + GS v 0 bit-image (1-bit monochrome from canvas)
+ *
+ * Transports (auto-connect order):
+ * 1. USB — WebUSB bulk OUT (class 7 / common thermal vendor IDs)
+ * 2. Bluetooth LE — GATT write / write-without-response (native Capacitor or Web Bluetooth)
+ * 3. WiFi / network — raw TCP port 9100 (native Android); best-effort HTTP in browser
+ *
+ * Classic Bluetooth SPP-only printers are not supported in-browser; use USB, WiFi (9100),
+ * or a dual-mode BLE thermal printer / Android APK.
+ */
+export function getPrinterCapabilities() {
+  const bt = getBluetoothSupport();
+  const usb = getUsbSupport();
+  const net = getNetworkPrinterSupport();
+
+  return {
+    formats: {
+      text: {
+        id: 'escpos_text',
+        name: 'ESC/POS text',
+        description:
+          'Standard ESC/POS control codes + UTF-8 text lines. Works on classic and modern ESC/POS thermal printers.',
+        commands: ['ESC @', 'ESC a', 'ESC E', 'GS V (cut)'],
+      },
+      raster: {
+        id: 'raster_image',
+        name: 'ESC/POS raster (GS v 0)',
+        description:
+          'Canvas rendered to 1-bit bitmap, sent as GS v 0. Used for invoices with logos/layout fidelity.',
+        commands: ['ESC @', 'GS v 0', 'GS V (cut)'],
+      },
+    },
+    transports: {
+      usb: {
+        order: 1,
+        id: 'usb',
+        available: usb.supported,
+        protocol: 'ESC/POS over USB bulk OUT',
+        message: usb.message,
+      },
+      ble: {
+        order: 2,
+        id: 'ble',
+        available: bt.supported,
+        protocol: 'ESC/POS over Bluetooth LE GATT',
+        message: bt.message,
+        note: 'Bluetooth Classic (SPP) only devices are not supported. Use BLE thermal printers.',
+      },
+      network: {
+        order: 3,
+        id: 'network',
+        available: net.supported,
+        protocol: 'ESC/POS over TCP raw (port 9100)',
+        message: net.message,
+        nativeTcp: net.nativeTcp,
+      },
+    },
+    autoConnectOrder: ['usb', 'ble', 'network'] as const,
+    paperWidths: ['58mm', '25mm'] as const,
+    necessities: [
+      'Printer powered on and awake (press feed if sleeping).',
+      'Paper loaded; correct width auto-detected (58mm standard / 25mm mini).',
+      'USB: cable connected; authorize once via Connect USB (Chrome/Edge or APK).',
+      'Bluetooth: BLE thermal within 1–2 m; not exclusively paired to another phone; adapter on.',
+      'WiFi: printer and device on the same network; correct IP; raw port 9100 open (best on Android APK).',
+      'Secure context for browser APIs: HTTPS or http://localhost.',
+      'Print path free (one job at a time on the BLE channel).',
+    ],
+    notes: [
+      'Auto-scan while using the calculator tries USB, then Bluetooth, then saved WiFi printers — no picker dialogs.',
+      'First-time pairing still needs Scan (Bluetooth) / Connect USB / enter WiFi IP once.',
+      'Modern ESC/POS and older ESC/POS firmwares both accept the same command set used here.',
+    ],
+  };
 }
 
 export const printerInstance = new BLEPrinter();

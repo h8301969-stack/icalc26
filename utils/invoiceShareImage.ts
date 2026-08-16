@@ -84,9 +84,9 @@ export const renderInvoiceShareImage = (
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillStyle = RECEIPT_THEME.headerText;
-  ctx.font = `700 ${SHARE_FONTS.brand}px Montserrat, Candara`;
+  ctx.font = `700 ${SHARE_FONTS.brand}px Montserrat`;
   ctx.fillText('ICALC', CANVAS_WIDTH / 2, 34);
-  ctx.font = `700 ${SHARE_FONTS.title}px Montserrat, Candara`;
+  ctx.font = `700 ${SHARE_FONTS.title}px Montserrat`;
   ctx.fillText(invoiceName, CANVAS_WIDTH / 2, 64);
 
   let y = HEADER_HEIGHT + 32;
@@ -94,7 +94,7 @@ export const renderInvoiceShareImage = (
 
   if (isFull && items.length > 0) {
     ctx.textAlign = 'left';
-    ctx.font = `500 ${SHARE_FONTS.item}px Montserrat, Candara`;
+    ctx.font = `500 ${SHARE_FONTS.item}px Montserrat`;
     items.forEach((item, index) => {
       ctx.fillText(formatItemLine(item, index, currency), 48, y);
       y += SHARE_ITEM_LINE_HEIGHT;
@@ -110,12 +110,12 @@ export const renderInvoiceShareImage = (
   y += 24;
 
   ctx.textAlign = 'left';
-  ctx.font = `700 ${SHARE_FONTS.totalLabel}px Montserrat, Candara`;
+  ctx.font = `700 ${SHARE_FONTS.totalLabel}px Montserrat`;
   ctx.fillStyle = RECEIPT_THEME.muted;
   ctx.fillText('TOTAL', 48, y);
 
   ctx.textAlign = 'right';
-  ctx.font = `800 ${SHARE_FONTS.totalValue}px Montserrat, Candara`;
+  ctx.font = `800 ${SHARE_FONTS.totalValue}px Montserrat`;
   ctx.fillStyle = RECEIPT_THEME.totalGreen;
   ctx.fillText(formatShareTotal(total, currency), CANVAS_WIDTH - 48, y - 8);
   y += 84;
@@ -124,16 +124,62 @@ export const renderInvoiceShareImage = (
     const prefix = 'served by ';
     const name = attendant;
     ctx.textAlign = 'left';
-    ctx.font = `italic 500 ${SHARE_FONTS.servedBy}px Montserrat, Candara`;
+    ctx.font = `italic 500 ${SHARE_FONTS.servedBy}px Montserrat`;
     ctx.fillStyle = RECEIPT_THEME.muted;
     const prefixWidth = ctx.measureText(prefix).width;
     ctx.fillText(prefix, (CANVAS_WIDTH - prefixWidth - ctx.measureText(name).width) / 2, y);
-    ctx.font = `700 ${SHARE_FONTS.servedBy}px Montserrat, Candara`;
+    ctx.font = `700 ${SHARE_FONTS.servedBy}px Montserrat`;
     ctx.fillStyle = RECEIPT_THEME.bodyText;
     ctx.fillText(name, (CANVAS_WIDTH - prefixWidth - ctx.measureText(name).width) / 2 + prefixWidth, y);
   }
 
   return canvas;
+};
+
+const canvasToPngBlob = (canvas: HTMLCanvasElement): Promise<Blob | null> =>
+  new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 1));
+
+/** Render invoice image and write PNG to the system clipboard. */
+export const copyInvoiceImageToClipboard = async (
+  payload: InvoiceSharePayload,
+  shareSettings: ShareReceiptSettings
+): Promise<{ ok: boolean; error?: string }> => {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+      return { ok: false, error: 'Clipboard image copy is not supported in this browser.' };
+    }
+
+    const canvas = renderInvoiceShareImage(payload, shareSettings);
+    const blob = await canvasToPngBlob(canvas);
+    if (!blob) return { ok: false, error: 'Could not create image.' };
+
+    // Some browsers require a Promise for the ClipboardItem value.
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'image/png': Promise.resolve(blob),
+      }),
+    ]);
+    return { ok: true };
+  } catch (err) {
+    // Fallback: try non-promise blob (Chrome older paths)
+    try {
+      const canvas = renderInvoiceShareImage(payload, shareSettings);
+      const blob = await canvasToPngBlob(canvas);
+      if (!blob) throw err;
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      return { ok: true };
+    } catch (fallbackErr) {
+      return {
+        ok: false,
+        error:
+          fallbackErr instanceof Error
+            ? fallbackErr.message
+            : err instanceof Error
+              ? err.message
+              : 'Could not copy image.',
+      };
+    }
+  }
 };
 
 export const shareInvoiceAsImage = async (
@@ -142,9 +188,7 @@ export const shareInvoiceAsImage = async (
 ): Promise<{ ok: boolean; error?: string }> => {
   try {
     const canvas = renderInvoiceShareImage(payload, shareSettings);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/png', 1)
-    );
+    const blob = await canvasToPngBlob(canvas);
     if (!blob) return { ok: false, error: 'Could not create image.' };
 
     const fileName = `${payload.invoiceName.replace(/[^\w.-]+/g, '_') || 'invoice'}.png`;
@@ -154,6 +198,10 @@ export const shareInvoiceAsImage = async (
       await navigator.share({ files: [file], title: payload.invoiceName });
       return { ok: true };
     }
+
+    // Prefer clipboard image when Web Share is unavailable
+    const copied = await copyInvoiceImageToClipboard(payload, shareSettings);
+    if (copied.ok) return { ok: true };
 
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');

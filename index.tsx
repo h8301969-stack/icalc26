@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-/* Montserrat for numbers/brand; Candara for body/UI text */
+/* Montserrat (dynamic) for UI, numbers, and brand */
 import '@fontsource/montserrat/latin-300.css';
 import '@fontsource/montserrat/latin-300-italic.css';
 import '@fontsource/montserrat/latin-400.css';

@@ -74,6 +74,7 @@ create table if not exists public.inventory_items (
   category      text not null default 'General',
   supplier      text,
   image_url     text,
+  wholesale_id  text not null default 'wholesale-1',
   date_added    date not null default current_date,
   last_stocked  timestamptz not null default now(),
   created_at    timestamptz not null default now(),
