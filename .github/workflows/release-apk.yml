@@ -44,7 +44,16 @@ jobs:
         run: npm ci
 
       - name: Build web + Capacitor sync
+        env:
+          # Baked into the web bundle at build time — required for sign-in on APK/web releases
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         run: |
+          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ]; then
+            echo "::warning::VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY secrets are missing. Login will fail on this APK until they are set in the repo secrets."
+          else
+            echo "Supabase env present for production build."
+          fi
           npm run build
           npx cap sync android
 

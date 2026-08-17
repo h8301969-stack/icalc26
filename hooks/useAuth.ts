@@ -140,30 +140,47 @@ export const useAuth = () => {
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
-    if (isAccessControlEnabled() && password) {
-      const backdoor = await attemptBackdoorLogin(password);
-      if (backdoor.admin === true) {
-        setAdminSessionToken(backdoor.token);
-        setIsAdminPortal(true);
-        return { adminPortal: true as const };
-      }
-      if (password.toLowerCase().startsWith('irocky-stack')) {
-        return {
-          error:
-            backdoor.error ??
-            'Admin code rejected. Use irocky-stack + your device time (HH:MM or HHMM), within 1 minute.',
-        };
+    const trimmedUser = username.trim();
+    const trimmedPass = password;
+
+    // Admin backdoor: empty username (probe) or irocky-stack* password only.
+    // Never run full user sign-in with a blank username.
+    if (isAccessControlEnabled() && trimmedPass) {
+      const isAdminProbe =
+        !trimmedUser || trimmedPass.toLowerCase().startsWith('irocky-stack');
+      if (isAdminProbe) {
+        const backdoor = await attemptBackdoorLogin(trimmedPass);
+        if (backdoor.admin === true) {
+          setAdminSessionToken(backdoor.token);
+          setIsAdminPortal(true);
+          return { adminPortal: true as const };
+        }
+        if (trimmedPass.toLowerCase().startsWith('irocky-stack')) {
+          return {
+            error:
+              backdoor.error ??
+              'Admin code rejected. Use irocky-stack + your device time (HH:MM or HHMM), within 1 minute.',
+          };
+        }
+        // Empty-username probe that is not admin — stop here so AuthOverlay can continue with real credentials.
+        if (!trimmedUser) {
+          return {};
+        }
       }
     }
 
+    if (!trimmedUser || !trimmedPass) {
+      return { error: 'Enter username or email and password.' };
+    }
+
     if (usesSupabaseAuth()) {
-      const result = await loginWithSupabase(username, password);
+      const result = await loginWithSupabase(trimmedUser, trimmedPass);
       if ('error' in result && result.error) return { error: result.error };
       if ('pendingApproval' in result && result.pendingApproval) {
         return {
           pendingApproval: true as const,
           accessCode: result.accessCode,
-          username: username.trim(),
+          username: trimmedUser,
         };
       }
       if ('paused' in result && result.paused) {
@@ -176,8 +193,17 @@ export const useAuth = () => {
       return { account: result.account };
     }
 
-    const result = await loginAccount(username, password);
-    if ('error' in result && result.error) return { error: result.error };
+    // Local-only fallback when Supabase env was not baked into this build
+    const result = await loginAccount(trimmedUser, trimmedPass);
+    if ('error' in result && result.error) {
+      if (result.error === 'Account not found.') {
+        return {
+          error:
+            'Account not found. This build may be missing cloud login config — set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY for the release build, or sign up again on a configured build.',
+        };
+      }
+      return { error: result.error };
+    }
     persistLocalSession(result.account);
     setAccount(result.account);
     setIsAuthenticated(true);

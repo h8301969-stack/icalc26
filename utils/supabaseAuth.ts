@@ -51,7 +51,10 @@ export const fetchAccountFromSession = async (
     .eq('user_id', userId)
     .order('sort_order', { ascending: true });
 
-  if (profilesError) return null;
+  // Profile read can fail (RLS / offline) after auth succeeds — still admit the user.
+  if (profilesError) {
+    console.warn('[iCalc auth] user_profiles read failed; using session fallback', profilesError.message);
+  }
 
   const mapped = ensureAdminProfile((profiles ?? []).map(mapDbProfile));
   const { data: settings } = await supabase
@@ -207,24 +210,26 @@ export const loginWithSupabase = async (
   | { account?: never; pendingApproval?: never; accessCode?: never; paused?: never; error: string }
 > => {
   if (!isSupabaseConfigured()) {
-    return { error: 'Supabase is not configured.' };
+    return {
+      error:
+        'Cloud login is not configured in this build. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY and rebuild.',
+    };
   }
 
-  if (!password) return { error: 'Enter username or email and password.' };
+  if (!password?.trim()) return { error: 'Enter username or email and password.' };
 
   const trimmedIdentifier = username.trim();
-  const email = trimmedIdentifier
-    ? await resolveLoginEmail(trimmedIdentifier)
-    : '';
-
-  if (!email && !trimmedIdentifier) {
+  if (!trimmedIdentifier) {
     return { error: 'Enter username or email and password.' };
   }
 
-  const resolvedEmail = email || (trimmedIdentifier.includes('@') ? trimmedIdentifier : '');
+  const loginEmail = await resolveLoginEmail(trimmedIdentifier);
+  if (!loginEmail || !loginEmail.includes('@')) {
+    return { error: 'Could not resolve account email. Try signing in with your email address.' };
+  }
 
-  if (resolvedEmail && isAccessControlEnabled()) {
-    const access = await validateLoginAccess(resolvedEmail);
+  if (isAccessControlEnabled()) {
+    const access = await validateLoginAccess(loginEmail);
     if (access.ok === true && access.allowed === false) {
       if (access.status === 'pending' && access.code) {
         return { pendingApproval: true, accessCode: access.code };
@@ -236,9 +241,21 @@ export const loginWithSupabase = async (
     }
   }
 
-  const loginEmail = resolvedEmail || (await resolveLoginEmail(trimmedIdentifier));
-  const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
-  if (error) return { error: error.message };
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: loginEmail,
+    password,
+  });
+  if (error) {
+    const msg = error.message || 'Invalid login credentials';
+    // Friendlier copy for common Supabase errors
+    if (/invalid login credentials/i.test(msg)) {
+      return { error: 'Incorrect username/email or password.' };
+    }
+    if (/email not confirmed/i.test(msg)) {
+      return { error: 'Confirm your email, then sign in again.' };
+    }
+    return { error: msg };
+  }
   if (!data.session) return { error: 'Could not start session.' };
 
   const resolvedUsername =
@@ -255,7 +272,18 @@ export const loginWithSupabase = async (
     }
   }
 
-  if (!account) return { error: 'Signed in but could not load profile.' };
+  // Always return a session-backed account after successful sign-in
+  if (!account) {
+    account = {
+      id: data.session.user.id,
+      username: resolvedUsername,
+      email: data.session.user.email ?? loginEmail,
+      passwordHash: '',
+      createdAt: Date.parse(data.session.user.created_at) || Date.now(),
+      profiles: ensureAdminProfile([]),
+      activeProfileId: createAdminProfile().id,
+    };
+  }
   return { account };
 };
 

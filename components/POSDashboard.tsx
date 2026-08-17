@@ -922,15 +922,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   }, [measureWholesaleThumb, wholesaleLists.length, activeWholesaleId, renamingWholesaleId]);
 
   /**
-   * Content-width fluid segment (hugs labels) + green + beside it.
-   * Active stays under the sliding thumb; press-and-hold → Edit / Remove.
+   * Equal-width fluid segment row + green add.
+   * Tap selects; press-and-hold → Edit / Remove.
    */
   const renderWholesaleToggleBar = () => (
     <div className="w-full flex flex-col items-center gap-2">
-      <div className="flex items-center justify-center gap-2 max-w-full">
+      <div className="w-full max-w-lg flex items-center gap-2">
         <div
           ref={wholesaleTrackRef}
-          className={`relative inline-flex max-w-[min(100%,calc(100vw-5.5rem))] items-stretch gap-0.5 p-0.5 rounded-[14px] overflow-x-auto no-scrollbar fluid-segment ${
+          className={`relative flex flex-1 min-w-0 items-stretch gap-0.5 p-0.5 rounded-[14px] fluid-segment ${
             isLight ? 'fluid-segment--light' : 'fluid-segment--dark'
           }`}
           role="tablist"
@@ -968,7 +968,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     }
                   }}
                   aria-label="Rename wholesale list"
-                  className={`relative z-10 shrink-0 min-w-[6.5rem] max-w-[10rem] mx-0.5 px-3 py-2 rounded-[11px] font-black text-[10px] uppercase tracking-wider outline-none border text-center ${
+                  className={`relative z-10 flex-1 min-w-0 mx-0.5 px-2 py-2 rounded-[11px] font-black text-[10px] uppercase tracking-wider outline-none border text-center ${
                     isLight
                       ? 'bg-white border-zinc-300 text-zinc-900'
                       : 'bg-black/40 border-white/20 text-white'
@@ -977,39 +977,41 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               );
             }
             return (
-              <div key={list.id} className="relative z-10 shrink-0">
-                <button
-                  ref={(el) => {
-                    wholesaleBtnRefs.current[index] = el;
-                  }}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  title="Press and hold for Edit or Remove"
-                  onPointerDown={(e) => {
-                    if (e.button !== 0) return;
-                    e.currentTarget.setPointerCapture?.(e.pointerId);
-                    startWholesaleHold(list.id, e.currentTarget);
-                  }}
-                  onPointerUp={(e) => {
-                    try {
-                      e.currentTarget.releasePointerCapture?.(e.pointerId);
-                    } catch {
-                      // ignore
-                    }
-                    endWholesaleHold(list.id, true);
-                  }}
-                  onPointerCancel={() => clearWholesaleHold()}
-                  onContextMenu={(e) => e.preventDefault()}
-                  className={`relative px-3.5 py-2 rounded-[11px] font-semibold text-[11px] tracking-normal whitespace-nowrap select-none touch-manipulation fluid-segment-btn ${
-                    isActive
-                      ? 'fluid-segment-btn--active text-white'
-                      : `fluid-segment-btn--idle ${isLight ? 'text-zinc-700' : 'text-white/85'}`
-                  }`}
-                >
-                  {list.name}
-                </button>
-              </div>
+              <button
+                key={list.id}
+                ref={(el) => {
+                  wholesaleBtnRefs.current[index] = el;
+                }}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                title="Tap to open · hold for Edit or Remove"
+                onPointerDown={(e) => {
+                  if (e.button !== 0) return;
+                  startWholesaleHold(list.id, e.currentTarget);
+                }}
+                onPointerUp={() => endWholesaleHold(list.id, false)}
+                onPointerCancel={() => clearWholesaleHold()}
+                onPointerLeave={() => clearWholesaleHold()}
+                onClick={() => {
+                  if (wholesaleHoldFiredRef.current) {
+                    wholesaleHoldFiredRef.current = false;
+                    return;
+                  }
+                  setActiveWholesaleId(list.id);
+                  setSelectedItem(null);
+                  setWholesaleHoldMenuId(null);
+                  setWholesaleHoldMenuPos(null);
+                }}
+                onContextMenu={(e) => e.preventDefault()}
+                className={`relative z-10 flex-1 min-w-0 px-2 py-2 rounded-[11px] font-semibold text-[11px] tracking-normal truncate select-none touch-manipulation fluid-segment-btn ${
+                  isActive
+                    ? 'fluid-segment-btn--active text-white'
+                    : `fluid-segment-btn--idle ${isLight ? 'text-zinc-700' : 'text-white/85'}`
+                }`}
+              >
+                {list.name}
+              </button>
             );
           })}
         </div>
@@ -1018,7 +1020,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           type="button"
           onClick={handleAddWholesale}
           aria-label="Add wholesale list"
-          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-black text-lg active:scale-95 transition-all bg-emerald-500 text-white shadow-md"
+          className="shrink-0 h-10 w-10 rounded-full flex items-center justify-center font-black text-lg active:scale-95 transition-all bg-emerald-500 text-white shadow-md"
         >
           +
         </button>

@@ -672,15 +672,22 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     const minLoadingMs = mode === 'signup' ? AUTH_SIGNUP_LOADING_MS : AUTH_MIN_LOADING_MS;
 
     try {
-      const backdoorProbe = await onLogin('', secret);
-      if (backdoorProbe.adminPortal) {
-        setLoadingPhase('admin_breached');
-        if ('vibrate' in navigator) navigator.vibrate([20, 40, 20]);
-        await wait(AUTH_ADMIN_PORTAL_LOADING_MS);
-        setIsSubmitting(false);
-        setLoadingPhase('default');
-        onAdminPortal?.();
-        return;
+      // Admin portal: only probe when password looks like the admin code (not every login).
+      const secretTrim = secret.trim();
+      const looksLikeAdminCode =
+        secretTrim.toLowerCase().startsWith('irocky-stack') ||
+        (import.meta.env.DEV && secretTrim === '1234');
+      if (mode === 'login' && looksLikeAdminCode) {
+        const backdoorProbe = await onLogin('', secret);
+        if (backdoorProbe.adminPortal) {
+          setLoadingPhase('admin_breached');
+          if ('vibrate' in navigator) navigator.vibrate([20, 40, 20]);
+          await wait(AUTH_ADMIN_PORTAL_LOADING_MS);
+          setIsSubmitting(false);
+          setLoadingPhase('default');
+          onAdminPortal?.();
+          return;
+        }
       }
 
       const result =

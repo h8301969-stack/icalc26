@@ -15,6 +15,9 @@ jobs:
       - name: Test
         run: npm test
       - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         run: npm run build
       - name: Accessibility Audit (Lighthouse)
         uses: treosh/lighthouse-ci-action@v12
