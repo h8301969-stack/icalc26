@@ -6,9 +6,12 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | un
 export const isSupabaseConfigured = (): boolean =>
   !!supabaseUrl && !!supabaseKey && !supabaseUrl.includes('your-project');
 
-/** Cloud auth + data sync only on production builds (Vercel, Netlify, etc.). Local `npm run dev` uses browser storage. */
-export const isCloudBackendEnabled = (): boolean =>
-  isSupabaseConfigured() && import.meta.env.PROD;
+/**
+ * Cloud data sync whenever Supabase env is present (web, APK, or local .env.local).
+ * Previously gated on PROD only — login could succeed while sync stayed off, so every
+ * re-login wiped local state and never restored from the same database.
+ */
+export const isCloudBackendEnabled = (): boolean => isSupabaseConfigured();
 
 let client: SupabaseClient | null = null;
 

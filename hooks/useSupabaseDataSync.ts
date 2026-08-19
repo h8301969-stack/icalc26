@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HistoryItem, InvoiceActionLog, InvoicePrintLog, POSRequest, RestockNote, SavedInvoice, SupplierRecord, SyncState } from '../types';
 import { InventoryItem, PurchaseRecord } from './usePOS';
 import { isCloudBackendEnabled } from '../utils/supabase';
@@ -76,6 +76,8 @@ export const useSupabaseDataSync = ({
 }: UseSupabaseDataSyncOptions) => {
   const hydratedRef = useRef(false);
   const hydratingRef = useRef(false);
+  /** Bumps after a successful hydrate so sync effects re-subscribe (refs alone don't re-render). */
+  const [hydrateEpoch, setHydrateEpoch] = useState(0);
   const inventorySyncTimerRef = useRef<number | null>(null);
   const invoiceSyncTimerRef = useRef<number | null>(null);
   const historySyncTimerRef = useRef<number | null>(null);
@@ -103,6 +105,7 @@ export const useSupabaseDataSync = ({
   useEffect(() => {
     hydratedRef.current = false;
     hydratingRef.current = false;
+    setHydrateEpoch(0);
   }, [userId]);
 
   useEffect(() => {
@@ -135,52 +138,27 @@ export const useSupabaseDataSync = ({
 
         if (cancelled) return;
 
+        // null = no remote rows yet (new account); still apply empty so UI matches DB
         if (remoteInventory?.length) {
-          const localById = new Map(inventoryRef.current.map((item) => [item.id, item]));
           setInventory(
-            remoteInventory.map((remote) => {
-              const local = localById.get(remote.id);
-              const image = local?.image || remote.image || '';
-              return { ...remote, image };
-            })
+            remoteInventory.map((remote) => ({
+              ...remote,
+              image: remote.image || '',
+            }))
           );
-        } else if (!cancelled) {
+        } else {
           setInventory([]);
         }
 
-        if (remoteHistory?.length) {
-          setHistory(remoteHistory);
-        } else if (!cancelled) {
-          setHistory([]);
-        }
-
-        if (remotePurchases?.length) {
-          setPurchases(remotePurchases);
-        } else if (!cancelled) {
-          setPurchases([]);
-        }
-
-        if (remoteSuppliers?.length) {
-          setSuppliers(remoteSuppliers);
-        } else if (!cancelled) {
-          setSuppliers([]);
-        }
-
-        if (remoteRequests?.length) {
-          setRequests(remoteRequests);
-        } else if (!cancelled) {
-          setRequests([]);
-        }
-
-        if (remoteRestocks?.length) {
-          setRestocks(remoteRestocks);
-        } else if (!cancelled) {
-          setRestocks([]);
-        }
+        setHistory(remoteHistory?.length ? remoteHistory : []);
+        setPurchases(remotePurchases?.length ? remotePurchases : []);
+        setSuppliers(remoteSuppliers?.length ? remoteSuppliers : []);
+        setRequests(remoteRequests?.length ? remoteRequests : []);
+        setRestocks(remoteRestocks?.length ? remoteRestocks : []);
 
         if (remoteInvoice) {
           onInvoiceHydratedRef.current(remoteInvoice);
-        } else if (!cancelled) {
+        } else {
           onInvoiceHydratedRef.current({
             invoiceName: FRESH_INVOICE_NAME,
             expression: '0',
@@ -189,11 +167,17 @@ export const useSupabaseDataSync = ({
             savedInvoices: [{ name: FRESH_INVOICE_NAME, expression: '0', isCurrent: true }],
           });
         }
+
+        if (!cancelled) {
+          hydratedRef.current = true;
+          setHydrateEpoch((n) => n + 1);
+        }
       } catch (error) {
         console.error('[iCalc sync] hydrate failed', error);
+        // Do NOT mark hydrated on failure — avoids pushing empty local state over good remote data.
+        hydratedRef.current = false;
       } finally {
         hydratingRef.current = false;
-        hydratedRef.current = true;
       }
     };
 
@@ -219,7 +203,7 @@ export const useSupabaseDataSync = ({
     return () => {
       if (inventorySyncTimerRef.current) window.clearTimeout(inventorySyncTimerRef.current);
     };
-  }, [authReady, userId, inventory, setInventory]);
+  }, [authReady, userId, inventory, setInventory, hydrateEpoch]);
 
   useEffect(() => {
     if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
@@ -236,7 +220,7 @@ export const useSupabaseDataSync = ({
     return () => {
       if (historySyncTimerRef.current) window.clearTimeout(historySyncTimerRef.current);
     };
-  }, [authReady, userId, history, setHistory]);
+  }, [authReady, userId, history, setHistory, hydrateEpoch]);
 
   useEffect(() => {
     if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
@@ -253,7 +237,7 @@ export const useSupabaseDataSync = ({
     return () => {
       if (purchasesSyncTimerRef.current) window.clearTimeout(purchasesSyncTimerRef.current);
     };
-  }, [authReady, userId, purchases, setPurchases]);
+  }, [authReady, userId, purchases, setPurchases, hydrateEpoch]);
 
   useEffect(() => {
     if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
@@ -282,7 +266,7 @@ export const useSupabaseDataSync = ({
     return () => {
       if (dashboardSyncTimerRef.current) window.clearTimeout(dashboardSyncTimerRef.current);
     };
-  }, [authReady, userId, suppliers, requests, restocks, setSuppliers, setRequests, setRestocks]);
+  }, [authReady, userId, suppliers, requests, restocks, setSuppliers, setRequests, setRestocks, hydrateEpoch]);
 
   useEffect(() => {
     if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
@@ -298,5 +282,5 @@ export const useSupabaseDataSync = ({
     return () => {
       if (invoiceSyncTimerRef.current) window.clearTimeout(invoiceSyncTimerRef.current);
     };
-  }, [authReady, userId, invoiceName, expression, pastLogs, printLogs, getSavedInvoices]);
+  }, [authReady, userId, invoiceName, expression, pastLogs, printLogs, getSavedInvoices, hydrateEpoch]);
 };

@@ -182,17 +182,21 @@ export const syncInventoryToSupabase = async (
     if (activityError) throw new Error(activityError.message);
   }
 
-  const { data: remoteRows } = await supabase
-    .from('inventory_items')
-    .select('id')
-    .eq('user_id', userId);
+  // Never mass-delete remote inventory when local is empty — that race wiped accounts on re-login.
+  // Stale-row cleanup only runs when we have a non-empty local snapshot to reconcile against.
+  if (itemIds.length > 0) {
+    const { data: remoteRows } = await supabase
+      .from('inventory_items')
+      .select('id')
+      .eq('user_id', userId);
 
-  const remoteIds = new Set((remoteRows ?? []).map((row) => row.id as string));
-  const localIds = new Set(itemIds);
-  const staleIds = [...remoteIds].filter((id) => !localIds.has(id));
+    const remoteIds = new Set((remoteRows ?? []).map((row) => row.id as string));
+    const localIds = new Set(itemIds);
+    const staleIds = [...remoteIds].filter((id) => !localIds.has(id));
 
-  if (staleIds.length > 0) {
-    await supabase.from('inventory_items').delete().in('id', staleIds);
+    if (staleIds.length > 0) {
+      await supabase.from('inventory_items').delete().in('id', staleIds);
+    }
   }
 
   return normalizedItems;

@@ -49,7 +49,7 @@ import {
 } from './utils/expressionDisplay';
 import { CartLineItem, InvoiceActionLog, InvoicePrintLog, SavedInvoice } from './types';
 import { usePOSDashboardData } from './hooks/usePOSDashboardData';
-import { clearAppSessionData, FRESH_INVOICE_NAME, isCloudUserAccount } from './utils/freshAppSession';
+import { clearAppSessionData, isCloudUserAccount } from './utils/freshAppSession';
 import { printerInstance } from './utils/bluetoothPrinter';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -312,37 +312,13 @@ const AppContent: React.FC = () => {
     syncProfiles(settingsProfiles, settingsActiveId);
   }, [account, settings.profiles, settings.activeProfileId, syncProfiles]);
 
-  const resetToFreshSession = useCallback(() => {
-    clearAppSessionData();
-    setItems([]);
-    setPurchases([]);
-    setSuppliers([]);
-    setRequests([]);
-    setRestocks([]);
-    setHistory([]);
-    hydrateInvoiceState({
-      invoiceName: FRESH_INVOICE_NAME,
-      pastLogs: [],
-      printLogs: [],
-      savedInvoices: [{ name: FRESH_INVOICE_NAME, expression: '0', isCurrent: true }],
-    });
-    setExpression('0');
-    setCursorPos(0);
-  }, [
-    hydrateInvoiceState,
-    setCursorPos,
-    setExpression,
-    setHistory,
-    setItems,
-    setPurchases,
-    setRequests,
-    setRestocks,
-    setSuppliers,
-  ]);
-
   const handleAuthSuccess = useCallback((acc: NonNullable<typeof account>) => {
+    // Cloud accounts: do NOT wipe local React state here. Clearing used to race an empty
+    // push to Supabase and made every re-login look like a brand-new account.
+    // useSupabaseDataSync hydrates from the same user_id database after auth.
     if (isCloudUserAccount(acc.id)) {
-      resetToFreshSession();
+      // Drop stale guest/local storage keys only; hydrate replaces in-memory state.
+      clearAppSessionData();
     }
     updateSettings({
       profiles: acc.profiles,
@@ -352,7 +328,7 @@ const AppContent: React.FC = () => {
     setIsCalculatorEntering(true);
     setIsUnlocked(true);
     setAuthOverlayMounted(false);
-  }, [resetToFreshSession, updateSettings, triggerHaptic]);
+  }, [updateSettings, triggerHaptic]);
 
   /** Local guest login for `npm run dev` — does not require Supabase. */
   const handleDevSkip = useCallback(async () => {
