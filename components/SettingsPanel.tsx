@@ -23,6 +23,9 @@ import BusinessInfoReceiptCard from './BusinessInfoReceiptCard';
 import PasswordField from './PasswordField';
 import { updateUserBusinessInfo } from '../utils/accessControl';
 import { MorphPresence } from './MorphCrossfade';
+import SettingsNotificationsInbox from './SettingsNotificationsInbox';
+import type { AccountNotification } from '../types/accountNotifications';
+import { pickPhotoFromGallery } from '../utils/nativeCamera';
 
 
 interface SettingsSlice {
@@ -34,6 +37,7 @@ interface SettingsSlice {
   expressionViewMode?: 'auto' | 'list';
   receiptLayoutMode?: 'summary' | 'full';
   visionHubDrawerMode?: 'drag' | 'click';
+  notificationStyle?: 'modal' | 'pill';
 
   standbyTimerSeconds?: number;
   profiles?: UserProfile[];
@@ -58,6 +62,7 @@ const settingsFingerprint = (s: SettingsSlice): string =>
     expressionViewMode: s.expressionViewMode ?? 'auto',
     receiptLayoutMode: s.receiptLayoutMode ?? 'summary',
     visionHubDrawerMode: s.visionHubDrawerMode ?? 'click',
+    notificationStyle: s.notificationStyle ?? 'pill',
     standbyTimerSeconds: s.standbyTimerSeconds ?? 0,
     profiles: s.profiles ?? [],
     activeProfileId: s.activeProfileId ?? '',
@@ -85,6 +90,9 @@ interface SettingsPanelProps {
   onChangePassword?: (current: string, newPassword: string) => Promise<{ error?: string; ok?: boolean }>;
   onLogout?: () => void;
   onVerifyAdminPassword?: (password: string) => Promise<{ error?: string; ok?: boolean }>;
+  notifications?: AccountNotification[];
+  notificationsUnreadCount?: number;
+  onMarkNotificationsRead?: (ids: string[]) => void;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
@@ -104,6 +112,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onChangePassword,
   onLogout,
   onVerifyAdminPassword,
+  notifications = [],
+  notificationsUnreadCount = 0,
+  onMarkNotificationsRead,
 }) => {
   // Draft settings — edits stay local until Save
   const [draft, setDraft] = useState<SettingsSlice>(() => cloneSettings(settings));
@@ -156,6 +167,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const closeRef = useRef<HTMLButtonElement>(null);
   const lastFocusedRef = useRef<HTMLElement | null>(null);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [showNotificationsInbox, setShowNotificationsInbox] = useState(false);
   const wasOpenRef = useRef(false);
 
   // Snapshot committed settings into draft when panel opens
@@ -537,6 +549,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     );
   };
 
+  const handlePickActiveAvatar = async () => {
+    if (!activeProfile) return;
+    if (Capacitor.isNativePlatform()) {
+      const result = await pickPhotoFromGallery();
+      if (result.success && result.imageData) {
+        handleUpdateProfileAvatar(activeProfile.id, result.imageData);
+        return;
+      }
+      if (result.error) alert(result.error);
+      return;
+    }
+    avatarFileInputRef.current?.click();
+  };
+
   const handleActiveAvatarGallery = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -694,12 +720,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             onChange={handleActiveAvatarGallery}
             aria-hidden="true"
           />
-          <div className="flex flex-col items-center gap-3 p-8 pt-6">
+          <div className="relative flex flex-col items-center gap-3 p-8 pt-6">
+            <button
+              type="button"
+              onClick={() => setShowNotificationsInbox(true)}
+              className={`absolute top-4 right-4 w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+                isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'
+              }`}
+              aria-label={`Notifications${notificationsUnreadCount > 0 ? `, ${notificationsUnreadCount} unread` : ''}`}
+            >
+              <Icons.Bell size={20} />
+              {notificationsUnreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">
+                  {notificationsUnreadCount > 99 ? '99+' : notificationsUnreadCount}
+                </span>
+              )}
+            </button>
             <ProfileAvatar
               profile={activeProfile}
               size={80}
               isLight={isLight}
-              onClick={() => avatarFileInputRef.current?.click()}
+              onClick={() => void handlePickActiveAvatar()}
               ariaLabel="Change profile photo from gallery"
             />
             <button
@@ -724,6 +765,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onAddProfile={handleAddProfile}
           onUpdateProfileAvatar={handleUpdateProfileAvatar}
           onVerifyAdminPassword={onVerifyAdminPassword}
+        />
+
+        <SettingsNotificationsInbox
+          isOpen={showNotificationsInbox && isOpen}
+          onClose={() => setShowNotificationsInbox(false)}
+          isLight={isLight}
+          notifications={notifications}
+          activeProfileId={draft.activeProfileId ?? activeProfile?.id ?? ''}
+          onMarkRead={onMarkNotificationsRead}
         />
 
         {/* Appearance Settings */}
@@ -868,6 +918,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   id: String(option.value),
                   label: option.label,
                 }))}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-black">Notifications</span>
+                <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                  Popup blur card, or top pill banner
+                </span>
+              </div>
+              <FluidSegmentControl
+                isLight={isLight}
+                size="sm"
+                ariaLabel="Notification style"
+                value={draft.notificationStyle ?? 'pill'}
+                onChange={(notificationStyle) => patchDraft({ notificationStyle })}
+                options={[
+                  { id: 'modal', label: 'Popup' },
+                  { id: 'pill', label: 'Banner' },
+                ]}
               />
             </div>
 

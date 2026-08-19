@@ -1365,3 +1365,19 @@ grant select on all tables in schema public to anon;
 
 -- Optional: seed 200 unused access codes (also auto-seeds on first admin backdoor login)
 -- select public.seed_access_codes_if_empty();
+-- -- Account notifications (profile switcher alerts) --------------------------
+-- Also in supabase/account-notifications.sql for standalone apply
+create table if not exists public.account_notifications (
+  id text primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  kind text not null,
+  title text not null,
+  body text not null default '',
+  actor_profile_id text not null default '',
+  target_profile_id text not null,
+  created_at timestamptz not null default now(),
+  read_at timestamptz
+);
+create index if not exists account_notifications_user_target_idx
+  on public.account_notifications (user_id, target_profile_id, created_at desc);
+alter table public.account_notifications enable row level security;

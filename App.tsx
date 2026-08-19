@@ -36,6 +36,8 @@ import { useSupabaseDataSync } from './hooks/useSupabaseDataSync';
 import { useSyncStatus } from './hooks/useSyncStatus';
 import { ensureAdminProfile, getAccounts, isAdminProfile } from './utils/auth';
 import { SyncStatusIndicator } from './components/SyncStatusIndicator';
+import AccountToastHost from './components/AccountToastHost';
+import { useAccountNotifications } from './hooks/useAccountNotifications';
 
 import { usePOS, InventoryItem } from './hooks/usePOS';
 import { useInvoice } from './hooks/useInvoice';
@@ -198,6 +200,31 @@ const AppContent: React.FC = () => {
   const [authOverlayMounted, setAuthOverlayMounted] = useState(true);
   const sessionBootstrappedRef = useRef(false);
   const isAdminPortalRef = useRef(false);
+
+  const accountNotifications = useAccountNotifications({
+    accountId: account?.id ?? null,
+    profiles: settings.profiles ?? [],
+    activeProfileId: settings.activeProfileId ?? '',
+    notificationStyle: settings.notificationStyle ?? 'pill',
+    enabled: !!account && isUnlocked,
+  });
+
+  const emitAccountNotification = accountNotifications.emit;
+  const handleAccountNotify = useCallback(
+    (input: {
+      kind: 'item_added' | 'item_restocked' | 'price_updated' | 'stock_updated';
+      title: string;
+      body: string;
+    }) => {
+      const actorProfileId = settings.activeProfileId ?? '';
+      if (!actorProfileId) return;
+      emitAccountNotification({
+        ...input,
+        actorProfileId,
+      });
+    },
+    [emitAccountNotification, settings.activeProfileId]
+  );
 
   const closeAllPanels = useCallback(() => {
     setIsHistoryOpen(false);
@@ -1379,6 +1406,9 @@ const AppContent: React.FC = () => {
         onChangePassword={handleChangePassword}
         onLogout={handleLogout}
         onVerifyAdminPassword={handleVerifyAdminPassword}
+        notifications={accountNotifications.items}
+        notificationsUnreadCount={accountNotifications.unreadCount}
+        onMarkNotificationsRead={accountNotifications.markRead}
       />
 
       <HistoryPanel
@@ -1447,7 +1477,9 @@ const AppContent: React.FC = () => {
         onChangePassword={handleChangePassword}
         onLogout={handleLogout}
         onVerifyAdminPassword={handleVerifyAdminPassword}
+        onAccountNotify={handleAccountNotify}
       />
+      {isUnlocked && <AccountToastHost isLight={isLight} api={accountNotifications} />}
       <SyncStatusIndicator
         syncState={syncStatus.syncState}
         isLight={isLight}

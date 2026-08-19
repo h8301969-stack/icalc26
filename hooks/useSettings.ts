@@ -30,6 +30,8 @@ export const DEFAULT_SETTINGS = {
   expressionViewMode: 'auto' as ExpressionViewMode,
   receiptLayoutMode: 'summary' as ReceiptLayoutMode,
   visionHubDrawerMode: 'click' as 'drag' | 'click',
+  /** In-app account notifications: modal popup vs top pill banner */
+  notificationStyle: 'pill' as 'modal' | 'pill',
   standbyTimerSeconds: 0,
   profiles: [] as UserProfile[],
   activeProfileId: '',

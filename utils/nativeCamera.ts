@@ -73,10 +73,40 @@ export const captureReceiptPhoto = async (): Promise<ReceiptPhotoResult> => {
 };
 
 /**
+ * Request camera + photo library access (needed before gallery / camera pick on Android 13+).
+ */
+export const requestPhotoPermissions = async (): Promise<{
+  ok: boolean;
+  error?: string;
+}> => {
+  try {
+    const current = await Camera.checkPermissions();
+    if (current.photos === 'granted' || current.photos === 'limited') {
+      return { ok: true };
+    }
+    const next = await Camera.requestPermissions({ permissions: ['photos', 'camera'] });
+    if (next.photos === 'granted' || next.photos === 'limited' || next.camera === 'granted') {
+      return { ok: true };
+    }
+    return { ok: false, error: 'Photo library permission was denied.' };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Could not request photo permission.',
+    };
+  }
+};
+
+/**
  * Pick existing photo from device gallery
  */
 export const pickPhotoFromGallery = async (): Promise<ReceiptPhotoResult> => {
   try {
+    const permission = await requestPhotoPermissions();
+    if (!permission.ok) {
+      return { success: false, error: permission.error ?? 'Photo access denied.' };
+    }
+
     const photo = await Camera.getPhoto({
       quality: 85,
       allowEditing: false,

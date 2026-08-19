@@ -34,6 +34,8 @@ import { DEFAULT_INVENTORY_IMAGE, resolveInventoryImage, WALLPAPER_IMAGE_URLS } 
 import { formInputClass } from '../utils/formFields';
 import { MorphPresence } from './MorphCrossfade';
 import FluidSegmentControl from './FluidSegmentControl';
+import { Capacitor } from '@capacitor/core';
+import { pickPhotoFromGallery } from '../utils/nativeCamera';
 
 interface POSDashboardProps {
   history: HistoryItem[];
@@ -86,6 +88,12 @@ interface POSDashboardProps {
   onChangePassword?: (current: string, newPassword: string) => Promise<{ error?: string; ok?: boolean }>;
   onLogout?: () => void;
   onVerifyAdminPassword?: (password: string) => Promise<{ error?: string; ok?: boolean }>;
+  /** Fan-out inventory change alerts to other profiles on this account. */
+  onAccountNotify?: (input: {
+    kind: 'item_added' | 'item_restocked' | 'price_updated' | 'stock_updated';
+    title: string;
+    body: string;
+  }) => void;
 }
 
 type DashboardLogFilter = 'all' | 'restock' | 'sale' | 'invoice' | 'unidentified' | 'updates' | '24h' | '48h' | '7d';
@@ -238,6 +246,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   onChangePassword,
   onLogout,
   onVerifyAdminPassword,
+  onAccountNotify,
 }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [renamingWholesaleId, setRenamingWholesaleId] = useState<string | null>(null);
@@ -1811,6 +1820,23 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     reader.readAsDataURL(file);
   }, []);
 
+  const handleChooseItemPhoto = useCallback(async () => {
+    if (Capacitor.isNativePlatform()) {
+      const result = await pickPhotoFromGallery();
+      if (result.success && result.imageData) {
+        setNewItemImage(result.imageData);
+        return;
+      }
+      if (result.error) {
+        console.warn('[iCalc] photo pick failed', result.error);
+        alert(result.error);
+      }
+      return;
+    }
+    // Web fallback — trigger hidden file input
+    document.getElementById('asset-item-image-input')?.click();
+  }, []);
+
   const handleAddItem = () => {
     if (!newItemName.trim()) return;
     const now = new Date();
@@ -1839,6 +1865,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       }]
     };
     setItems(prev => [newItem, ...prev]);
+    onAccountNotify?.({
+      kind: 'item_added',
+      title: 'New item added',
+      body: `${newItem.name} · stock ${stock}${grams > 0 ? ` · ${grams}g` : ''} · ${formatCurrency(String(newItem.price))}`,
+    });
     closeAssetAction();
   };
 
@@ -1883,6 +1914,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         };
       })
     );
+    const restocked = items.find((i) => i.id === restockItemId);
+    onAccountNotify?.({
+      kind: 'item_restocked',
+      title: 'Item restocked',
+      body: `${restocked?.name ?? 'Item'} · +${addQty}${grams > 0 ? ` · ${grams}g` : ''}`,
+    });
     closeAssetAction();
   };
 
@@ -2003,8 +2040,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         })
       );
       setStockEditValue(String(parsed));
+      onAccountNotify?.({
+        kind: 'stock_updated',
+        title: 'Stock updated',
+        body: action,
+      });
     },
-    [activeProfileName, setItems]
+    [activeProfileName, onAccountNotify, setItems]
   );
 
   const commitPriceUpdate = useCallback(
@@ -2039,8 +2081,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         })
       );
       setPriceEditValue(String(parsed));
+      onAccountNotify?.({
+        kind: 'price_updated',
+        title: 'Price updated',
+        body: action,
+      });
     },
-    [activeProfileName, formatCurrency, setItems]
+    [activeProfileName, formatCurrency, onAccountNotify, setItems]
   );
 
   const getItemActivityLogs = (item: InventoryItem) => {
@@ -2055,8 +2102,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       openUnidentifiedPage(log);
       return;
     }
+    // “Added item …” activities open the same iOS-style add sheet as +
+    if (log.action.startsWith('Added item')) {
+      setInventoryExpanded(true);
+      setSelectedItem(null);
+      openAssetAction('add');
+      return;
+    }
     setActionLogsExpanded(true);
-  }, [openUnidentifiedPage]);
+  }, [openUnidentifiedPage, openAssetAction]);
 
   const renderActivityLogRows = (logs: DashboardLogEntry[], limit?: number, clickable = false) => {
     const slice = limit ? logs.slice(0, limit) : logs;
@@ -2074,7 +2128,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           <div className="flex items-center gap-2 min-w-0">
             {getLogIcon(log.type)}
             <div className="flex flex-col min-w-0">
-              <span className={`text-[10px] font-black tracking-tight truncate ${log.isUnidentified ? 'text-red-500' : isUpdateLog ? 'text-blue-500' : textColorClass}`}>
+              <span className={`text-[10px] font-black tracking-normal truncate ${log.isUnidentified ? 'text-red-500' : isUpdateLog ? 'text-blue-500' : textColorClass}`}>
                 {log.action}
               </span>
               {log.itemName && !isUpdateLog && (
@@ -2124,7 +2178,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           <Icons.Search size={18} />
         </button>
       </div>
-      <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-1 ${textColorClass}`}>Action Logs</h3>
+      <h3 className={`pos-dashboard-section-title text-4xl tracking-normal px-1 ${textColorClass}`}>Action Logs</h3>
       <p className={`app-subtext px-1 -mt-4 ${cardSubtextMutedClass}`}>Neural Ledger • 24h</p>
 
       {showActionLogSearch && (
@@ -2365,7 +2419,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         </div>
 
         <div className={`rounded-2xl p-8 ${levitateClass}`}>
-          <h4 className={`pos-dashboard-section-title text-xl tracking-tighter mb-5 ${textColorClass}`}>Action Logs</h4>
+          <h4 className={`pos-dashboard-section-title text-xl tracking-normal mb-5 ${textColorClass}`}>Action Logs</h4>
           <div className="space-y-4">
             {renderActivityLogRows(logs, undefined, true)}
           </div>
@@ -2431,9 +2485,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     onKeyDown={canViewTransactions ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.onClick!(); } } : undefined}
                     aria-label={canViewTransactions ? card.label : `${card.label}, admin only`}
                   >
-                    <p className={`pos-subtext text-[9px] font-black mb-2 ${cardSubtextMutedClass}`}>{card.label}</p>
+                    <p className={`pos-subtext text-[9px] font-black mb-2 tracking-normal ${cardSubtextMutedClass}`}>{card.label}</p>
                     <p
-                      className="text-2xl font-black tracking-tight"
+                      className="text-2xl font-black tracking-normal"
                       style={{ color: canViewTransactions ? accentColor : undefined }}
                     >
                       {canViewTransactions ? card.val : '*****'}
@@ -2482,8 +2536,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <div className="flex justify-between items-center mb-8">
                    <div className="space-y-1">
-                      <h3 className={`pos-dashboard-section-title text-2xl tracking-tighter ${textColorClass}`}>Action Logs</h3>
-                      <p className={`app-subtext ${cardSubtextMutedClass}`}>Neural Ledger • 24h</p>
+                      <h3 className={`pos-dashboard-section-title text-2xl tracking-normal ${textColorClass}`}>Action Logs</h3>
+                      <p className={`app-subtext tracking-normal ${cardSubtextMutedClass}`}>Neural Ledger • 24h</p>
                    </div>
                    <div className={`p-3.5 rounded-full bg-blue-500/10 text-blue-500 ${iconLiftLight}`}><Icons.Trends size={24} /></div>
                 </div>
@@ -2976,7 +3030,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         </div>
       </div>
 
-      {/* Asset drawer — top-right, MorphPresence trio (opacity + scale + blur) */}
+      {/* Asset sheet — iOS-like centered spring sheet (same form for + and action-log add) */}
       <MorphPresence show={showAssetMenu}>
         {(visible) => {
           const fieldLabelClass = `pos-subtext text-[9px] font-black uppercase tracking-widest ${
@@ -2984,31 +3038,28 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           }`;
           return (
           <div
-            className={`fixed inset-0 z-[250] ${
+            className={`fixed inset-0 z-[250] flex items-end sm:items-center justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))] ${
               visible ? 'pointer-events-auto' : 'pointer-events-none'
             }`}
             role="presentation"
           >
             <button
               type="button"
-              className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} bg-transparent`}
-              aria-label="Close asset drawer"
+              className={`absolute inset-0 asset-sheet-scrim morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'}`}
+              aria-label="Close asset sheet"
               onClick={closeAssetAction}
             />
             <div
               role="dialog"
               aria-modal="true"
               aria-label={assetActionMode === 'restock' ? 'Restock item' : 'Add item'}
-              className={`asset-drawer-panel morph-panel fixed z-[251] w-[min(19rem,calc(100vw-1.25rem))] rounded-2xl p-4 shadow-2xl border max-h-[min(80vh,34rem)] overflow-y-auto custom-scrollbar ${
+              className={`asset-sheet-panel morph-panel relative z-[251] w-full max-w-md rounded-[32px] p-5 shadow-[0_28px_80px_rgba(0,0,0,0.45)] border max-h-[min(85vh,36rem)] overflow-y-auto custom-scrollbar ${
                 visible ? 'morph-panel--in' : 'morph-panel--out'
-              } ${isLight ? 'bg-white border-zinc-200 text-zinc-900' : 'bg-zinc-900 border-white/10 text-white'}`}
-              style={{
-                top: 'max(0.75rem, env(safe-area-inset-top))',
-                right: 'max(0.75rem, env(safe-area-inset-right))',
-              }}
+              } ${isLight ? 'bg-white/95 border-white/60 text-zinc-900' : 'bg-zinc-900/95 border-white/12 text-white'}`}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full opacity-25 bg-current sm:hidden" aria-hidden />
+              <div className="flex items-center justify-between gap-2 mb-4">
                 <FluidSegmentControl
                   isLight={isLight}
                   size="sm"
@@ -3027,8 +3078,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <button
                   type="button"
                   onClick={closeAssetAction}
-                  aria-label="Close asset drawer"
-                  className={`p-1.5 rounded-full shrink-0 active:scale-90 ${
+                  aria-label="Close asset sheet"
+                  className={`p-2 rounded-full shrink-0 active:scale-90 ${
                     isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'
                   }`}
                 >
@@ -3045,15 +3096,24 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                         <img src={resolveInventoryImage(newItemImage)} alt="" className="w-full h-full object-cover" />
                       </div>
                       <input
+                        id="asset-item-image-input"
                         type="file"
                         accept="image/*"
                         capture="environment"
                         onChange={(e) => handlePickItemImage(e.target.files?.[0] ?? null)}
-                        aria-label="Choose item image"
-                        className={`flex-1 min-w-0 text-[10px] font-bold file:mr-2 file:py-1.5 file:px-2 file:rounded-md file:border-0 file:font-black file:text-[9px] file:uppercase ${
-                          isLight ? 'file:bg-zinc-900 file:text-white text-zinc-700' : 'file:bg-white file:text-black text-white/80'
-                        }`}
+                        aria-hidden="true"
+                        tabIndex={-1}
+                        className="sr-only"
                       />
+                      <button
+                        type="button"
+                        onClick={() => void handleChooseItemPhoto()}
+                        className={`flex-1 min-w-0 py-2.5 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider active:scale-[0.98] ${
+                          isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+                        }`}
+                      >
+                        Choose photo
+                      </button>
                     </div>
                   </label>
                   <label className="block space-y-1.5">
