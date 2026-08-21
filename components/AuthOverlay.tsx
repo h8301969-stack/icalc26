@@ -332,11 +332,20 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
   const revealAuthForm = useCallback(() => {
+    // Already signed in (lock screen): never open signup/login — unlock instead.
+    if (existingAccount) {
+      if (!isLoading && !isExiting) {
+        setIsExiting(true);
+        if ('vibrate' in navigator) navigator.vibrate([10, 30]);
+        onQuickUnlock?.();
+      }
+      return;
+    }
     if (pane === 'auth' || isLoading) return;
     setPane('auth');
     setAuthCardAnimKey((k) => k + 1);
     if ('vibrate' in navigator) navigator.vibrate(10);
-  }, [pane, isLoading]);
+  }, [existingAccount, pane, isLoading, isExiting, onQuickUnlock]);
 
   const openSettings = useCallback((sectionIndex = 0) => {
     if (isLoading) return;
@@ -905,7 +914,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
           </div>
         )}
 
-        {showAuthForm && (
+        {showAuthForm && !existingAccount && (
           <div
             key={authCardAnimKey}
             className={`auth-card-mode relative w-full rounded-2xl p-6 border shadow-2xl animate-auth-card-enter ${

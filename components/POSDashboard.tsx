@@ -5,7 +5,6 @@ import {
   InvoicePrintLog,
   CartLineItem,
   POSRequest,
-  RestockLineItem,
   RestockNote,
   SupplierRecord,
 } from '../types';
@@ -23,13 +22,7 @@ import { isAdminProfile } from '../utils/auth';
 
 import SettingsPanel from './SettingsPanel';
 import { printerInstance } from '../utils/bluetoothPrinter';
-import VisionHubPrintPanel, { HubInvoice, HubNotepadJob } from './VisionHubPrintPanel';
-import InventoryNotepad from './InventoryNotepad';
-import {
-  buildNotepadPrintBody,
-  buildNotepadPrintBodyFromNotes,
-  parseNotepadSnapshot,
-} from '../utils/notepadSnapshot';
+import VisionHubPrintPanel, { HubInvoice } from './VisionHubPrintPanel';
 import { DEFAULT_INVENTORY_IMAGE, resolveInventoryImage, WALLPAPER_IMAGE_URLS } from '../utils/wallpapers';
 import { formInputClass } from '../utils/formFields';
 import { MorphPresence } from './MorphCrossfade';
@@ -123,35 +116,15 @@ const INVENTORY_SORT_OPTIONS: { id: SortOption; label: string }[] = [
   { id: 'low-stock', label: 'Stock ↑' },
 ];
 
+/** Matches FluidSegmentControl / wholesale toggle outer height (h-10). */
+const HUB_BACK_BTN =
+  'inline-flex items-center justify-center gap-1.5 h-10 px-3 rounded-[14px] font-semibold text-[11px] tracking-normal uppercase active:scale-95 transition-all duration-150';
 
-
-type RequestStatus = POSRequest['status'];
-const RESTOCK_DRAG_FACTOR = 1.25;
-const RESTOCK_VERTICAL_STRIP_HEIGHT = 52;
-const RESTOCK_SWIPE_THRESHOLD = 22;
-
-type RestockViewMode = 'list' | 'horizontal' | 'vertical' | 'grid';
-
-function formatCreatedStamp(d = new Date()) {
-  return d.toLocaleString([], {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function buildRestockNotesSnapshot(lines: RestockLineItem[], freeNotes = '') {
-  const total = lines.reduce((sum, line) => sum + line.qty, 0);
-  const body = lines.map((l) => `${l.name}\t× ${l.qty}`).join('\n');
-  const summary = `= ${total}`;
-  if (!body && !freeNotes.trim()) return summary;
-  if (!body) return `${freeNotes.trim()}\n\n${summary}`;
-  if (!freeNotes.trim()) return `${body}\n\n${summary}`;
-  return `${body}\n\n${freeNotes.trim()}\n\n${summary}`;
-}
+const HubBackChevron = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <polyline points="15 18 9 12 15 6" />
+  </svg>
+);
 
 function formatRequestElapsed(timestamp: number, now: Date): string {
   const ms = Math.max(0, now.getTime() - timestamp);
@@ -165,48 +138,6 @@ function formatRequestElapsed(timestamp: number, now: Date): string {
   return `${days}d ${hrs % 24}h ${mins % 60}m`;
 }
 
-interface RequestLineItem {
-  label: string;
-  qty: number;
-}
-
-function parseNotepadLines(notes: string): RequestLineItem[] {
-  const lines: RequestLineItem[] = [];
-  const raw = notes.trim();
-  if (!raw) return [];
-
-  for (const part of raw.split('\n')) {
-    const line = part.trim();
-    if (!line || /^=\s*\d/.test(line)) continue;
-    const match = line.match(/^(.+?)[\t ]*[×x][\t ]*(\d+(?:\.\d+)?)\s*$/i);
-    if (match) {
-      lines.push({
-        label: match[1].trim(),
-        qty: Math.max(1, Math.round(parseFloat(match[2]))),
-      });
-    }
-  }
-  return lines;
-}
-
-function parseRequestLines(notes: string): RequestLineItem[] {
-  const fromNotepad = parseNotepadLines(notes);
-  if (fromNotepad.length > 0) return fromNotepad;
-
-  return notes
-    .replace(/^=\s*\d+.*$/gm, '')
-    .split(/[\n,;]+/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((label) => ({ label, qty: 1 }));
-}
-
-function parseRequestTotals(notes: string): { itemCount: number; total: number } {
-  const lines = parseRequestLines(notes);
-  const itemCount = lines.reduce((sum, line) => sum + line.qty, 0);
-  return { itemCount, total: 0 };
-}
-
 const POSDashboard: React.FC<POSDashboardProps> = ({
   history: _history,
   items,
@@ -214,10 +145,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   purchases,
   suppliers: _suppliers,
   setSuppliers: _setSuppliers,
-  requests,
-  setRequests,
-  restocks,
-  setRestocks,
+  requests: _requests,
+  setRequests: _setRequests,
+  restocks: _restocks,
+  setRestocks: _setRestocks,
   wholesales,
   activeWholesaleId,
   setActiveWholesaleId,
@@ -289,8 +220,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [showActionLogSearch, setShowActionLogSearch] = useState(false);
   const [actionLogFilter, setActionLogFilter] = useState<DashboardLogFilter>('all');
   const [namingUnidentified, setNamingUnidentified] = useState<{ price: number; quantity: number } | null>(null);
-  const [requestsExpanded, setRequestsExpanded] = useState(false);
-  const [restockExpanded, setRestockExpanded] = useState(false);
   /** Asset Hub + menu: dropdown for add item / restock forms */
   type AssetActionMode = 'add' | 'restock';
   const [assetActionMode, setAssetActionMode] = useState<AssetActionMode>('add');
@@ -323,35 +252,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [restockItemId, setRestockItemId] = useState<string | null>(null);
   const [restockQty, setRestockQty] = useState('0');
   const [restockGrams, setRestockGrams] = useState('0');
-  // Requests feature states
-  const [requestTab, setRequestTab] = useState<'pending' | 'delivered' | 'outofstock'>('pending');
-  const [showAddRequestPopup, setShowAddRequestPopup] = useState(false);
-  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
-  const [requestCreatedStamp, setRequestCreatedStamp] = useState('');
-  const [newRequesterName, setNewRequesterName] = useState('');
-  const [requestLineItems, setRequestLineItems] = useState<RestockLineItem[]>([]);
-  const [requestComposeQuery, setRequestComposeQuery] = useState('');
-  const [requestFreeNotes, setRequestFreeNotes] = useState('');
-  const [queuedNotepadPrint, setQueuedNotepadPrint] = useState<HubNotepadJob | null>(null);
-
-  // Restock notepad states
-  const [showAddRestockPopup, setShowAddRestockPopup] = useState(false);
-  const [editingRestockId, setEditingRestockId] = useState<string | null>(null);
-  const [newRestockTitle, setNewRestockTitle] = useState('');
-  const [restockCreatedStamp, setRestockCreatedStamp] = useState('');
-  const [restockLineItems, setRestockLineItems] = useState<RestockLineItem[]>([]);
-  const [restockComposeQuery, setRestockComposeQuery] = useState('');
-  const [restockFreeNotes, setRestockFreeNotes] = useState('');
-
-  const [restockViewMode, setRestockViewMode] = useState<RestockViewMode>('list');
-  const [restockActiveIdx, setRestockActiveIdx] = useState(0);
-  const [restockGridZoomed, setRestockGridZoomed] = useState(false);
-  const [restockDragDelta, setRestockDragDelta] = useState(0);
-  const [restockIsDragging, setRestockIsDragging] = useState(false);
-  const restockDragStartX = useRef(0);
-  const restockDragStartY = useRef(0);
-  const restockDragAxis = useRef<'none' | 'x' | 'y'>('none');
-  const restockStageRef = useRef<HTMLDivElement>(null);
   // Dark-mode Asset Hub: random white flashes every 10–40s
   useEffect(() => {
     if (!isOpen || !inventoryExpanded || isLight || selectedItem) return;
@@ -422,8 +322,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-    // closeRestockPopup is stable (useCallback below); omit to avoid TDZ — handler calls it by reference at runtime
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     // closeAssetAction defined later; Escape closes form via setState
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, onClose, showAssetMenu, namingUnidentified, actionLogsExpanded, selectedItem, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded, wholesaleDeleteConfirmId, wholesaleHoldMenuId, showWholesaleArchive]);
@@ -437,20 +335,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       setInvoicesTodayExpanded(false);
     }
   }, [canViewTransactions]);
-
-  useEffect(() => {
-    if (restockExpanded) {
-      setRestockActiveIdx(0);
-      setRestockGridZoomed(false);
-      setRestockDragDelta(0);
-    }
-  }, [restockExpanded]);
-
-  useEffect(() => {
-    if (restockActiveIdx >= restocks.length && restocks.length > 0) {
-      setRestockActiveIdx(restocks.length - 1);
-    }
-  }, [restocks.length, restockActiveIdx]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -1046,732 +930,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     </div>
   );
 
-  const filteredRequests = useMemo(() => {
-    return requests
-      .filter(r => r.status === requestTab)
-      .sort((a, b) => b.timestamp - a.timestamp);
-  }, [requests, requestTab]);
-
-  const queueNotepadPrint = useCallback(
-    (title: string, body: string) => {
-      if (!canViewTransactions) return;
-      setQueuedNotepadPrint({ id: `notepad-${Date.now()}`, title, body });
-      setRequestsExpanded(false);
-      setRestockExpanded(false);
-      setInventoryExpanded(false);
-      setPurchasesExpanded(false);
-    },
-    [canViewTransactions]
-  );
-
-  const saveRequest = () => {
-    const requester = newRequesterName.trim();
-    if (!requester || requestLineItems.length === 0) return;
-    const notes = buildRestockNotesSnapshot(requestLineItems, requestFreeNotes);
-    const { itemCount } = parseRequestTotals(notes);
-    if (editingRequestId) {
-      setRequests((prev) =>
-        prev.map((r) =>
-          r.id === editingRequestId
-            ? { ...r, requester, notes, itemCount, timestamp: Date.now() }
-            : r
-        )
-      );
-    } else {
-      const newReq: POSRequest = {
-        id: 'req-' + Date.now(),
-        requester,
-        notes,
-        status: 'pending',
-        timestamp: Date.now(),
-        itemCount,
-        total: 0,
-      };
-      setRequests((prev) => [newReq, ...prev]);
-    }
-    closeRequestPopup();
-  };
-
-  const closeRequestPopup = () => {
-    setShowAddRequestPopup(false);
-    setEditingRequestId(null);
-    setRequestCreatedStamp('');
-    setNewRequesterName('');
-    setRequestLineItems([]);
-    setRequestComposeQuery('');
-    setRequestFreeNotes('');
-  };
-
-  const openRequestPopup = () => {
-    setEditingRequestId(null);
-    setRequestCreatedStamp(formatCreatedStamp());
-    setNewRequesterName('');
-    setRequestLineItems([]);
-    setRequestComposeQuery('');
-    setRequestFreeNotes('');
-    setShowAddRequestPopup(true);
-  };
-
-  const openRequestPopupForEdit = (req: POSRequest) => {
-    const { lineItems, freeNotes } = parseNotepadSnapshot(req.notes, items);
-    setEditingRequestId(req.id);
-    setRequestCreatedStamp(formatCreatedStamp(new Date(req.timestamp)));
-    setNewRequesterName(req.requester);
-    setRequestLineItems(lineItems);
-    setRequestFreeNotes(freeNotes);
-    setRequestComposeQuery('');
-    setShowAddRequestPopup(true);
-  };
-
-  const printRequestNotepad = useCallback(
-    (req?: POSRequest) => {
-      const title = (req?.requester ?? newRequesterName.trim()) || 'Request';
-      const stamp = req
-        ? formatCreatedStamp(new Date(req.timestamp))
-        : requestCreatedStamp || formatCreatedStamp();
-      const body = req
-        ? buildNotepadPrintBodyFromNotes(title, req.notes, stamp)
-        : buildNotepadPrintBody(title, requestLineItems, requestFreeNotes, stamp);
-      queueNotepadPrint(title, body);
-    },
-    [
-      newRequesterName,
-      queueNotepadPrint,
-      requestCreatedStamp,
-      requestFreeNotes,
-      requestLineItems,
-    ]
-  );
-
-  const requestStatusClass = (status: RequestStatus) =>
-    status === 'pending'
-      ? 'bg-yellow-500/20 text-yellow-500'
-      : status === 'delivered'
-        ? 'bg-emerald-500/20 text-emerald-500'
-        : 'bg-red-500/20 text-red-500';
-
-  const renderNotepadListRow = (
-    key: string,
-    title: string,
-    subtitle: string,
-    totalQty: number,
-    onOpen: () => void,
-    onPrint: () => void,
-    showPrint: boolean,
-    idx: number,
-    listLen: number,
-    accentQtyClass: string
-  ) => (
-    <div
-      key={key}
-      className={`flex items-center gap-3 px-8 py-6 ${idx !== listLen - 1 ? 'border-b border-white/10' : ''}`}
-    >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex-1 min-w-0 text-left active:opacity-80 transition-opacity"
-        aria-label={`Open ${title}`}
-      >
-        <div className={`font-black tracking-tight text-lg truncate ${textColorClass}`}>{title}</div>
-        <p className={`pos-subtext text-[10px] font-black mt-1.5 ${cardSubtextMutedClass}`}>{subtitle}</p>
-        <div className={`mt-2 text-base font-black tabular-nums ${accentQtyClass}`}>= {totalQty}</div>
-      </button>
-      {showPrint && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onPrint();
-          }}
-          className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center active:scale-90 transition-all ${iconLiftLight} ${
-            isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
-          }`}
-          aria-label={`Print ${title}`}
-        >
-          <Icons.Printer size={18} />
-        </button>
-      )}
-    </div>
-  );
-
-  const renderRequestRow = (req: POSRequest, idx: number, total: number) => {
-    const qtyTotal = req.itemCount;
-    const subtitle = formatCreatedStamp(new Date(req.timestamp));
-    return renderNotepadListRow(
-      req.id,
-      req.requester,
-      subtitle,
-      qtyTotal,
-      () => openRequestPopupForEdit(req),
-      () => printRequestNotepad(req),
-      canViewTransactions,
-      idx,
-      total,
-      isLight ? 'text-emerald-600' : 'text-emerald-400'
-    );
-  };
-
-  const closeRestockPopup = useCallback(() => {
-    setShowAddRestockPopup(false);
-    setEditingRestockId(null);
-    setNewRestockTitle('');
-    setRestockCreatedStamp('');
-    setRestockLineItems([]);
-    setRestockComposeQuery('');
-    setRestockFreeNotes('');
-  }, []);
-
-  const openRestockPopup = useCallback(() => {
-    const stamp = formatCreatedStamp();
-    setEditingRestockId(null);
-    setRestockCreatedStamp(stamp);
-    setRestockLineItems([]);
-    setRestockFreeNotes('');
-    setNewRestockTitle('');
-    setRestockComposeQuery('');
-    setShowAddRestockPopup(true);
-  }, []);
-
-  const openRestockPopupForEdit = useCallback(
-    (note: RestockNote) => {
-      const { freeNotes } = parseNotepadSnapshot(note.notes, items);
-      setEditingRestockId(note.id);
-      setRestockCreatedStamp(formatCreatedStamp(new Date(note.timestamp)));
-      setRestockLineItems(note.lineItems);
-      setRestockFreeNotes(freeNotes);
-      setNewRestockTitle(note.title);
-      setRestockComposeQuery('');
-      setShowAddRestockPopup(true);
-    },
-    [items]
-  );
-
-  const printRestockNotepad = useCallback(
-    (note?: RestockNote) => {
-      const title = (note?.title ?? newRestockTitle.trim()) || 'Restock';
-      const stamp = note
-        ? formatCreatedStamp(new Date(note.timestamp))
-        : restockCreatedStamp || formatCreatedStamp();
-      const body = note
-        ? buildNotepadPrintBodyFromNotes(title, note.notes, stamp)
-        : buildNotepadPrintBody(title, restockLineItems, restockFreeNotes, stamp);
-      queueNotepadPrint(title, body);
-    },
-    [
-      newRestockTitle,
-      queueNotepadPrint,
-      restockCreatedStamp,
-      restockFreeNotes,
-      restockLineItems,
-    ]
-  );
-
-  const saveRestockNote = useCallback(() => {
-    if (restockLineItems.length === 0) return;
-    const title = newRestockTitle.trim() || 'Restock batch';
-    const now = Date.now();
-
-    const snapshot = buildRestockNotesSnapshot(restockLineItems, restockFreeNotes);
-    if (editingRestockId) {
-      setRestocks((prev) =>
-        prev.map((n) =>
-          n.id === editingRestockId
-            ? { ...n, title, notes: snapshot, lineItems: restockLineItems, timestamp: now }
-            : n
-        )
-      );
-    } else {
-      setRestocks((prev) => [
-        {
-          id: `restock-${now}`,
-          title,
-          notes: snapshot,
-          timestamp: now,
-          lineItems: restockLineItems,
-        },
-        ...prev,
-      ]);
-    }
-
-    closeRestockPopup();
-  }, [
-    restockLineItems,
-    newRestockTitle,
-    restockFreeNotes,
-    editingRestockId,
-    closeRestockPopup,
-    setRestocks,
-  ]);
-
-  const restockGridCols = 3 as 3 | 4;
-  const lowStockItems = useMemo(() => items.filter((i) => i.stock < i.threshold), [items]);
-
-  const getRestockTotalQty = useCallback(
-    (note: RestockNote) => note.lineItems.reduce((sum, line) => sum + line.qty, 0),
-    []
-  );
-
-  const selectRestockCard = useCallback((idx: number) => {
-    if (idx >= 0 && idx < restocks.length) setRestockActiveIdx(idx);
-  }, [restocks.length]);
-
-  const onRestockPointerDown = useCallback((e: React.PointerEvent) => {
-    if (restockViewMode === 'list' || restockViewMode === 'grid') return;
-    if ((e.target as HTMLElement).closest('button')) return;
-    restockDragStartX.current = e.clientX;
-    restockDragStartY.current = e.clientY;
-    restockDragAxis.current = 'none';
-    setRestockIsDragging(true);
-    setRestockDragDelta(0);
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, [restockViewMode]);
-
-  const onRestockPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!restockIsDragging || restockViewMode === 'list' || restockViewMode === 'grid') return;
-    const dx = e.clientX - restockDragStartX.current;
-    const dy = e.clientY - restockDragStartY.current;
-    const primaryAxis = restockViewMode === 'vertical' ? 'y' : 'x';
-    if (restockDragAxis.current === 'none' && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
-      restockDragAxis.current = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
-    }
-    if (restockDragAxis.current !== primaryAxis) return;
-    setRestockDragDelta((primaryAxis === 'x' ? dx : dy) * RESTOCK_DRAG_FACTOR);
-  }, [restockIsDragging, restockViewMode]);
-
-  const onRestockPointerUp = useCallback(() => {
-    if (!restockIsDragging || restockViewMode === 'list' || restockViewMode === 'grid') return;
-    setRestockIsDragging(false);
-    const primaryAxis = restockViewMode === 'vertical' ? 'y' : 'x';
-    if (restockDragAxis.current === primaryAxis) {
-      let nextIdx = restockActiveIdx;
-      if (restockDragDelta < -RESTOCK_SWIPE_THRESHOLD) {
-        nextIdx = Math.min(restockActiveIdx + 1, restocks.length - 1);
-      } else if (restockDragDelta > RESTOCK_SWIPE_THRESHOLD) {
-        nextIdx = Math.max(restockActiveIdx - 1, 0);
-      }
-      if (nextIdx !== restockActiveIdx) selectRestockCard(nextIdx);
-    }
-    restockDragAxis.current = 'none';
-    setRestockDragDelta(0);
-  }, [restockIsDragging, restockDragDelta, restockViewMode, restockActiveIdx, restocks.length, selectRestockCard]);
-
-  const getRestockHorizontalStyle = (idx: number) => {
-    const relativePos = idx - restockActiveIdx;
-    let translateX = restockDragDelta;
-    let translateY = 0;
-    let scale = 1;
-    let opacity = 0;
-    let blurPx = 0;
-    let zIndex = 100;
-    let transformOrigin = 'center center';
-
-    if (relativePos === 0) {
-      translateX = restockDragDelta;
-      opacity = 1;
-      zIndex = 120;
-    } else if (relativePos === -1) {
-      translateX = restockDragDelta;
-      translateY = 6;
-      scale = 0.98;
-      opacity = 0.9;
-      blurPx = 2.5;
-      zIndex = 119;
-      transformOrigin = 'right center';
-    }
-
-    return {
-      translateX: relativePos === -1 ? `calc(-65% + ${restockDragDelta}px)` : `${translateX}px`,
-      translateY,
-      scale,
-      opacity,
-      blurPx,
-      zIndex,
-      transformOrigin,
-      isActive: relativePos === 0,
-    };
-  };
-
-  const getRestockVerticalStyle = (idx: number) => {
-    const relativePos = idx - restockActiveIdx;
-    if (Math.abs(relativePos) > 1) {
-      return {
-        translateX: '0px',
-        translateY: '0px',
-        scale: 1,
-        opacity: 0,
-        blurPx: 0,
-        zIndex: 90,
-        transformOrigin: 'center center',
-        isActive: false,
-        isStrip: false,
-        hidden: true,
-      };
-    }
-
-    let translateY = 0;
-    let scale = 1;
-    let opacity = 1;
-    let blurPx = 0;
-    let zIndex = 100;
-    const isActive = relativePos === 0;
-    const isStrip = !isActive;
-
-    if (isActive) {
-      translateY = restockDragDelta;
-      zIndex = 120;
-    } else if (relativePos === -1) {
-      translateY = 10 + restockDragDelta * 0.35;
-      scale = 0.98;
-      opacity = 0.88;
-      blurPx = 1;
-      zIndex = 119;
-    } else {
-      translateY = -10 + restockDragDelta * 0.35;
-      scale = 0.96;
-      opacity = 0.82;
-      blurPx = 1.5;
-      zIndex = 118;
-    }
-
-    return {
-      translateX: '0px',
-      translateY: `${translateY}px`,
-      scale,
-      opacity,
-      blurPx,
-      zIndex,
-      transformOrigin: 'center center',
-      isActive,
-      isStrip,
-      hidden: false,
-    };
-  };
-
-  const renderRestockCardBody = (note: RestockNote, isActive: boolean) => {
-    const totalQty = getRestockTotalQty(note);
-    return (
-      <>
-        <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-3 shrink-0 text-black bg-white border-b border-black/6">
-          <div className="flex-1 min-w-0">
-            <div className={`pos-subtext text-[10px] font-black mb-1 ${noteCardSubtextClass}`}>Restock batch</div>
-            <div className="text-2xl font-black tracking-tighter truncate">{note.title}</div>
-          </div>
-        </div>
-        <div className="flex-1 flex flex-col min-h-0 bg-white text-black">
-          <div className="px-5 pt-4 pb-2 shrink-0">
-            <p className="text-sm font-bold text-zinc-600">{formatCreatedStamp(new Date(note.timestamp))}</p>
-          </div>
-          <div className="flex-1 min-h-0 overflow-y-auto px-5 py-2 custom-scrollbar">
-            {note.lineItems.length > 0 ? (
-              <div className="space-y-1">
-                {note.lineItems.map((line) => (
-                  <div key={line.itemId} className="flex items-center justify-between gap-4 text-sm font-medium">
-                    <span className="min-w-0 truncate text-zinc-800">{line.name}</span>
-                    <span className="shrink-0 tabular-nums font-black text-amber-600">× {line.qty}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-zinc-400">No line items</p>
-            )}
-          </div>
-          <div className="shrink-0 px-5 py-4 border-t border-black/6 flex items-center justify-between">
-            <span className="text-xl font-black tabular-nums text-amber-600">= {totalQty}</span>
-          </div>
-          {isActive && restockViewMode === 'horizontal' && restocks.length > 1 && (
-            <div className="flex justify-center gap-1.5 pb-3.5 pt-1">
-              {restocks.map((_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  aria-label={`Go to restock card ${i + 1}`}
-                  onClick={() => selectRestockCard(i)}
-                  className="p-0 border-none cursor-pointer transition-all duration-200"
-                  style={{
-                    width: i === restockActiveIdx ? 20 : 6,
-                    height: 6,
-                    borderRadius: 3,
-                    background: i === restockActiveIdx ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.15)',
-                  }}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </>
-    );
-  };
-
-  const renderRestockGridTile = (note: RestockNote, idx: number) => {
-    const isSelected = idx === restockActiveIdx;
-    const isBlurredPeer = restockGridZoomed && !isSelected;
-    const isHiddenSelected = restockGridZoomed && isSelected;
-    const totalQty = getRestockTotalQty(note);
-
-    return (
-      <button
-        key={note.id}
-        type="button"
-        onClick={() => {
-          if (restockGridZoomed && idx === restockActiveIdx) return;
-          selectRestockCard(idx);
-          setRestockGridZoomed(true);
-        }}
-        className={`text-left rounded-2xl p-3 sm:p-4 w-full aspect-[6/13] flex flex-col gap-1.5 transition-all duration-300 active:scale-[0.97] border ${
-          isSelected && !restockGridZoomed
-            ? 'bg-amber-500 text-white border-amber-500 shadow-lg'
-            : isLight
-              ? 'bg-white border-black/8 hover:bg-black/[0.03] text-black'
-              : 'bg-white/8 border-white/10 hover:bg-white/12 text-white'
-        } ${isHiddenSelected ? 'opacity-0 scale-75 pointer-events-none' : ''}`}
-        style={{
-          filter: isBlurredPeer ? 'blur(8px)' : 'none',
-          opacity: isHiddenSelected ? 0 : isBlurredPeer ? 0.42 : 1,
-          transform: isBlurredPeer ? 'scale(0.94)' : isHiddenSelected ? 'scale(0.75)' : 'scale(1)',
-        }}
-        aria-hidden={isHiddenSelected}
-        tabIndex={isHiddenSelected ? -1 : 0}
-      >
-        <div className="flex items-start justify-between gap-1">
-          <span className={`pos-subtext text-[8px] font-black ${isSelected && !restockGridZoomed ? 'opacity-80' : 'opacity-45'}`}>
-            Batch
-          </span>
-          <span className={`pos-subtext text-[9px] font-black shrink-0 ${isSelected && !restockGridZoomed ? 'opacity-90' : 'opacity-55'}`}>
-            {note.lineItems.length}
-          </span>
-        </div>
-        <div className="text-[11px] font-black tracking-tight leading-tight line-clamp-2 min-h-[2.4em]">
-          {note.title}
-        </div>
-        <div className={`pos-subtext text-[10px] font-black mt-auto ${isSelected && !restockGridZoomed ? 'opacity-90' : 'opacity-60'}`}>
-          = {totalQty}
-        </div>
-        {note.lineItems[0] && (
-          <div className={`pos-subtext text-[8px] font-semibold leading-snug line-clamp-2 ${isSelected && !restockGridZoomed ? 'opacity-70' : 'opacity-45'}`}>
-            {note.lineItems[0].name} × {note.lineItems[0].qty}
-            {note.lineItems.length > 1 ? ` +${note.lineItems.length - 1}` : ''}
-          </div>
-        )}
-      </button>
-    );
-  };
-
-  const renderRestockVerticalStrip = (note: RestockNote) => (
-    <div className="h-full px-4 flex items-center justify-between gap-3 border-b border-black/8 bg-white text-black">
-      <div className="min-w-0 flex items-center gap-2">
-        <span className={`pos-subtext text-[9px] font-black opacity-45 shrink-0 ${noteCardSubtextClass}`}>Batch</span>
-        <span className="text-sm font-black tracking-tight truncate">{note.title}</span>
-      </div>
-      <span className="text-xs font-black shrink-0 opacity-70">= {getRestockTotalQty(note)}</span>
-    </div>
-  );
-
-  const renderRestockViewToggle = () => (
-    <FluidSegmentControl
-      isLight={isLight}
-      size="sm"
-      variant="slide"
-      ariaLabel="Restock view mode"
-      value={restockViewMode}
-      onChange={(id) => {
-        setRestockViewMode(id as RestockViewMode);
-        setRestockGridZoomed(false);
-        setRestockActiveIdx(0);
-        setRestockDragDelta(0);
-      }}
-      options={[
-        { id: 'list', label: 'List', icon: <Icons.List size={14} /> },
-        { id: 'horizontal', label: 'Horizontal', icon: <Icons.Carousel size={14} /> },
-        { id: 'vertical', label: 'Vertical', icon: <Icons.Stack size={14} /> },
-        { id: 'grid', label: 'Grid', icon: <Icons.Grid size={14} /> },
-      ]}
-    />
-  );
-
-  const renderRestockNotesSwitcher = () => {
-    if (restocks.length === 0) {
-      return (
-        <div className={`rounded-2xl p-12 text-center ${levitateClass}`}>
-          <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No restock notes yet</p>
-        </div>
-      );
-    }
-
-    if (restockViewMode === 'list') {
-      return (
-        <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
-          {restocks.map((note, idx) => {
-            const totalQty = getRestockTotalQty(note);
-            return (
-              <button
-                key={note.id}
-                type="button"
-                onClick={() => {
-                  selectRestockCard(idx);
-                  setRestockViewMode('horizontal');
-                }}
-                className={`w-full text-left px-8 py-6 flex flex-col ${idx !== restocks.length - 1 ? 'border-b border-white/10' : ''} active:opacity-80 transition-opacity`}
-              >
-                <div className={`font-black tracking-tight ${textColorClass}`}>{note.title}</div>
-                <p className={`pos-subtext text-[10px] font-black mt-2 ${cardSubtextMutedClass}`}>
-                  {formatCreatedStamp(new Date(note.timestamp))}
-                </p>
-                <div className={`mt-4 text-base font-black tabular-nums ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
-                  = {totalQty}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      );
-    }
-
-    if (restockViewMode === 'grid') {
-      return (
-        <div className={`relative rounded-2xl overflow-hidden ${levitateClass} min-h-[min(70vh,520px)]`}>
-          <div className="absolute inset-0 flex flex-col">
-            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 sm:p-4">
-              <div className={`grid gap-2 sm:gap-3 content-start ${restockGridCols === 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
-                {restocks.map((note, idx) => renderRestockGridTile(note, idx))}
-              </div>
-            </div>
-          </div>
-          {restockGridZoomed && restocks[restockActiveIdx] && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center p-4 pointer-events-none">
-              <div className="relative modal-portrait-6-13 pointer-events-auto select-none">
-                <div className="absolute inset-0 flex flex-col rounded-[32px] overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
-                  <div className="px-4 pt-4 pb-2 flex justify-end shrink-0 border-b border-black/6">
-                    <button
-                      type="button"
-                      onClick={() => setRestockGridZoomed(false)}
-                      className="p-2 rounded-full hover:bg-black/5 active:scale-90 transition-all text-black"
-                      aria-label="Back to grid"
-                    >
-                      <Icons.X size={18} />
-                    </button>
-                  </div>
-                  {renderRestockCardBody(restocks[restockActiveIdx], true)}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <div
-        className={`relative rounded-2xl overflow-visible ${levitateClass} flex items-center justify-center`}
-        style={{ minHeight: 'min(70vh, 560px)' }}
-      >
-        <div
-          ref={restockStageRef}
-          className="relative modal-portrait-6-13 select-none overflow-visible w-full"
-          style={{ touchAction: restockViewMode === 'horizontal' ? 'pan-x' : 'pan-y' }}
-          onPointerDown={onRestockPointerDown}
-          onPointerMove={onRestockPointerMove}
-          onPointerUp={onRestockPointerUp}
-          onPointerCancel={onRestockPointerUp}
-          role="region"
-          aria-label="Restock card switcher"
-        >
-          {restockViewMode === 'vertical'
-            ? restocks.map((note, idx) => {
-                const style = getRestockVerticalStyle(idx);
-                if (style.hidden) return null;
-                return (
-                  <div
-                    key={note.id}
-                    className={`absolute left-0 right-0 flex flex-col rounded-[32px] overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)] ${style.isStrip ? 'mx-3' : 'inset-0'}`}
-                    style={{
-                      top: style.isStrip ? (idx < restockActiveIdx ? 0 : 'auto') : 0,
-                      bottom: style.isStrip && idx > restockActiveIdx ? 0 : 'auto',
-                      height: style.isStrip ? RESTOCK_VERTICAL_STRIP_HEIGHT : '100%',
-                      transform: `translateX(${style.translateX}) translateY(${style.translateY}) scale(${style.scale})`,
-                      transformOrigin: style.transformOrigin,
-                      opacity: style.opacity,
-                      zIndex: style.zIndex,
-                      filter: style.blurPx > 0 ? `blur(${style.blurPx}px)` : 'none',
-                      transition: restockIsDragging ? 'none' : 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease, filter 0.22s ease',
-                      pointerEvents: style.isActive ? 'auto' : 'none',
-                      cursor: style.isActive ? (restockIsDragging ? 'grabbing' : 'grab') : 'default',
-                    }}
-                  >
-                    {style.isStrip ? renderRestockVerticalStrip(note) : renderRestockCardBody(note, style.isActive)}
-                  </div>
-                );
-              })
-            : restocks.map((note, idx) => {
-                const style = getRestockHorizontalStyle(idx);
-                return (
-                  <div
-                    key={note.id}
-                    className="absolute inset-0 flex flex-col rounded-[32px] overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
-                    style={{
-                      transform: `translateX(${style.translateX}) translateY(${style.translateY}px) scale(${style.scale})`,
-                      transformOrigin: style.transformOrigin,
-                      opacity: style.opacity,
-                      zIndex: style.zIndex,
-                      filter: style.blurPx > 0 ? `blur(${style.blurPx}px)` : 'none',
-                      transition: restockIsDragging ? 'none' : 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease, filter 0.22s ease',
-                      pointerEvents: style.isActive ? 'auto' : 'none',
-                      cursor: style.isActive ? (restockIsDragging ? 'grabbing' : 'grab') : 'default',
-                    }}
-                  >
-                    {renderRestockCardBody(note, style.isActive)}
-                  </div>
-                );
-              })}
-        </div>
-      </div>
-    );
-  };
-
-  const renderRestockingView = () => (
-    <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Restocking">
-      <div className="flex items-center justify-between gap-3">
-        <button
-          onClick={() => setRestockExpanded(false)}
-          aria-label="Back to Vision Hub"
-          className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
-        </button>
-        <button
-          onClick={() => openRestockPopup()}
-          className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 active:scale-95 transition-all shrink-0 ${isLight ? 'bg-amber-500 text-white shadow-lg' : 'bg-amber-500 text-white shadow-[0_0_16px_rgb(245,158,11)]'}`}
-          aria-label="Add restock note"
-        >
-          + Add more
-        </button>
-      </div>
-      <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Restocking</h3>
-
-      <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
-        {restocks.length > 0 ? (
-          restocks.map((note, idx) =>
-            renderNotepadListRow(
-              note.id,
-              note.title,
-              formatCreatedStamp(new Date(note.timestamp)),
-              getRestockTotalQty(note),
-              () => openRestockPopupForEdit(note),
-              () => printRestockNotepad(note),
-              canViewTransactions,
-              idx,
-              restocks.length,
-              isLight ? 'text-amber-600' : 'text-amber-400'
-            )
-          )
-        ) : (
-          <div className="p-12 text-center">
-            <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No restock notes yet</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
   const resetAssetFormFields = useCallback(() => {
     setNewItemName('');
     setNewItemPrice('0');
@@ -1843,7 +1001,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     const stock = Math.max(0, Math.floor(parseFloat(newItemStock) || 0));
     const grams = Math.max(0, parseFloat(newItemGrams) || 0);
     const newItem: InventoryItem = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       name: newItemName.trim(),
       stock,
       price: parseFloat(newItemPrice) || 0,
@@ -1856,7 +1014,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       grams,
       wholesaleId: activeWholesaleId || fallbackWholesaleId,
       activities: [{
-        id: Math.random().toString(),
+        id: crypto.randomUUID(),
         type: 'restock',
         action: `Added item · stock ${stock}${grams > 0 ? ` · ${grams}g` : ''}`,
         time: 'Just now',
@@ -1902,7 +1060,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           lastStocked: new Date(now).toISOString(),
           activities: [
             {
-              id: `restock-${now}`,
+              id: crypto.randomUUID(),
               type: 'restock' as const,
               action: `Restocked +${addQty}${grams > 0 ? ` · ${grams}g` : ''} (now ${nextStock})`,
               time: 'Just now',
@@ -1951,7 +1109,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     const price = namingUnidentified.price;
     const itemName = newItemName.trim();
     const newItem: InventoryItem = {
-      id: now.toString(),
+      id: crypto.randomUUID(),
       name: itemName,
       stock: 50,
       price,
@@ -1964,7 +1122,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       grams: 0,
       wholesaleId: activeWholesaleId || fallbackWholesaleId,
       activities: [{
-        id: `${now}-identified`,
+        id: crypto.randomUUID(),
         type: 'restock',
         action: `Identified as "${itemName}" from invoice`,
         time: 'Just now',
@@ -2001,7 +1159,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const invertedBarSubtextClass = isLight ? 'text-white/70' : 'text-black/70';
   const heroSubtextClass = 'text-white';
   const panelSubtextClass = isLight ? 'text-black/60' : 'text-white/60';
-  const noteCardSubtextClass = 'text-black/60';
   const iconLiftLight = 'pos-dashboard-icon-lift pos-dashboard-icon-lift--on-light';
   const iconLiftDark = 'pos-dashboard-icon-lift pos-dashboard-icon-lift--on-dark';
   const statDetailCardClass = isLight
@@ -2027,7 +1184,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             stock: parsed,
             activities: [
               {
-                id: `stock-update-${now}`,
+                id: crypto.randomUUID(),
                 type: 'stock-update' as const,
                 action,
                 time: 'Just now',
@@ -2068,7 +1225,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             price: parsed,
             activities: [
               {
-                id: `price-update-${now}`,
+                id: crypto.randomUUID(),
                 type: 'price-update' as const,
                 action,
                 time: 'Just now',
@@ -2116,43 +1273,71 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     const slice = limit ? logs.slice(0, limit) : logs;
     if (slice.length === 0) {
       return (
-        <p className={`pos-subtext text-[9px] font-black ${cardSubtextMutedClass}`}>No recent activity</p>
+        <p className={`action-log-meta text-[9px] font-medium ${cardSubtextMutedClass}`}>No recent activity</p>
       );
     }
-    return slice.map((log) => {
-      const actorName = log.profileName ?? activeProfileName;
-      const isUpdateLog = log.type === 'price-update' || log.type === 'stock-update';
-      const rowClass = `w-full flex items-center justify-between gap-2 min-w-0 text-left ${clickable ? 'cursor-pointer hover:opacity-80 active:scale-[0.99] transition-all' : ''}`;
-      const rowContent = (
-        <>
-          <div className="flex items-center gap-2 min-w-0">
-            {getLogIcon(log.type)}
-            <div className="flex flex-col min-w-0">
-              <span className={`text-[10px] font-black tracking-normal truncate ${log.isUnidentified ? 'text-red-500' : isUpdateLog ? 'text-blue-500' : textColorClass}`}>
-                {log.action}
+    return (
+      <div className="flex flex-col gap-2" role="list">
+        {slice.map((log) => {
+          const actorName = log.profileName ?? activeProfileName;
+          const isUpdateLog = log.type === 'price-update' || log.type === 'stock-update';
+          const rowClass = `action-log-row w-full flex items-center justify-between gap-3 min-w-0 text-left px-4 py-3.5 rounded-2xl border transition-all ${
+            isLight
+              ? 'bg-white border-black/6 shadow-sm'
+              : 'bg-white/6 border-white/8'
+          } ${clickable ? 'cursor-pointer active:scale-[0.985] hover:opacity-95' : ''}`;
+          const rowContent = (
+            <>
+              <div className="flex items-center gap-2.5 min-w-0">
+                {getLogIcon(log.type)}
+                <div className="flex flex-col min-w-0 gap-0.5">
+                  <span
+                    className={`action-log-title text-[12px] font-semibold truncate ${
+                      log.isUnidentified ? 'text-red-500' : isUpdateLog ? 'text-blue-500' : textColorClass
+                    }`}
+                  >
+                    {log.action}
+                  </span>
+                  {log.itemName && !isUpdateLog && (
+                    <span
+                      className={`action-log-meta text-[10px] font-medium truncate ${
+                        log.isUnidentified ? 'text-red-400' : cardSubtextMutedClass
+                      }`}
+                    >
+                      {log.itemName}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <span className={`action-log-meta font-num-medium text-[10px] tabular-nums shrink-0 text-right ${cardSubtextMutedClass}`}>
+                {actorName}
+                <span className="opacity-50"> · </span>
+                {formatRequestElapsed(log.timestamp, currentTime)} ago
               </span>
-              {log.itemName && !isUpdateLog && (
-                <span className={`pos-subtext text-[8px] font-bold truncate ${log.isUnidentified ? 'text-red-400' : cardSubtextMutedClass}`}>
-                  {log.itemName}
-                </span>
-              )}
-            </div>
-          </div>
-          <span className={`pos-subtext font-num-medium text-[9px] tabular-nums shrink-0 text-right italic ${cardSubtextMutedClass}`}>
-            by:{actorName}{' '}
-            {formatRequestElapsed(log.timestamp, currentTime)} ago
-          </span>
-        </>
-      );
-      if (!clickable) {
-        return <div key={log.id} className={rowClass}>{rowContent}</div>;
-      }
-      return (
-        <button key={log.id} type="button" onClick={() => handleLogRowClick(log)} className={rowClass}>
-          {rowContent}
-        </button>
-      );
-    });
+            </>
+          );
+          if (!clickable) {
+            return (
+              <div key={log.id} role="listitem" className={rowClass}>
+                {rowContent}
+              </div>
+            );
+          }
+          return (
+            <button
+              key={log.id}
+              type="button"
+              role="listitem"
+              onClick={() => handleLogRowClick(log)}
+              className={rowClass}
+              aria-label={`${log.action}${log.itemName ? `, ${log.itemName}` : ''}`}
+            >
+              {rowContent}
+            </button>
+          );
+        })}
+      </div>
+    );
   };
 
   const renderActionLogsPage = () => (
@@ -2165,9 +1350,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             setActionLogSearchQuery('');
           }}
           aria-label="Back to Vision Hub"
-          className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+          className={`${HUB_BACK_BTN} ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'}`}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
+          <HubBackChevron /> Hub
         </button>
         <button
           type="button"
@@ -2178,8 +1363,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           <Icons.Search size={18} />
         </button>
       </div>
-      <h3 className={`pos-dashboard-section-title text-4xl tracking-normal px-1 ${textColorClass}`}>Action Logs</h3>
-      <p className={`app-subtext px-1 -mt-4 ${cardSubtextMutedClass}`}>Neural Ledger • 24h</p>
+      <h3 className={`pos-dashboard-section-title text-4xl px-1 ${textColorClass}`}>Action Logs</h3>
+      <p className={`action-log-meta px-1 -mt-4 text-[12px] font-medium ${cardSubtextMutedClass}`}>Recent activity · last 24h</p>
 
       {showActionLogSearch && (
         <input
@@ -2187,7 +1372,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           value={actionLogSearchQuery}
           onChange={(e) => setActionLogSearchQuery(e.target.value)}
           placeholder="Search logs..."
-          className={`w-full px-4 py-3 rounded-xl outline-none text-sm font-bold ${isLight ? 'bg-white text-black border border-black/8' : 'bg-white/10 text-white border border-white/10'}`}
+          className={`w-full px-4 py-3 rounded-xl outline-none text-sm font-medium ${isLight ? 'bg-white text-black border border-black/8' : 'bg-white/10 text-white border border-white/10'}`}
           autoFocus
         />
       )}
@@ -2216,19 +1401,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         />
       </div>
 
-      <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
-        {filteredActionLogs.length > 0 ? (
-          filteredActionLogs.map((log, idx) => (
-            <div key={log.id} className={`px-8 py-5 ${idx !== filteredActionLogs.length - 1 ? 'border-b border-white/10' : ''}`}>
-              {renderActivityLogRows([log], undefined, true)}
-            </div>
-          ))
-        ) : (
-          <div className="p-12 text-center">
-            <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No matching logs</p>
-          </div>
-        )}
-      </div>
+      {filteredActionLogs.length > 0 ? (
+        renderActivityLogRows(filteredActionLogs, undefined, true)
+      ) : (
+        <div className="p-12 text-center">
+          <p className={`action-log-meta text-[10px] font-medium ${cardSubtextMutedClass}`}>No matching logs</p>
+        </div>
+      )}
     </div>
   );
 
@@ -2237,9 +1416,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       <button
         onClick={() => setNamingUnidentified(null)}
         aria-label="Back to action logs"
-        className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+        className={`${HUB_BACK_BTN} ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'}`}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back
+        <HubBackChevron /> Back
       </button>
       <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-1 ${textColorClass}`}>New Item</h3>
       <p className={`text-sm px-1 -mt-4 text-red-500 font-bold`}>
@@ -2343,10 +1522,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label={`${item.name} details`}>
         <button
           onClick={() => setSelectedItem(null)}
-          aria-label="Back to Asset Hub"
-          className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+          aria-label="Back to Assets Hub"
+          className={`${HUB_BACK_BTN} ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'}`}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Asset Hub
+          <HubBackChevron /> Assets Hub
         </button>
 
         <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
@@ -2418,11 +1597,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           </div>
         </div>
 
-        <div className={`rounded-2xl p-8 ${levitateClass}`}>
-          <h4 className={`pos-dashboard-section-title text-xl tracking-normal mb-5 ${textColorClass}`}>Action Logs</h4>
-          <div className="space-y-4">
-            {renderActivityLogRows(logs, undefined, true)}
-          </div>
+        <div className={`rounded-2xl p-6 ${levitateClass}`}>
+          <h4 className={`pos-dashboard-section-title text-xl mb-4 ${textColorClass}`}>Action Logs</h4>
+          {renderActivityLogRows(logs, undefined, true)}
         </div>
       </div>
     );
@@ -2444,8 +1621,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             attendantName={activeProfileName}
             onInvoicePrinted={canViewTransactions ? onInvoicePrinted : undefined}
             printDrawerEnabled={canViewTransactions}
-            queuedNotepad={queuedNotepadPrint}
-            onQueuedNotepadConsumed={() => setQueuedNotepadPrint(null)}
             onInteractionChange={setVisionHubFocus}
             onThemeToggle={() => { updateSettings('themeMode', isLight ? 'dark' : 'light'); setIsThemeAnimating(true); }}
             onSettingsOpen={() => { setIsSettingsOpen(true); setIsSettingsAnimating(true); }}
@@ -2534,19 +1709,19 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 className={`col-span-2 p-10 rounded-2xl ${levitateClass} text-left cursor-pointer active:scale-[0.99] transition-all`}
                 aria-label="Open all action logs"
               >
-                <div className="flex justify-between items-center mb-8">
+                <div className="flex justify-between items-center mb-6">
                    <div className="space-y-1">
-                      <h3 className={`pos-dashboard-section-title text-2xl tracking-normal ${textColorClass}`}>Action Logs</h3>
-                      <p className={`app-subtext tracking-normal ${cardSubtextMutedClass}`}>Neural Ledger • 24h</p>
+                      <h3 className={`pos-dashboard-section-title text-2xl ${textColorClass}`}>Action Logs</h3>
+                      <p className={`action-log-meta text-[12px] font-medium ${cardSubtextMutedClass}`}>Recent activity · last 24h</p>
                    </div>
                    <div className={`p-3.5 rounded-full bg-blue-500/10 text-blue-500 ${iconLiftLight}`}><Icons.Trends size={24} /></div>
                 </div>
-                <div className="space-y-4" onClick={(e) => e.stopPropagation()}>
+                <div onClick={(e) => e.stopPropagation()}>
                   {systemLogs.length > 0 ? (
                     renderActivityLogRows(systemLogs, 8, true)
                   ) : (
                     <div className="py-16 text-center space-y-3">
-                       <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No Log Data</p>
+                       <p className={`action-log-meta text-[10px] font-medium ${cardSubtextMutedClass}`}>No log data yet</p>
                     </div>
                   )}
                 </div>
@@ -2562,9 +1737,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button
                 onClick={() => setMonthlyRevExpanded(false)}
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`${HUB_BACK_BTN} ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'}`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
+                <HubBackChevron /> Hub
               </button>
               <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Monthly Revenue</h3>
               <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.monthlyRev.toFixed(2))} this month • sorted by date</p>
@@ -2614,9 +1789,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button
                 onClick={() => setDailySalesExpanded(false)}
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`${HUB_BACK_BTN} ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'}`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
+                <HubBackChevron /> Hub
               </button>
               <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Daily Sales</h3>
               <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.dailyRev.toFixed(2))} today • sorted by time</p>
@@ -2666,9 +1841,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button
                 onClick={() => setAvgCustomerExpanded(false)}
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`${HUB_BACK_BTN} ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'}`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
+                <HubBackChevron /> Hub
               </button>
               <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Customers</h3>
               <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>Invoice names • print count</p>
@@ -2701,9 +1876,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button
                 onClick={() => setInvoicesTodayExpanded(false)}
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`${HUB_BACK_BTN} ${isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'}`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
+                <HubBackChevron /> Hub
               </button>
               <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Invoices Today</h3>
               <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>Sorted by most recent activity</p>
@@ -2753,7 +1928,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             </div>
           ) : inventoryExpanded ? (
             selectedItem ? renderInventoryItemPage() : (
-            <div className="relative morph-panel-content morph-panel-content--in space-y-6" role="tabpanel" aria-label="Asset Hub inventory">
+            <div className="relative morph-panel-content morph-panel-content--in space-y-6" role="tabpanel" aria-label="Assets Hub inventory">
               {!isLight && assetHubFlashKey > 0 && (
                 <div
                   key={assetHubFlashKey}
@@ -2762,19 +1937,24 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 />
               )}
               <div className={`sticky top-0 z-50 -mx-4 px-4 pt-2 pb-4 mb-2 backdrop-blur-3xl ${isLight ? 'bg-[#f2f2f7]/92' : 'bg-black/70'}`}>
-                {/* Row 1: back + actions */}
-                <div className="flex items-center justify-between gap-2 mb-3">
+                {/* Top row: Hub + centered title + add */}
+                <div className="relative flex items-center justify-between gap-2 mb-3 min-h-10">
                   <button
                     onClick={() => { setSelectedItem(null); setInventoryExpanded(false); }}
                     aria-label="Back to Vision Hub"
-                    className={`inline-flex items-center justify-center gap-1.5 h-11 px-3.5 rounded-full ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                    className={`relative z-10 ${HUB_BACK_BTN} ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'}`}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
+                    <HubBackChevron /> Hub
                   </button>
+                  <h3
+                    className={`pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center pos-dashboard-section-title text-xl sm:text-2xl ${textColorClass}`}
+                  >
+                    Assets Hub
+                  </h3>
                   <button
                     type="button"
                     onClick={toggleAssetMenu}
-                    className="inline-flex items-center justify-center h-11 w-11 rounded-full shadow-2xl text-white active:scale-90 transition-all"
+                    className="relative z-10 inline-flex items-center justify-center h-10 w-10 rounded-full shadow-2xl text-white active:scale-90 transition-all"
                     style={{ backgroundColor: accentColor }}
                     aria-label="Add asset actions"
                     aria-expanded={showAssetMenu}
@@ -2784,15 +1964,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   </button>
                 </div>
 
-                {/* Row 2: centered Asset Hub title */}
-                <h3 className={`pos-dashboard-section-title text-2xl tracking-tighter text-center mb-3 ${textColorClass}`}>
-                  Asset Hub
-                </h3>
-
-                {/* Row 3: wholesale toggles — centered, level right under title */}
                 {renderWholesaleToggleBar()}
 
-                {/* Row 4: sort (settings-style segment) */}
                 <div className="mt-3 flex justify-center">
                   <FluidSegmentControl
                     isLight={isLight}
@@ -2822,68 +1995,14 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
             </div>
             )
-          ) : false && requestsExpanded ? (
-            /* REQUESTS EXPANDED VIEW (removed from hub) */
-            <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Requests screen">
-              {/* HEADER: Back + Green floating "+ Add more" (shadow light, glow dark) */}
-              <div className="flex items-center justify-between">
-                <button 
-                  onClick={() => setRequestsExpanded(false)} 
-                  aria-label="Back to Vision Hub"
-                  className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
-                </button>
-
-                <button
-                  onClick={openRequestPopup}
-                  className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 active:scale-95 transition-all ${isLight ? 'bg-emerald-500 text-white shadow-lg' : 'bg-emerald-500 text-white shadow-[0_0_16px_rgb(16,185,129)]'}`}
-                  aria-label="Add more request"
-                >
-                  + Add more
-                </button>
-              </div>
-
-              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-1 ${textColorClass}`}>Requests</h3>
-
-              {/* 3 TOP TABS: Pending, Delivered, Out Of Stock */}
-              <div className="pb-2">
-                <FluidSegmentControl
-                  isLight={isLight}
-                  size="sm"
-                  variant="slide"
-                  ariaLabel="Request status"
-                  value={requestTab}
-                  onChange={(id) => setRequestTab(id as 'pending' | 'delivered' | 'outofstock')}
-                  options={[
-                    { id: 'pending', label: 'Pending' },
-                    { id: 'delivered', label: 'Delivered' },
-                    { id: 'outofstock', label: 'Out Of Stock' },
-                  ]}
-                />
-              </div>
-
-              {/* Requests list */}
-              <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
-                {filteredRequests.length > 0 ? (
-                  filteredRequests.map((req, idx) => renderRequestRow(req, idx, filteredRequests.length))
-                ) : (
-                  <div className="p-12 text-center">
-                    <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No {requestTab} requests</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : false && restockExpanded ? (
-            renderRestockingView()
           ) : canViewTransactions && purchasesExpanded ? (
             <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Transaction Archive">
               <button 
                 onClick={() => setPurchasesExpanded(false)} 
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`${HUB_BACK_BTN} ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'}`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back
+                <HubBackChevron /> Back
               </button>
               <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Transaction Archive</h3>
 
@@ -2922,70 +2041,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 ))}
               </div>
             </div>
-          ) : requestsExpanded ? (
-            /* REQUESTS SCREEN */
-            <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Requests screen">
-              {/* HEADER */}
-              <div className="flex items-center justify-between">
-                <button 
-                  onClick={() => setRequestsExpanded(false)} 
-                  aria-label="Back to Vision Hub"
-                  className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Hub
-                </button>
-
-                {/* GREEN FLOATING + ADD MORE BUTTON */}
-                <button
-                  onClick={openRequestPopup}
-                  className={`px-6 py-2.5 rounded-full font-black text-sm tracking-[0.5px] flex items-center gap-2 active:scale-95 transition-all ${isLight ? 'bg-emerald-500 text-white shadow-lg' : 'bg-emerald-500 text-white shadow-[0_0_16px_rgb(16,185,129)]'}`}
-                  aria-label="Add more request"
-                >
-                  + Add more
-                </button>
-              </div>
-
-              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-1 ${textColorClass}`}>Requests</h3>
-
-              {/* 3 TABS */}
-              <div className="pb-1">
-                <FluidSegmentControl
-                  isLight={isLight}
-                  size="sm"
-                  variant="slide"
-                  ariaLabel="Request status"
-                  value={requestTab}
-                  onChange={(id) => setRequestTab(id as 'pending' | 'delivered' | 'outofstock')}
-                  options={[
-                    { id: 'pending', label: 'Pending' },
-                    { id: 'delivered', label: 'Delivered' },
-                    { id: 'outofstock', label: 'Out Of Stock' },
-                  ]}
-                />
-              </div>
-
-              {/* Requests list */}
-              <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
-                {filteredRequests.length > 0 ? (
-                  filteredRequests.map((req, idx) => renderRequestRow(req, idx, filteredRequests.length))
-                ) : (
-                  <div className="p-12 text-center">
-                    <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No {requestTab} requests</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : false && restockExpanded ? (
-            renderRestockingView()
           ) : canViewTransactions ? (
             /* PURCHASES / TRANSACTION ARCHIVE (original) */
             <div className="morph-panel-content morph-panel-content--in space-y-8" role="tabpanel" aria-label="Transaction Archive">
               <button 
                 onClick={() => setPurchasesExpanded(false)} 
                 aria-label="Back to Vision Hub"
-                className={`flex items-center gap-3 p-4 pr-6 rounded-2xl ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'} font-black text-[10px] tracking-widest uppercase active:scale-95 transition-all duration-150`}
+                className={`${HUB_BACK_BTN} ${isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/5 text-zinc-100'}`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back
+                <HubBackChevron /> Back
               </button>
               <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Transaction Archive</h3>
               <div className={`rounded-2xl overflow-hidden ${levitateClass}`} role="list" aria-label="Transaction records">
@@ -3407,224 +2471,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           </div>
         )}
       </MorphPresence>
-
-      {/* REQUESTS ADD MORE POPUP — matches invoice switcher motion + notepad shell */}
-      <MorphPresence show={showAddRequestPopup}>
-        {(visible) => (
-        <div className={`fixed inset-0 z-[400] flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} role="presentation">
-          <div
-            className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
-            onClick={closeRequestPopup}
-            aria-hidden="true"
-          />
-
-          <div
-            className={`relative modal-portrait-6-13 morph-panel ${visible ? 'morph-panel--in' : 'morph-panel--out'}`}
-          >
-            <div
-              className={`absolute inset-0 flex flex-col rounded-[32px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.55)] ${
-                isLight ? 'bg-[#faf8f2] text-zinc-900' : 'bg-[#171614] text-zinc-100'
-              }`}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="request-notepad-title"
-            >
-              <div
-                className="px-4 pt-4 pb-3 flex items-start gap-3 border-b shrink-0"
-                style={{
-                  borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
-                }}
-              >
-                <div className="flex-1 min-w-0">
-                  <input
-                    id="request-notepad-title"
-                    type="text"
-                    value={newRequesterName}
-                    onChange={(e) => setNewRequesterName(e.target.value)}
-                    placeholder="Requester name"
-                    className={`w-full bg-transparent outline-none text-lg font-black tracking-tight placeholder:opacity-30 ${
-                      isLight ? 'text-black' : 'text-white'
-                    }`}
-                    autoFocus
-                  />
-                  {requestCreatedStamp && (
-                    <p className={`pos-subtext text-[10px] font-bold mt-1 ${isLight ? 'text-zinc-600' : 'text-zinc-400'}`}>
-                      {requestCreatedStamp}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {canViewTransactions && (
-                    <button
-                      type="button"
-                      onClick={() => printRequestNotepad()}
-                      disabled={requestLineItems.length === 0 && !newRequesterName.trim()}
-                      className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all disabled:opacity-40 ${
-                        isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
-                      }`}
-                      aria-label="Print request notepad"
-                    >
-                      <Icons.Printer size={18} />
-                    </button>
-                  )}
-                  <button
-                    onClick={closeRequestPopup}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all ${
-                      isLight ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white'
-                    }`}
-                    aria-label="Close add request"
-                  >
-                    <Icons.X size={18} />
-                  </button>
-                  <button
-                    onClick={saveRequest}
-                    disabled={!newRequesterName.trim() || requestLineItems.length === 0}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all disabled:opacity-40 ${
-                      isLight ? 'bg-emerald-500 text-white' : 'bg-emerald-500 text-white shadow-[0_0_14px_rgb(16,185,129)]'
-                    }`}
-                    aria-label="Save request"
-                  >
-                    <Icons.Check size={18} />
-                  </button>
-                </div>
-              </div>
-
-              <div
-                className="flex-1 min-h-0 flex flex-col"
-                style={{
-                  backgroundImage: isLight
-                    ? 'repeating-linear-gradient(transparent, transparent 27px, rgba(0,0,0,0.035) 27px, rgba(0,0,0,0.035) 28px)'
-                    : 'repeating-linear-gradient(transparent, transparent 27px, rgba(255,255,255,0.04) 27px, rgba(255,255,255,0.04) 28px)',
-                }}
-              >
-                <InventoryNotepad
-                  isLight={isLight}
-                  items={items}
-                  lineItems={requestLineItems}
-                  onLineItemsChange={setRequestLineItems}
-                  composeQuery={requestComposeQuery}
-                  onComposeQueryChange={setRequestComposeQuery}
-                  freeNotes={requestFreeNotes}
-                  onFreeNotesChange={setRequestFreeNotes}
-                  accentClass={isLight ? 'text-emerald-600' : 'text-emerald-400'}
-                  emptyHint="Type to add products…"
-                  showUpdateButton
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-        )}
-      </MorphPresence>
-
-      {/* RESTOCK NOTEPAD — same shell as request popup */}
-      <MorphPresence show={showAddRestockPopup}>
-        {(visible) => (
-        <div className={`fixed inset-0 z-[400] flex items-end sm:items-center justify-center p-4 pb-6 sm:pb-4 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`} role="presentation">
-          <div
-            className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
-            onClick={closeRestockPopup}
-            aria-hidden="true"
-          />
-
-          <div className={`relative modal-portrait-6-13 morph-panel ${visible ? 'morph-panel--in' : 'morph-panel--out'}`}>
-            <div
-              className={`absolute inset-0 flex flex-col rounded-[32px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.55)] ${
-                isLight ? 'bg-[#faf8f2] text-zinc-900' : 'bg-[#171614] text-zinc-100'
-              }`}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="restock-notepad-title"
-            >
-              <div
-                className="px-4 pt-4 pb-3 flex items-start gap-3 border-b shrink-0"
-                style={{
-                  borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
-                }}
-              >
-                <div className="flex-1 min-w-0">
-                  <input
-                    id="restock-notepad-title"
-                    type="text"
-                    value={newRestockTitle}
-                    onChange={(e) => setNewRestockTitle(e.target.value)}
-                    placeholder="Batch name"
-                    className={`w-full bg-transparent outline-none text-lg font-black tracking-tight placeholder:opacity-30 ${
-                      isLight ? 'text-black' : 'text-white'
-                    }`}
-                    autoFocus
-                  />
-                  {restockCreatedStamp && (
-                    <p className={`pos-subtext text-[10px] font-bold mt-1 ${isLight ? 'text-zinc-600' : 'text-zinc-400'}`}>
-                      {restockCreatedStamp}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {canViewTransactions && (
-                    <button
-                      type="button"
-                      onClick={() => printRestockNotepad()}
-                      disabled={restockLineItems.length === 0}
-                      className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all disabled:opacity-40 ${
-                        isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
-                      }`}
-                      aria-label="Print restock notepad"
-                    >
-                      <Icons.Printer size={18} />
-                    </button>
-                  )}
-                  <button
-                    onClick={closeRestockPopup}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all ${
-                      isLight ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white'
-                    }`}
-                    aria-label="Close restock note"
-                  >
-                    <Icons.X size={18} />
-                  </button>
-                  <button
-                    onClick={saveRestockNote}
-                    disabled={restockLineItems.length === 0}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${iconLiftLight} active:scale-90 transition-all disabled:opacity-40 ${
-                      isLight ? 'bg-emerald-500 text-white' : 'bg-emerald-500 text-white shadow-[0_0_14px_rgb(16,185,129)]'
-                    }`}
-                    aria-label="Save restock note"
-                  >
-                    <Icons.Check size={18} />
-                  </button>
-                </div>
-              </div>
-
-              <div
-                className="flex-1 min-h-0 flex flex-col"
-                style={{
-                  backgroundImage: isLight
-                    ? 'repeating-linear-gradient(transparent, transparent 27px, rgba(0,0,0,0.035) 27px, rgba(0,0,0,0.035) 28px)'
-                    : 'repeating-linear-gradient(transparent, transparent 27px, rgba(255,255,255,0.04) 27px, rgba(255,255,255,0.04) 28px)',
-                }}
-              >
-                <InventoryNotepad
-                  isLight={isLight}
-                  items={items}
-                  lineItems={restockLineItems}
-                  onLineItemsChange={setRestockLineItems}
-                  composeQuery={restockComposeQuery}
-                  onComposeQueryChange={setRestockComposeQuery}
-                  freeNotes={restockFreeNotes}
-                  onFreeNotesChange={setRestockFreeNotes}
-                  accentClass={isLight ? 'text-amber-600' : 'text-amber-400'}
-                  emptyHint="Type to add products…"
-                  showUpdateButton
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-        )}
-      </MorphPresence>
-
-
 
       <SettingsPanel
         isOpen={isSettingsOpen}

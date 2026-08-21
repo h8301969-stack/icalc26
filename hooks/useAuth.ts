@@ -38,11 +38,26 @@ const persistLocalSession = (account: AppAccount) => {
 
 const usesSupabaseAuth = (): boolean => isSupabaseConfigured();
 
+/** Placeholder account from local session while cloud profile hydrates. */
+const accountFromSession = (session: { accountId: string; username: string }): AppAccount => {
+  const local = getAccountById(session.accountId);
+  if (local) return local;
+  return {
+    id: session.accountId,
+    username: session.username,
+    passwordHash: '',
+    createdAt: Date.now(),
+    profiles: ensureAdminProfile([]),
+    activeProfileId: ensureAdminProfile([])[0]?.id ?? '',
+  };
+};
+
 export const useAuth = () => {
   const [account, setAccount] = useState<AppAccount | null>(() => {
     const session = getAuthSession();
     if (!session) return null;
-    return getAccountById(session.accountId) ?? null;
+    // Keep a signed-in account immediately on reopen (cloud users aren't in icalc_accounts).
+    return accountFromSession(session);
   });
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!getAuthSession());
   const [authReady, setAuthReady] = useState(!isCloudBackendEnabled());

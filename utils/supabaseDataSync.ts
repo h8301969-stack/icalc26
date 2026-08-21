@@ -120,6 +120,7 @@ export const syncInventoryToSupabase = async (
 ): Promise<InventoryItem[]> => {
   if (!isCloudBackendEnabled()) return items;
 
+  // Keep stable UUIDs — never mint a new id for an already-uuid row on each sync.
   const normalizedItems = items.map((item) => ({
     ...item,
     id: ensureUuid(item.id),
@@ -145,22 +146,15 @@ export const syncInventoryToSupabase = async (
     grams: item.grams ?? 0,
   }));
 
-  const { error: inventoryError } = await supabase
-    .from('inventory_items')
-    .upsert(inventoryRows, { onConflict: 'id' });
+  if (inventoryRows.length > 0) {
+    const { error: inventoryError } = await supabase
+      .from('inventory_items')
+      .upsert(inventoryRows, { onConflict: 'id' });
 
-  if (inventoryError) throw new Error(inventoryError.message);
+    if (inventoryError) throw new Error(inventoryError.message);
+  }
 
   const itemIds = normalizedItems.map((item) => item.id);
-  if (itemIds.length > 0) {
-    const { error: deleteActivitiesError } = await supabase
-      .from('inventory_activities')
-      .delete()
-      .eq('user_id', userId)
-      .in('item_id', itemIds);
-
-    if (deleteActivitiesError) throw new Error(deleteActivitiesError.message);
-  }
 
   const activityRows = normalizedItems.flatMap((item) =>
     item.activities.map((activity) => ({
@@ -174,16 +168,17 @@ export const syncInventoryToSupabase = async (
     }))
   );
 
+  // Upsert only — never prune activities here. Deleting "stale" rows wiped logs written
+  // on other devices that this client hadn't hydrated yet. Item delete cascades activities.
   if (activityRows.length > 0) {
     const { error: activityError } = await supabase
       .from('inventory_activities')
-      .insert(activityRows);
+      .upsert(activityRows, { onConflict: 'id' });
 
     if (activityError) throw new Error(activityError.message);
   }
 
   // Never mass-delete remote inventory when local is empty — that race wiped accounts on re-login.
-  // Stale-row cleanup only runs when we have a non-empty local snapshot to reconcile against.
   if (itemIds.length > 0) {
     const { data: remoteRows } = await supabase
       .from('inventory_items')
@@ -362,56 +357,42 @@ export const syncInvoiceDataToSupabase = async (
     await supabase.from('invoices').delete().in('id', staleInvoiceIds);
   }
 
-  const { error: deleteLogsError } = await supabase
-    .from('invoice_action_logs')
-    .delete()
-    .eq('user_id', userId);
+  const logRows = payload.pastLogs.map((log) => ({
+    id: ensureUuid(log.id),
+    user_id: userId,
+    invoice_name: log.invoiceName,
+    message: log.message,
+    item_name: log.itemName ?? null,
+    price: log.price,
+    quantity: log.quantity,
+    is_unidentified: !!log.isUnidentified,
+    profile_name: log.profileName ?? null,
+    logged_at: new Date(log.timestamp).toISOString(),
+  }));
 
-  if (deleteLogsError) throw new Error(deleteLogsError.message);
-
-  if (payload.pastLogs.length > 0) {
-    const logRows = payload.pastLogs.map((log) => ({
-      id: ensureUuid(log.id),
-      user_id: userId,
-      invoice_name: log.invoiceName,
-      message: log.message,
-      item_name: log.itemName ?? null,
-      price: log.price,
-      quantity: log.quantity,
-      is_unidentified: !!log.isUnidentified,
-      profile_name: log.profileName ?? null,
-      logged_at: new Date(log.timestamp).toISOString(),
-    }));
-
-    const { error: insertLogsError } = await supabase
+  if (logRows.length > 0) {
+    const { error: upsertLogsError } = await supabase
       .from('invoice_action_logs')
-      .insert(logRows);
+      .upsert(logRows, { onConflict: 'id' });
 
-    if (insertLogsError) throw new Error(insertLogsError.message);
+    if (upsertLogsError) throw new Error(upsertLogsError.message);
   }
 
-  const { error: deletePrintError } = await supabase
-    .from('invoice_print_logs')
-    .delete()
-    .eq('user_id', userId);
+  const printRows = payload.printLogs.map((log) => ({
+    id: ensureUuid(log.id),
+    user_id: userId,
+    invoice_name: log.invoiceName,
+    total: log.total,
+    items: log.items,
+    printed_at: new Date(log.timestamp).toISOString(),
+  }));
 
-  if (deletePrintError) throw new Error(deletePrintError.message);
-
-  if (payload.printLogs.length > 0) {
-    const printRows = payload.printLogs.map((log) => ({
-      id: ensureUuid(log.id),
-      user_id: userId,
-      invoice_name: log.invoiceName,
-      total: log.total,
-      items: log.items,
-      printed_at: new Date(log.timestamp).toISOString(),
-    }));
-
-    const { error: insertPrintError } = await supabase
+  if (printRows.length > 0) {
+    const { error: upsertPrintError } = await supabase
       .from('invoice_print_logs')
-      .insert(printRows);
+      .upsert(printRows, { onConflict: 'id' });
 
-    if (insertPrintError) throw new Error(insertPrintError.message);
+    if (upsertPrintError) throw new Error(upsertPrintError.message);
   }
 };
 

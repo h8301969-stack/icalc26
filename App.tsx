@@ -34,9 +34,17 @@ const SETTINGS_SECTION_COUNT = 3;
 import { useAuth } from './hooks/useAuth';
 import { useSupabaseDataSync } from './hooks/useSupabaseDataSync';
 import { useSyncStatus } from './hooks/useSyncStatus';
-import { ensureAdminProfile, getAccounts, isAdminProfile } from './utils/auth';
+import {
+  createAdminProfile,
+  ensureAdminProfile,
+  getAccounts,
+  getAuthSession,
+  isAdminProfile,
+} from './utils/auth';
 import { SyncStatusIndicator } from './components/SyncStatusIndicator';
 import AccountToastHost from './components/AccountToastHost';
+import SettingsNotificationsInbox from './components/SettingsNotificationsInbox';
+import AdminProfilesPopup from './components/AdminProfilesPopup';
 import { useAccountNotifications } from './hooks/useAccountNotifications';
 
 import { usePOS, InventoryItem } from './hooks/usePOS';
@@ -197,7 +205,10 @@ const AppContent: React.FC = () => {
 
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isCalculatorEntering, setIsCalculatorEntering] = useState(false);
-  const [authOverlayMounted, setAuthOverlayMounted] = useState(true);
+  // Don't flash signup/login when a session already exists — wait for restore.
+  const [authOverlayMounted, setAuthOverlayMounted] = useState(() => !getAuthSession());
+  const [floatingNotiInboxOpen, setFloatingNotiInboxOpen] = useState(false);
+  const [adminProfilesOpen, setAdminProfilesOpen] = useState(false);
   const sessionBootstrappedRef = useRef(false);
   const isAdminPortalRef = useRef(false);
 
@@ -284,14 +295,35 @@ const AppContent: React.FC = () => {
     isAdminPortalRef.current = isAdminPortal;
   }, [isAdminPortal]);
 
-  // Cold start / session restore: if already logged in, open calculator immediately.
+  // Cold start / session restore: signed-in users skip signup/login and open calculator.
   useEffect(() => {
-    if (!authReady || sessionBootstrappedRef.current) return;
-    sessionBootstrappedRef.current = true;
-    if (account && !isAdminPortal) {
-      openCalculatorHome({ animate: true });
+    if (!authReady) return;
+
+    if (account) {
+      if (!isAdminPortal) {
+        openCalculatorHome({ animate: !sessionBootstrappedRef.current });
+      }
+      sessionBootstrappedRef.current = true;
+      return;
     }
+
+    // Confirmed signed out after auth is ready — show auth overlay only then.
+    setIsUnlocked(false);
+    setAuthOverlayMounted(true);
+    sessionBootstrappedRef.current = true;
   }, [authReady, account, isAdminPortal, openCalculatorHome]);
+
+  // Admin portal always runs as the @admin profile.
+  useEffect(() => {
+    if (!isAdminPortal) return;
+    const profiles = ensureAdminProfile(settings.profiles ?? []);
+    const admin = profiles.find((p) => isAdminProfile(p)) ?? createAdminProfile();
+    if (settings.activeProfileId === admin.id) return;
+    updateSettings({
+      profiles,
+      activeProfileId: admin.id,
+    });
+  }, [isAdminPortal, settings.profiles, settings.activeProfileId, updateSettings]);
 
   // Any app reopen / foreground resume while logged in → calculator.
   useEffect(() => {
@@ -420,9 +452,15 @@ const AppContent: React.FC = () => {
   }, [finalizeApprovedAccess]);
 
   const handleAdminPortal = useCallback(() => {
+    const profiles = ensureAdminProfile(settings.profiles ?? []);
+    const admin = profiles.find((p) => isAdminProfile(p)) ?? createAdminProfile();
+    updateSettings({
+      profiles,
+      activeProfileId: admin.id,
+    });
     triggerHaptic(2);
     setAuthOverlayMounted(false);
-  }, [triggerHaptic]);
+  }, [settings.profiles, updateSettings, triggerHaptic]);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -937,7 +975,7 @@ const AppContent: React.FC = () => {
          onKeyDown={handleKeyDown}
          role="main">
       <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} />
-      {authOverlayMounted && (
+      {authOverlayMounted && !(account && isUnlocked) && (
         <AuthOverlay
           isLight={isLight}
           mode={authMode}
@@ -1480,6 +1518,54 @@ const AppContent: React.FC = () => {
         onAccountNotify={handleAccountNotify}
       />
       {isUnlocked && <AccountToastHost isLight={isLight} api={accountNotifications} />}
+      {isUnlocked && (
+        <>
+          <div className="floating-fab-stack">
+            <button
+              type="button"
+              className={`floating-noti-bell ${isLight ? 'floating-noti-bell--light' : 'floating-noti-bell--dark'} ${
+                accountNotifications.unreadCount > 0 ? 'floating-noti-bell--unread' : ''
+              } active:scale-95`}
+              onClick={() => setFloatingNotiInboxOpen(true)}
+              aria-label={`Notifications${accountNotifications.unreadCount > 0 ? `, ${accountNotifications.unreadCount} unread` : ''}`}
+            >
+              <span className="floating-noti-bell__icon inline-flex">
+                <Icons.Bell size={20} />
+              </span>
+              {accountNotifications.unreadCount > 0 && (
+                <span className="noti-bell-indicator" aria-hidden="true">
+                  <span className="noti-bell-indicator__caret" />
+                </span>
+              )}
+            </button>
+            {canViewTransactions && (
+              <button
+                type="button"
+                className={`floating-profiles-btn ${isLight ? 'floating-profiles-btn--light' : 'floating-profiles-btn--dark'} active:scale-95`}
+                onClick={() => setAdminProfilesOpen(true)}
+                aria-label="View account profiles"
+              >
+                <Icons.Users size={20} />
+              </button>
+            )}
+          </div>
+          <SettingsNotificationsInbox
+            isOpen={floatingNotiInboxOpen}
+            onClose={() => setFloatingNotiInboxOpen(false)}
+            isLight={isLight}
+            notifications={accountNotifications.items}
+            activeProfileId={settings.activeProfileId ?? ''}
+            onMarkRead={accountNotifications.markRead}
+          />
+          <AdminProfilesPopup
+            isOpen={adminProfilesOpen}
+            onClose={() => setAdminProfilesOpen(false)}
+            isLight={isLight}
+            profiles={settings.profiles ?? []}
+            activeProfileId={settings.activeProfileId ?? ''}
+          />
+        </>
+      )}
       <SyncStatusIndicator
         syncState={syncStatus.syncState}
         isLight={isLight}
@@ -1491,9 +1577,17 @@ const AppContent: React.FC = () => {
         <AdminCodeDashboard
           isLight={isLight}
           adminToken={adminSessionToken}
+          adminProfile={
+            (settings.profiles ?? []).find((p) => isAdminProfile(p)) ?? createAdminProfile()
+          }
           onClose={() => {
             closeAdminPortal();
-            setAuthOverlayMounted(true);
+            if (account) {
+              openCalculatorHome({ animate: false });
+            } else {
+              setAuthOverlayMounted(true);
+              setIsUnlocked(false);
+            }
           }}
           onReturnToCalc={handleAdminReturnToCalc}
         />

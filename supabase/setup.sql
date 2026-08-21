@@ -435,6 +435,9 @@ create policy "inv_activities_select_own" on public.inventory_activities for sel
 drop policy if exists "inv_activities_insert_own" on public.inventory_activities;
 create policy "inv_activities_insert_own" on public.inventory_activities for insert to authenticated
   with check ((select auth.uid()) = user_id);
+drop policy if exists "inv_activities_update_own" on public.inventory_activities;
+create policy "inv_activities_update_own" on public.inventory_activities for update to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 drop policy if exists "inv_activities_delete_own" on public.inventory_activities;
 create policy "inv_activities_delete_own" on public.inventory_activities for delete to authenticated
   using ((select auth.uid()) = user_id);
@@ -534,6 +537,12 @@ create policy "invoice_logs_select_own" on public.invoice_action_logs for select
 drop policy if exists "invoice_logs_insert_own" on public.invoice_action_logs;
 create policy "invoice_logs_insert_own" on public.invoice_action_logs for insert to authenticated
   with check ((select auth.uid()) = user_id);
+drop policy if exists "invoice_logs_update_own" on public.invoice_action_logs;
+create policy "invoice_logs_update_own" on public.invoice_action_logs for update to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+drop policy if exists "invoice_logs_delete_own" on public.invoice_action_logs;
+create policy "invoice_logs_delete_own" on public.invoice_action_logs for delete to authenticated
+  using ((select auth.uid()) = user_id);
 
 -- invoice_print_logs
 drop policy if exists "invoice_prints_select_own" on public.invoice_print_logs;
@@ -542,6 +551,12 @@ create policy "invoice_prints_select_own" on public.invoice_print_logs for selec
 drop policy if exists "invoice_prints_insert_own" on public.invoice_print_logs;
 create policy "invoice_prints_insert_own" on public.invoice_print_logs for insert to authenticated
   with check ((select auth.uid()) = user_id);
+drop policy if exists "invoice_prints_update_own" on public.invoice_print_logs;
+create policy "invoice_prints_update_own" on public.invoice_print_logs for update to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+drop policy if exists "invoice_prints_delete_own" on public.invoice_print_logs;
+create policy "invoice_prints_delete_own" on public.invoice_print_logs for delete to authenticated
+  using ((select auth.uid()) = user_id);
 
 -- invoice_attendants
 drop policy if exists "invoice_attendants_select_own" on public.invoice_attendants;

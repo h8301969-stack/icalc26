@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import icalcLogo from '../assets/logo/icalc-logo.png';
 import { Icons } from '../constants';
 import {
   AccessCodeRow,
@@ -15,13 +14,17 @@ import {
   PasswordHistoryRow,
 } from '../utils/accessControl';
 import { ADMIN_PROFILE_NAME, createAdminProfile } from '../utils/auth';
+import { UserProfile } from '../types';
 import { FORM_FIELD_LABEL, FORM_SECTION_TITLE, formInputClass, formTextareaClass } from '../utils/formFields';
+import ProfileAvatar from './ProfileAvatar';
 
 type AdminTab = 'unused' | 'pending' | 'approved';
 
 interface AdminCodeDashboardProps {
   isLight: boolean;
   adminToken: string;
+  /** Active @admin profile (avatar + name) for this account. */
+  adminProfile?: UserProfile;
   onClose: () => void;
   /** Logo tap returns to the calculator interface. */
   onReturnToCalc?: () => void;
@@ -86,6 +89,7 @@ const formatWhen = (value: string | null | undefined): string => {
 const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   isLight,
   adminToken,
+  adminProfile,
   onClose,
   onReturnToCalc,
 }) => {
@@ -403,28 +407,28 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     onClose();
   };
 
-  const adminProfile = createAdminProfile();
+  const profile = adminProfile ?? createAdminProfile();
 
   return (
     <div className="admin-portal-shell fixed inset-0 z-[1100] flex flex-col bg-black/80 backdrop-blur-xl">
       <div className="admin-portal-header flex items-center justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-3">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           {onReturnToCalc ? (
             <button
               type="button"
               onClick={onReturnToCalc}
-              className="admin-interactive w-10 h-10 rounded-xl overflow-hidden shrink-0"
+              className="admin-interactive shrink-0 rounded-xl"
               aria-label="Return to calculator"
               title="Return to calculator"
             >
-              <img src={icalcLogo} alt="" className="w-full h-full object-cover" draggable={false} />
+              <ProfileAvatar profile={profile} size={40} isLight={isLight} />
             </button>
           ) : (
-            <img src={icalcLogo} alt="" className="w-10 h-10 rounded-xl object-cover" draggable={false} />
+            <ProfileAvatar profile={profile} size={40} isLight={isLight} />
           )}
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.3em] opacity-60">Admin Profile</p>
-            <p className="text-lg font-black">{ADMIN_PROFILE_NAME}</p>
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase tracking-[0.3em] opacity-60">Admin profile</p>
+            <p className="text-lg font-black truncate">{profile.name || ADMIN_PROFILE_NAME}</p>
           </div>
         </div>
         <button

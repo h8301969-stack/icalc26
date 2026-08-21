@@ -26,6 +26,12 @@ import { MorphPresence } from './MorphCrossfade';
 import SettingsNotificationsInbox from './SettingsNotificationsInbox';
 import type { AccountNotification } from '../types/accountNotifications';
 import { pickPhotoFromGallery } from '../utils/nativeCamera';
+import {
+  PHONE_APP_DOWNLOAD_URL,
+  fetchLatestPhoneRelease,
+  formatReleaseElapsed,
+  type AppReleaseInfo,
+} from '../utils/appRelease';
 
 
 interface SettingsSlice {
@@ -169,6 +175,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showNotificationsInbox, setShowNotificationsInbox] = useState(false);
   const wasOpenRef = useRef(false);
+  const [phoneRelease, setPhoneRelease] = useState<AppReleaseInfo | null>(null);
+  const [phoneReleaseLoading, setPhoneReleaseLoading] = useState(false);
+  const [phoneReleaseNow, setPhoneReleaseNow] = useState(() => Date.now());
 
   // Snapshot committed settings into draft when panel opens
   useEffect(() => {
@@ -181,6 +190,24 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
     wasOpenRef.current = isOpen;
   }, [isOpen, settings]);
+
+  // Load latest phone release metadata whenever Settings opens (web download card)
+  useEffect(() => {
+    if (!isOpen || Capacitor.isNativePlatform()) return;
+    let cancelled = false;
+    setPhoneReleaseLoading(true);
+    setPhoneReleaseNow(Date.now());
+    void fetchLatestPhoneRelease().then((info) => {
+      if (cancelled) return;
+      setPhoneRelease(info);
+      setPhoneReleaseLoading(false);
+    });
+    const tick = window.setInterval(() => setPhoneReleaseNow(Date.now()), 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(tick);
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -726,13 +753,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               onClick={() => setShowNotificationsInbox(true)}
               className={`absolute top-4 right-4 w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-all ${
                 isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'
-              }`}
+              } ${notificationsUnreadCount > 0 ? 'settings-noti-bell--unread' : ''}`}
               aria-label={`Notifications${notificationsUnreadCount > 0 ? `, ${notificationsUnreadCount} unread` : ''}`}
             >
               <Icons.Bell size={20} />
               {notificationsUnreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">
-                  {notificationsUnreadCount > 99 ? '99+' : notificationsUnreadCount}
+                <span className="noti-bell-indicator" aria-hidden="true" title="Unread notifications">
+                  <span className="noti-bell-indicator__caret" />
                 </span>
               )}
             </button>
@@ -1185,21 +1212,29 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
 
-        {/* Get app on phone — separate card under the rest (web only) */}
+        {/* Phone install — always points at the rolling latest release (web only) */}
         {!Capacitor.isNativePlatform() && (
           <div className="settings-card p-6 shadow-2xl">
-            {renderSettingsCardHeader('Get app on phone', <Icons.Download size={22} />)}
-            <p className={`app-subtext text-[10px] mb-4 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-              Click to download app for free
+            {renderSettingsCardHeader('Get iCalc on your phone', <Icons.Download size={22} />)}
+            <p className={`app-subtext text-[11px] font-medium mb-2 ${isLight ? 'text-black/60' : 'text-white/60'}`} style={{ letterSpacing: 0 }}>
+              Install the newest release anytime — this link always opens the latest build.
+            </p>
+            <p className={`text-[11px] font-semibold mb-4 ${isLight ? 'text-black/45' : 'text-white/45'}`} style={{ letterSpacing: 0 }}>
+              {phoneReleaseLoading
+                ? 'Checking latest release…'
+                : phoneRelease
+                  ? `Latest release · ${formatReleaseElapsed(phoneRelease.publishedAt, phoneReleaseNow)} ago`
+                  : 'Latest release ready to install'}
             </p>
             <a
-              href="https://github.com/h8301969-stack/icalc26/releases/download/apk-latest/icalc.apk"
-              className={`w-full py-3.5 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
+              href={PHONE_APP_DOWNLOAD_URL}
+              className={`w-full py-3.5 px-4 rounded-xl font-semibold text-[12px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
                 isLight ? 'bg-blue-500 text-white' : 'bg-blue-500/90 text-white'
               }`}
+              style={{ letterSpacing: 0 }}
             >
               <Icons.Download size={16} />
-              Download iCalc.apk
+              Get latest on phone
             </a>
           </div>
         )}

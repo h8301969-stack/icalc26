@@ -2145,7 +2145,11 @@ select.app-input--dark {
 /* Vision Hub cards / action logs: no letter-spacing */
 .pos-dashboard .pos-subtext,
 .pos-dashboard .app-subtext,
-.pos-dashboard .pos-dashboard-section-title {
+.pos-dashboard .pos-dashboard-section-title,
+.pos-dashboard .action-log-row,
+.pos-dashboard .action-log-row *,
+.pos-dashboard .action-log-title,
+.pos-dashboard .action-log-meta {
   letter-spacing: 0;
 }
 .pos-dashboard .vision-hub-title {
@@ -2719,6 +2723,167 @@ select.app-input--dark {
 
 .account-toast-modal {
   transform-origin: center center;
+}
+
+/* Unread indicator on notification bells (red caret above) */
+.noti-bell-indicator {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  width: 0.7rem;
+  height: 0.7rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.noti-bell-indicator__caret {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 7px solid #ef4444;
+  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.85));
+  animation: noti-bell-caret-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes noti-bell-caret-pulse {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(-1px);
+    opacity: 0.75;
+  }
+}
+
+.floating-fab-stack {
+  position: fixed;
+  z-index: 480;
+  right: max(0.85rem, env(safe-area-inset-right));
+  bottom: max(5.5rem, calc(env(safe-area-inset-bottom) + 4.5rem));
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.floating-noti-bell,
+.floating-profiles-btn {
+  position: relative;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.28),
+    0 2px 0 rgba(0, 0, 0, 0.08);
+}
+
+.floating-noti-bell--light,
+.floating-profiles-btn--light {
+  background: rgba(255, 255, 255, 0.86);
+  color: #18181b;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.14),
+    0 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+.floating-noti-bell--dark,
+.floating-profiles-btn--dark {
+  background: rgba(24, 24, 27, 0.86);
+  color: #fafafa;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.45),
+    0 2px 0 rgba(255, 255, 255, 0.04);
+}
+
+.floating-noti-bell--unread {
+  animation: floating-noti-bell-soft 2.2s ease-in-out infinite;
+}
+
+.floating-noti-bell--unread .floating-noti-bell__icon {
+  animation: floating-noti-bell-wiggle 2.2s ease-in-out infinite;
+}
+
+@keyframes floating-noti-bell-soft {
+  0%,
+  100% {
+    transform: translateY(0);
+    box-shadow:
+      0 12px 28px rgba(0, 0, 0, 0.28),
+      0 2px 0 rgba(0, 0, 0, 0.08);
+  }
+  50% {
+    transform: translateY(-2px);
+    box-shadow:
+      0 16px 34px rgba(0, 0, 0, 0.34),
+      0 3px 0 rgba(0, 0, 0, 0.1);
+  }
+}
+
+@keyframes floating-noti-bell-wiggle {
+  0%,
+  70%,
+  100% {
+    transform: rotate(0deg);
+  }
+  75% {
+    transform: rotate(-12deg);
+  }
+  80% {
+    transform: rotate(10deg);
+  }
+  85% {
+    transform: rotate(-6deg);
+  }
+  90% {
+    transform: rotate(4deg);
+  }
+}
+
+/* Settings profile-card bell — same soft motion when unread */
+.settings-noti-bell--unread {
+  animation: settings-noti-bell-breathe 2.2s ease-in-out infinite;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+@keyframes settings-noti-bell-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+/* Admin profiles popup — ~75% screen, 16:9 */
+.admin-profiles-popup {
+  width: min(75vw, 42rem);
+  aspect-ratio: 16 / 9;
+  max-height: min(75vh, calc(75vw * 9 / 16), 28rem);
+  border-radius: 1.5rem;
+  transform-origin: center center;
+}
+
+@media (max-width: 640px) {
+  .admin-profiles-popup {
+    width: min(92vw, 42rem);
+    max-height: min(70vh, 24rem);
+    aspect-ratio: auto;
+    height: min(70vh, 24rem);
+  }
 }
 
 /* Wholesale hold menu — morph trio; keep centered under chip */

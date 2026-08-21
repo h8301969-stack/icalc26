@@ -110,11 +110,34 @@ export const useSupabaseDataSync = ({
 
   useEffect(() => {
     if (!authReady || !userId || !isCloudBackendEnabled()) return;
-    if (hydratedRef.current || hydratingRef.current) return;
 
     let cancelled = false;
 
-    const hydrate = async () => {
+    const mergeInventory = (remote: InventoryItem[]) => {
+      const localById = new Map(inventoryRef.current.map((item) => [item.id, item]));
+      return remote.map((remoteItem) => {
+        const local = localById.get(remoteItem.id);
+        const activityById = new Map<string, InventoryItem['activities'][number]>();
+        for (const a of remoteItem.activities ?? []) activityById.set(a.id, a);
+        for (const a of local?.activities ?? []) {
+          if (!activityById.has(a.id)) activityById.set(a.id, a);
+        }
+        const activities = [...activityById.values()].sort(
+          (a, b) => b.timestamp - a.timestamp
+        );
+        return {
+          ...remoteItem,
+          image: local?.image || remoteItem.image || '',
+          activities,
+        };
+      });
+    };
+
+    const hydrate = async (reason: 'mount' | 'resume') => {
+      if (cancelled || hydratingRef.current) return;
+      // First mount must run even if not hydrated; resume only after first success
+      if (reason === 'resume' && !hydratedRef.current) return;
+
       hydratingRef.current = true;
 
       try {
@@ -138,27 +161,60 @@ export const useSupabaseDataSync = ({
 
         if (cancelled) return;
 
-        // null = no remote rows yet (new account); still apply empty so UI matches DB
         if (remoteInventory?.length) {
-          setInventory(
-            remoteInventory.map((remote) => ({
-              ...remote,
-              image: remote.image || '',
-            }))
-          );
-        } else {
+          setInventory(mergeInventory(remoteInventory));
+        } else if (reason === 'mount') {
           setInventory([]);
         }
 
-        setHistory(remoteHistory?.length ? remoteHistory : []);
-        setPurchases(remotePurchases?.length ? remotePurchases : []);
-        setSuppliers(remoteSuppliers?.length ? remoteSuppliers : []);
-        setRequests(remoteRequests?.length ? remoteRequests : []);
-        setRestocks(remoteRestocks?.length ? remoteRestocks : []);
+        if (remoteHistory?.length) {
+          setHistory(remoteHistory);
+        } else if (reason === 'mount') {
+          setHistory([]);
+        }
+
+        if (remotePurchases?.length) {
+          setPurchases(remotePurchases);
+        } else if (reason === 'mount') {
+          setPurchases([]);
+        }
+
+        if (remoteSuppliers?.length) {
+          setSuppliers(remoteSuppliers);
+        } else if (reason === 'mount') {
+          setSuppliers([]);
+        }
+
+        if (remoteRequests?.length) {
+          setRequests(remoteRequests);
+        } else if (reason === 'mount') {
+          setRequests([]);
+        }
+
+        if (remoteRestocks?.length) {
+          setRestocks(remoteRestocks);
+        } else if (reason === 'mount') {
+          setRestocks([]);
+        }
 
         if (remoteInvoice) {
-          onInvoiceHydratedRef.current(remoteInvoice);
-        } else {
+          // Merge invoice action/print logs by id so other-device entries aren't dropped
+          const localPast = invoiceRef.current.pastLogs;
+          const localPrint = invoiceRef.current.printLogs;
+          const pastById = new Map(remoteInvoice.pastLogs.map((l) => [l.id, l]));
+          for (const l of localPast) {
+            if (!pastById.has(l.id)) pastById.set(l.id, l);
+          }
+          const printById = new Map(remoteInvoice.printLogs.map((l) => [l.id, l]));
+          for (const l of localPrint) {
+            if (!printById.has(l.id)) printById.set(l.id, l);
+          }
+          onInvoiceHydratedRef.current({
+            ...remoteInvoice,
+            pastLogs: [...pastById.values()].sort((a, b) => a.timestamp - b.timestamp),
+            printLogs: [...printById.values()].sort((a, b) => a.timestamp - b.timestamp),
+          });
+        } else if (reason === 'mount') {
           onInvoiceHydratedRef.current({
             invoiceName: FRESH_INVOICE_NAME,
             expression: '0',
@@ -174,17 +230,32 @@ export const useSupabaseDataSync = ({
         }
       } catch (error) {
         console.error('[iCalc sync] hydrate failed', error);
-        // Do NOT mark hydrated on failure — avoids pushing empty local state over good remote data.
-        hydratedRef.current = false;
+        if (reason === 'mount') {
+          hydratedRef.current = false;
+        }
       } finally {
         hydratingRef.current = false;
       }
     };
 
-    void hydrate();
+    void hydrate('mount');
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void hydrate('resume');
+      }
+    };
+    const onPageShow = () => {
+      void hydrate('resume');
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onPageShow);
 
     return () => {
       cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', onPageShow);
     };
   }, [authReady, userId, setHistory, setInventory, setPurchases, setSuppliers, setRequests, setRestocks]);
 
