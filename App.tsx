@@ -210,8 +210,13 @@ const AppContent: React.FC = () => {
   const [authOverlayMounted, setAuthOverlayMounted] = useState(() => !getAuthSession());
   const sessionBootstrappedRef = useRef(false);
   const isAdminPortalRef = useRef(false);
+  const accountIdRef = useRef<string | null>(null);
   /** After admin portal / Calc — force Bot API paste before calculator. */
   const [telegramGateAccount, setTelegramGateAccount] = useState<AppAccount | null>(null);
+
+  useEffect(() => {
+    accountIdRef.current = account?.id ?? null;
+  }, [account?.id]);
 
   const accountNotifications = useAccountNotifications({
     accountId: account?.id ?? null,
@@ -251,10 +256,26 @@ const AppContent: React.FC = () => {
     setSettingsSectionIndex(0);
   }, []);
 
+  /** Hold lock screen until this account has linked a Telegram bot (Skip/dev + users). */
+  const holdForTelegramLink = useCallback((acc: AppAccount | null | undefined): boolean => {
+    if (!acc?.id || isAdminPortalRef.current) return false;
+    if (isTelegramDbConnected(acc.id)) return false;
+    setTelegramGateAccount(acc);
+    setIsUnlocked(false);
+    setAuthOverlayMounted(true);
+    return true;
+  }, []);
+
   /** Logged-in path: land on calculator (close POS/settings/history overlays). */
   const openCalculatorHome = useCallback(
     (opts?: { animate?: boolean }) => {
       if (isAdminPortalRef.current) return;
+      const accId = accountIdRef.current;
+      if (accId && !isTelegramDbConnected(accId)) {
+        setIsUnlocked(false);
+        setAuthOverlayMounted(true);
+        return;
+      }
       closeAllPanels();
       setAuthOverlayMounted(false);
       if (opts?.animate) setIsCalculatorEntering(true);
@@ -266,6 +287,12 @@ const AppContent: React.FC = () => {
   /** Foreground resume: keep whatever screen the user left (do not close panels). */
   const resumeWhereLeftOff = useCallback(() => {
     if (isAdminPortalRef.current) return;
+    const accId = accountIdRef.current;
+    if (accId && !isTelegramDbConnected(accId)) {
+      setIsUnlocked(false);
+      setAuthOverlayMounted(true);
+      return;
+    }
     setAuthOverlayMounted(false);
     setIsUnlocked(true);
   }, []);
@@ -304,10 +331,15 @@ const AppContent: React.FC = () => {
   }, [isAdminPortal]);
 
   // Cold start only: signed-in users skip auth once. Later account hydrates must not reset UI.
+  // Never unlock while Telegram DB is still unlinked (Skip/dev must show Bot API popup).
   useEffect(() => {
     if (!authReady) return;
 
     if (account) {
+      if (!isAdminPortal && holdForTelegramLink(account)) {
+        sessionBootstrappedRef.current = true;
+        return;
+      }
       if (!isAdminPortal && !sessionBootstrappedRef.current) {
         openCalculatorHome({ animate: true });
       } else if (!isAdminPortal && !isUnlocked) {
@@ -321,7 +353,7 @@ const AppContent: React.FC = () => {
     setIsUnlocked(false);
     setAuthOverlayMounted(true);
     sessionBootstrappedRef.current = true;
-  }, [authReady, account, isAdminPortal, isUnlocked, openCalculatorHome, resumeWhereLeftOff]);
+  }, [authReady, account, isAdminPortal, isUnlocked, openCalculatorHome, resumeWhereLeftOff, holdForTelegramLink]);
 
   // Admin portal always runs as the @admin profile.
   useEffect(() => {
@@ -420,6 +452,14 @@ const AppContent: React.FC = () => {
       activeProfileId: nextActive,
     });
     triggerHaptic(2);
+    // Bot API must be linked first (Skip/dev clears it so the paste popup always shows).
+    if (!isTelegramDbConnected(acc.id)) {
+      setTelegramGateAccount(acc);
+      setIsUnlocked(false);
+      setAuthOverlayMounted(true);
+      return;
+    }
+    setTelegramGateAccount(null);
     setIsCalculatorEntering(true);
     setIsUnlocked(true);
     setAuthOverlayMounted(false);
@@ -446,7 +486,7 @@ const AppContent: React.FC = () => {
       if (acc) updateSettings({ accountPlan: 'premium' });
     }
 
-    // Admin → Calc: also require Bot API paste when not linked (for testing).
+    // Admin → Calc: reuse shared testing bot, or ask once for Bot API.
     if (acc && !isTelegramDbConnected(acc.id)) {
       setTelegramGateAccount(acc);
       setIsUnlocked(false);
@@ -1035,7 +1075,8 @@ const AppContent: React.FC = () => {
          onKeyDown={handleKeyDown}
          role="main">
       <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} />
-      {authOverlayMounted && !(account && isUnlocked) && (
+      {(authOverlayMounted && !(account && isUnlocked)) ||
+      (account && !isUnlocked && !isTelegramDbConnected(account.id)) ? (
         <AuthOverlay
           isLight={isLight}
           mode={authMode}
@@ -1046,18 +1087,19 @@ const AppContent: React.FC = () => {
           onSignup={handleSignup}
           onLogin={handleLogin}
           onAuthComplete={(acc) => {
-            setTelegramGateAccount(null);
             handleAuthSuccess(acc);
           }}
           onAdminPortal={handleAdminPortal}
           onFinalizeAccess={handleFinalizeAccess}
           onDevSkip={import.meta.env.DEV ? handleDevSkip : undefined}
-          onQuickUnlock={handleQuickUnlock}
+          onQuickUnlock={
+            account && isTelegramDbConnected(account.id) ? handleQuickUnlock : undefined
+          }
           onExitComplete={() => setAuthOverlayMounted(false)}
           telegramGateAccount={telegramGateAccount}
           onTelegramGateConsumed={() => setTelegramGateAccount(null)}
         />
-      )}
+      ) : null}
       {isUnlocked && (
       <>
       <div

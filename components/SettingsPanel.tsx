@@ -39,7 +39,7 @@ interface SettingsSlice {
   disableCalculatorCard?: boolean;
   layoutMode?: 'portrait' | 'landscape';
   layoutModeAuto?: boolean;
-  invoiceSwitcherMode?: 'horizontal' | 'grid' | 'vertical' | 'list';
+  invoiceSwitcherMode?: 'horizontal' | 'list';
   expressionViewMode?: 'auto' | 'list';
   receiptLayoutMode?: 'summary' | 'full';
   visionHubDrawerMode?: 'drag' | 'click';
@@ -896,12 +896,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 size="sm"
                 isLight={isLight}
                 ariaLabel="Invoice switcher layout"
-                value={draft.invoiceSwitcherMode ?? 'horizontal'}
-                onChange={(invoiceSwitcherMode) => patchDraft({ invoiceSwitcherMode })}
+                value={
+                  draft.invoiceSwitcherMode === 'list' ? 'list' : 'horizontal'
+                }
+                onChange={(invoiceSwitcherMode) =>
+                  patchDraft({
+                    invoiceSwitcherMode: invoiceSwitcherMode as 'horizontal' | 'list',
+                  })
+                }
                 options={[
                   { id: 'horizontal', label: 'Horizontal', icon: <Icons.Carousel size={14} /> },
-                  { id: 'vertical', label: 'Vertical', icon: <Icons.Stack size={14} /> },
-                  { id: 'grid', label: 'Scattered', icon: <Icons.Grid size={14} /> },
                   { id: 'list', label: 'List', icon: <Icons.List size={14} /> },
                 ]}
               />

@@ -3,6 +3,7 @@ import { Icons } from '../constants';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { CartLineItem } from '../types';
 import { printerInstance } from '../utils/bluetoothPrinter';
+import { sendInvoiceImageToLinkedTelegram } from '../utils/invoiceShareImage';
 import InvoiceReceiptPreview from './InvoiceReceiptPreview';
 import PrinterConnectModal from './PrinterConnectModal';
 
@@ -275,6 +276,18 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
         if (ok) {
           onInvoicePrinted?.(invoice.name, invoice.total, invoice.items);
           showPrintSuccess();
+          void sendInvoiceImageToLinkedTelegram(
+            {
+              invoiceName: invoice.name,
+              total: invoice.total,
+              currency,
+              attendantName,
+              items: invoice.items,
+            },
+            { layoutMode: 'full' }
+          ).then((tg) => {
+            if (!tg.ok) console.warn('[iCalc] Telegram invoice image send failed', tg.error);
+          });
         }
       } finally {
         setIsPrinting(false);

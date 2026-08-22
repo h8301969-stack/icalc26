@@ -97,7 +97,7 @@ const renderSimpleMarkdown = (source: string): string => {
   return out.join('');
 };
 
-type AdminTab = 'unused' | 'pending' | 'approved';
+type AdminTab = 'new' | 'pending' | 'active';
 
 interface AdminCodeDashboardProps {
   isLight: boolean;
@@ -110,15 +110,40 @@ interface AdminCodeDashboardProps {
 }
 
 const TABS: { id: AdminTab; label: string }[] = [
-  { id: 'unused', label: 'Issued' },
+  { id: 'new', label: 'New' },
   { id: 'pending', label: 'Pending' },
-  { id: 'approved', label: 'Approved' },
+  { id: 'active', label: 'Active' },
 ];
+
+const tabToApi = (tab: AdminTab): 'unused' | 'pending' | 'approved' =>
+  tab === 'new' ? 'unused' : tab === 'active' ? 'approved' : 'pending';
+
+const PLAN_COPY: Record<
+  AccessCodePlan,
+  { title: string; blurb: string; howTo: string; accent: string }
+> = {
+  premium: {
+    title: 'Premium',
+    blurb: 'Full shop account — mini-profiles allowed',
+    howTo:
+      'Give this code to an owner who needs staff profiles (@admin + workers), inventory, and multi-device use. They sign up with the 7-character code, wait for your Approve, then connect Telegram.',
+    accent: 'bg-violet-600',
+  },
+  regular: {
+    title: 'Regular',
+    blurb: 'Single-operator account — no mini-profiles',
+    howTo:
+      'Give this code to a solo seller. One profile only (cannot add staff mini-profiles). Same signup → Approve → Telegram connect flow.',
+    accent: 'bg-zinc-700',
+  },
+};
 
 const LONG_PRESS_MS = 520;
 const COPY_FEEDBACK_MS = 2000;
 const CARD_STAGGER_MS = 48;
 const HISTORY_STAGGER_MS = 40;
+/** Fake generator load — snappy for admin UX */
+const ISSUE_FAKE_LOAD_MS = 280;
 
 const cardEnterStyle = (index: number): React.CSSProperties => ({
   animationDelay: `${Math.min(index, 14) * CARD_STAGGER_MS}ms`,
@@ -172,7 +197,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   onClose,
   onReturnToCalc,
 }) => {
-  const [tab, setTab] = useState<AdminTab>('pending');
+  const [tab, setTab] = useState<AdminTab>('new');
   const [codes, setCodes] = useState<AccessCodeRow[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -215,10 +240,15 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
 
   const loadCodes = useCallback(
     async (options?: { showLoading?: boolean }): Promise<AccessCodeRow[]> => {
+      if (tab === 'new') {
+        setCodes([]);
+        setLoading(false);
+        return [];
+      }
       const showLoading = options?.showLoading ?? false;
       if (showLoading) setLoading(true);
       setError(null);
-      const result = await adminListCodes(adminToken, tab);
+      const result = await adminListCodes(adminToken, tabToApi(tab));
       if (result.ok === false) {
         setError(result.error);
         setCodes([]);
@@ -233,14 +263,14 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     [adminToken, tab]
   );
 
-  // One-time wipe of the old 200 unused seed pool when admin portal opens.
+  // Clear leftover unused codes when admin portal opens.
   useEffect(() => {
     if (clearedUnusedRef.current) return;
     clearedUnusedRef.current = true;
     void adminClearUnusedAccessCodes(adminToken).then((result) => {
       if (result.ok && result.deleted > 0) {
-        setSuccessNotice(`Cleared ${result.deleted} old unused codes. Mint new ones with Premium / Regular.`);
-        window.setTimeout(() => setSuccessNotice(null), 4000);
+        setSuccessNotice(`Cleared ${result.deleted} unused codes. Use New → Premium / Regular.`);
+        window.setTimeout(() => setSuccessNotice(null), 3500);
       }
     });
   }, [adminToken]);
@@ -248,6 +278,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   useEffect(() => {
     void loadCodes({ showLoading: true });
     if (tab !== 'pending') void refreshPendingCount();
+    if (tab === 'new') return;
     const interval = window.setInterval(() => {
       void loadCodes();
       if (tab !== 'pending') void refreshPendingCount();
@@ -278,22 +309,27 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     async (plan: AccessCodePlan) => {
       setIssuingPlan(plan);
       setError(null);
+      setLastIssuedCode(null);
+      // Drop any previous unused codes so New stays a clean generator.
+      await adminClearUnusedAccessCodes(adminToken);
+      const started = Date.now();
       const result = await adminIssueAccessCode(adminToken, plan);
+      const elapsed = Date.now() - started;
+      if (elapsed < ISSUE_FAKE_LOAD_MS) {
+        await new Promise<void>((r) => window.setTimeout(r, ISSUE_FAKE_LOAD_MS - elapsed));
+      }
       setIssuingPlan(null);
       if (result.ok === false) {
         setError(result.error);
         return;
       }
       setLastIssuedCode(result.code);
-      setSuccessNotice(
-        `${plan === 'premium' ? 'Premium' : 'Regular'} code ${result.code} ready — tap to copy.`
-      );
-      window.setTimeout(() => setSuccessNotice(null), 5000);
-      setTab('unused');
+      setSuccessNotice(`${PLAN_COPY[plan].title} code ready — copied`);
+      window.setTimeout(() => setSuccessNotice(null), 4000);
+      setTab('new');
       await handleCopyCode(result.code);
-      void loadCodes({ showLoading: false });
     },
-    [adminToken, handleCopyCode, loadCodes]
+    [adminToken, handleCopyCode]
   );
 
   const renderCopyableCode = (
@@ -606,41 +642,6 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         </div>
       </div>
 
-      <div className="px-4 pb-3 max-w-lg mx-auto w-full grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          disabled={!!issuingPlan}
-          onClick={() => void handleIssueCode('premium')}
-          className="admin-interactive rounded-2xl px-3 py-3.5 text-left bg-violet-600 text-white shadow-lg disabled:opacity-50"
-        >
-          <p className="text-[10px] font-black uppercase tracking-wider opacity-80">Generate</p>
-          <p className="text-base font-black">
-            {issuingPlan === 'premium' ? 'Minting…' : 'Premium'}
-          </p>
-          <p className="text-[9px] font-semibold opacity-75 mt-0.5" style={{ letterSpacing: 0 }}>
-            Mini-profiles allowed
-          </p>
-        </button>
-        <button
-          type="button"
-          disabled={!!issuingPlan}
-          onClick={() => void handleIssueCode('regular')}
-          className="admin-interactive rounded-2xl px-3 py-3.5 text-left bg-zinc-700 text-white shadow-lg disabled:opacity-50"
-        >
-          <p className="text-[10px] font-black uppercase tracking-wider opacity-80">Generate</p>
-          <p className="text-base font-black">
-            {issuingPlan === 'regular' ? 'Minting…' : 'Regular'}
-          </p>
-          <p className="text-[9px] font-semibold opacity-75 mt-0.5" style={{ letterSpacing: 0 }}>
-            Single profile only
-          </p>
-        </button>
-      </div>
-
-      <p className="app-subtext text-center opacity-45 px-4 pb-2 text-white">
-        Premium / Regular mint a fresh 7-char code · tap code to copy · hold card for details
-      </p>
-
       <div className="flex-1 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {error && (
           <p className="admin-error-enter text-center text-sm font-bold text-red-500 mb-3" role="alert">
@@ -650,19 +651,70 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         {successNotice && (
           <p className="admin-section-enter text-center app-hint font-bold text-emerald-500 mb-3 px-2" role="status">
             {successNotice}
-            {lastIssuedCode ? ` (${lastIssuedCode})` : ''}
           </p>
         )}
 
-        {loading ? (
+        {tab === 'new' ? (
+          <div className="admin-list-enter max-w-lg mx-auto space-y-4">
+            <p className="app-subtext text-center opacity-50 text-[11px]" style={{ letterSpacing: 0 }}>
+              Tap a plan to generate a fresh 7-character code. Previous unused codes are cleared first.
+            </p>
+            {(['premium', 'regular'] as AccessCodePlan[]).map((plan) => {
+              const copy = PLAN_COPY[plan];
+              const busy = issuingPlan === plan;
+              return (
+                <button
+                  key={plan}
+                  type="button"
+                  disabled={!!issuingPlan}
+                  onClick={() => void handleIssueCode(plan)}
+                  className={`admin-interactive w-full rounded-[22px] px-4 py-4 text-left text-white shadow-lg disabled:opacity-55 ${copy.accent}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black uppercase tracking-wider opacity-80">
+                        {busy ? 'Generating…' : 'Code generator'}
+                      </p>
+                      <p className="text-xl font-black mt-0.5">{copy.title}</p>
+                      <p className="text-[11px] font-semibold opacity-85 mt-1" style={{ letterSpacing: 0 }}>
+                        {copy.blurb}
+                      </p>
+                    </div>
+                    {busy ? (
+                      <span className="auth-spinner shrink-0 mt-1" aria-hidden="true" />
+                    ) : (
+                      <span className="text-2xl font-black opacity-40 shrink-0">+</span>
+                    )}
+                  </div>
+                  <p
+                    className="text-[10px] font-medium opacity-75 mt-3 leading-relaxed"
+                    style={{ letterSpacing: 0 }}
+                  >
+                    {copy.howTo}
+                  </p>
+                </button>
+              );
+            })}
+
+            {lastIssuedCode && (
+              <div className={`rounded-2xl border px-4 py-4 ${panelClass}`}>
+                <p className="text-[10px] font-black uppercase opacity-50 mb-2" style={{ letterSpacing: 0 }}>
+                  Latest code
+                </p>
+                {renderCopyableCode(lastIssuedCode, 'text-2xl')}
+                <p className="app-subtext text-[10px] opacity-50 mt-3" style={{ letterSpacing: 0 }}>
+                  Share this code for signup. It moves to Pending when they request access, then Active after you Approve.
+                </p>
+              </div>
+            )}
+          </div>
+        ) : loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="auth-loading-ring auth-loading-ring--outer w-16 h-16" aria-hidden="true" />
           </div>
         ) : codes.length === 0 ? (
           <p className={`admin-list-enter text-center text-sm opacity-50 py-16 ${isLight ? 'text-black' : 'text-white'}`}>
-            {tab === 'unused'
-              ? 'No issued codes yet. Tap Premium or Regular to mint one.'
-              : 'No codes in this view.'}
+            {tab === 'pending' ? 'No pending requests.' : 'No active codes in use.'}
           </p>
         ) : (
           <div key={tab} className="admin-list-enter max-w-lg mx-auto space-y-3">
@@ -695,6 +747,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                       style={{ letterSpacing: 0 }}
                     >
                       {row.plan === 'premium' ? 'Premium' : 'Regular'}
+                      {tab === 'active' ? ` · ${row.status}` : ''}
                     </p>
                     {row.username && (
                       <p className="text-sm font-bold truncate mt-1">{row.username}</p>
@@ -702,18 +755,32 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                     {row.email && (
                       <p className="text-xs opacity-60 truncate">{row.email}</p>
                     )}
-                    {row.business_name && (
+                    {tab === 'active' && (
+                      <div className="mt-2 space-y-0.5 text-[11px] font-semibold opacity-70" style={{ letterSpacing: 0 }}>
+                        {row.user_id && <p className="truncate">User: {row.user_id}</p>}
+                        {row.business_name && <p className="truncate">Business: {row.business_name}</p>}
+                        {row.business_phone && <p className="truncate">Phone: {row.business_phone}</p>}
+                        {row.business_address && <p className="truncate">Address: {row.business_address}</p>}
+                        {row.requested_at && <p>Requested: {formatWhen(row.requested_at)}</p>}
+                        {row.approved_at && <p>Approved: {formatWhen(row.approved_at)}</p>}
+                        {row.paused_at && <p>Paused: {formatWhen(row.paused_at)}</p>}
+                        {row.created_at && <p>Created: {formatWhen(row.created_at)}</p>}
+                      </div>
+                    )}
+                    {row.business_name && tab !== 'active' && (
                       <p className="text-sm font-bold truncate mt-1">{row.business_name}</p>
                     )}
-                    {row.business_phone && (
+                    {row.business_phone && tab !== 'active' && (
                       <p className="text-xs opacity-60 truncate">{row.business_phone}</p>
                     )}
                     {row.admin_memo && (
                       <p className="text-xs opacity-70 mt-2 line-clamp-2 italic">"{row.admin_memo}"</p>
                     )}
-                    <p className="text-[10px] uppercase tracking-widest opacity-45 mt-2 font-black">
-                      {row.status}
-                    </p>
+                    {tab !== 'active' && (
+                      <p className="text-[10px] uppercase tracking-widest opacity-45 mt-2 font-black">
+                        {row.status}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-2 shrink-0">
@@ -739,7 +806,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                         </button>
                       </>
                     )}
-                    {tab === 'approved' && row.status === 'approved' && row.user_id && (
+                    {tab === 'active' && row.status === 'approved' && row.user_id && (
                       <button
                         type="button"
                         disabled={actionCode === row.code}
@@ -753,7 +820,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                         Revoke
                       </button>
                     )}
-                    {tab === 'approved' && row.status === 'paused' && (
+                    {tab === 'active' && row.status === 'paused' && (
                       <button
                         type="button"
                         disabled={actionCode === row.code}

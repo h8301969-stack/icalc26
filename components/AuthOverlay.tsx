@@ -18,8 +18,10 @@ import { supabase } from '../utils/supabase';
 import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
 import {
   connectTelegramDatabase,
+  getSharedTelegramDbConfig,
   isTelegramDbConnected,
   looksLikeBotToken,
+  setTelegramDbConfig,
 } from '../utils/telegramDb';
 
 type AuthMode = 'signup' | 'login';
@@ -150,9 +152,9 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const isLoading = isSubmitting || isEntering;
   const showSignupInsight = signupConfirmation !== null;
   const showBusinessSetup = businessSetup !== null || pendingTelegramAccount !== null;
-  const isIdle = pane === 'idle' && !isLoading;
-  const showAuthForm = pane === 'auth';
-  const showSettings = pane === 'settings';
+  const isIdle = pane === 'idle' && !isLoading && !showBusinessSetup;
+  const showAuthForm = pane === 'auth' && !showBusinessSetup;
+  const showSettings = pane === 'settings' && !showBusinessSetup;
   const settingsSection: LockSettingsSection =
     LOCK_SETTINGS_SECTIONS[settingsSectionIndex % LOCK_SETTINGS_SECTIONS.length];
 
@@ -483,35 +485,38 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         return;
       }
       if (result?.account) {
-        // Dev skip also requires Bot API paste so you can test Telegram DB.
-        if (!isTelegramDbConnected(result.account.id)) {
-          setIsSubmitting(false);
-          setLoadingPhase('default');
-          setPendingTelegramAccount(result.account);
-          setAdminInfoName(
-            typeof settings?.businessName === 'string' && settings.businessName
-              ? settings.businessName
-              : 'Dev shop'
-          );
-          setAdminInfoPhone(typeof settings?.businessPhone === 'string' ? settings.businessPhone : '');
-          setAdminInfoAddress(
-            typeof settings?.businessAddress === 'string' ? settings.businessAddress : ''
-          );
-          setTelegramBotToken('');
-          setTelegramChatId('');
-          setPane('auth');
-          setAuthCardAnimKey((k) => k + 1);
+        // Reuse stored testing bot (same for Skip/dev + admin portal).
+        const shared = getSharedTelegramDbConfig();
+        if (shared || isTelegramDbConnected(result.account.id)) {
+          if (shared) setTelegramDbConfig(result.account.id, shared);
+          flushSync(() => setIsEntering(true));
+          if ('vibrate' in navigator) navigator.vibrate([10, 30]);
+          await wait(AUTH_SUCCESS_HOLD_MS);
+          flushSync(() => {
+            setIsEntering(false);
+            setIsSubmitting(false);
+            setIsExiting(true);
+          });
+          onAuthComplete(result.account);
           return;
         }
-        flushSync(() => setIsEntering(true));
-        if ('vibrate' in navigator) navigator.vibrate([10, 30]);
-        await wait(AUTH_SUCCESS_HOLD_MS);
-        flushSync(() => {
-          setIsEntering(false);
-          setIsSubmitting(false);
-          setIsExiting(true);
-        });
-        onAuthComplete(result.account);
+        setIsSubmitting(false);
+        setLoadingPhase('default');
+        setIsEntering(false);
+        setIsExiting(false);
+        setPendingTelegramAccount(result.account);
+        setAdminInfoName(
+          typeof settings?.businessName === 'string' && settings.businessName
+            ? settings.businessName
+            : 'Dev shop'
+        );
+        setAdminInfoPhone(typeof settings?.businessPhone === 'string' ? settings.businessPhone : '');
+        setAdminInfoAddress(
+          typeof settings?.businessAddress === 'string' ? settings.businessAddress : ''
+        );
+        setTelegramBotToken('');
+        setTelegramChatId('');
+        setPane('idle');
         return;
       }
       setIsSubmitting(false);
@@ -522,9 +527,17 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     }
   }, [isDev, isLoading, isExiting, onDevSkip, onAdminPortal, onAuthComplete, settings]);
 
-  // Admin portal → Calc: force Bot API connect popup when gated.
+  // Admin portal → Calc: reuse shared testing bot, or show Bot API paste once.
   useEffect(() => {
     if (!telegramGateAccount) return;
+    const shared = getSharedTelegramDbConfig();
+    if (shared || isTelegramDbConnected(telegramGateAccount.id)) {
+      if (shared) setTelegramDbConfig(telegramGateAccount.id, shared);
+      const acc = telegramGateAccount;
+      onTelegramGateConsumed?.();
+      onAuthComplete(acc);
+      return;
+    }
     setPendingTelegramAccount(telegramGateAccount);
     setAdminInfoName(
       typeof settings?.businessName === 'string' && settings.businessName
@@ -535,10 +548,9 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     setAdminInfoAddress(typeof settings?.businessAddress === 'string' ? settings.businessAddress : '');
     setTelegramBotToken('');
     setTelegramChatId('');
-    setPane('auth');
-    setAuthCardAnimKey((k) => k + 1);
+    setPane('idle');
     onTelegramGateConsumed?.();
-  }, [telegramGateAccount, onTelegramGateConsumed, settings]);
+  }, [telegramGateAccount, onTelegramGateConsumed, settings, onAuthComplete]);
 
   const dismissSignupConfirmation = useCallback(() => {
     const confirmedEmail = signupConfirmation?.email ?? '';
@@ -1240,134 +1252,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
               </div>
             </div>
 
-            {showBusinessSetup && (businessSetup || pendingTelegramAccount) && (
-              <div
-                className="absolute inset-0 z-10 flex items-center justify-center p-4 rounded-2xl bg-black/25 backdrop-blur-sm"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="business-setup-title"
-              >
-                <div
-                  className={`w-full max-w-[min(360px,94vw)] max-h-[88vh] overflow-y-auto custom-scrollbar rounded-2xl border shadow-2xl animate-insight-pop ${
-                    isLight
-                      ? 'bg-white border-black/10 text-black'
-                      : 'bg-zinc-900 border-white/12 text-white'
-                  }`}
-                >
-                  <div className="px-5 pt-5 pb-2 text-center">
-                    <div className="flex items-center justify-center gap-2 mb-2">
-                      <Icons.Trends size={20} className="text-emerald-500" />
-                      <h4 id="business-setup-title" className="app-subtext text-sm font-black">
-                        {businessSetup ? 'Access granted · Admin info' : 'Connect Telegram database'}
-                      </h4>
-                    </div>
-                    <p
-                      className={`app-subtext text-[10px] leading-relaxed opacity-55 ${isLight ? 'text-black' : 'text-white'}`}
-                      style={{ letterSpacing: 0 }}
-                    >
-                      {businessSetup
-                        ? 'Your 7-character code was approved. Connect a Telegram bot to store this account’s data — Supabase keeps auth/codes only.'
-                        : 'Link a BotFather token to this account’s database. App data stays off Supabase.'}
-                    </p>
-                  </div>
-
-                  {businessInfoLoading && businessSetup ? (
-                    <div className="px-5 pb-6 flex flex-col items-center gap-3">
-                      <span className="auth-spinner" aria-hidden="true" />
-                      <p className="app-subtext text-[10px] opacity-45">Preparing admin setup…</p>
-                    </div>
-                  ) : (
-                    <div className="px-5 pb-5 pt-2 space-y-3">
-                      {receivedBusinessInfo?.businessName ? (
-                        <BusinessInfoReceiptCard
-                          variant="modal"
-                          badgeLabel="From admin"
-                          businessName={receivedBusinessInfo.businessName}
-                          businessPhone={receivedBusinessInfo.businessPhone}
-                          businessAddress={receivedBusinessInfo.businessAddress}
-                          className="w-full"
-                        />
-                      ) : null}
-
-                      <label className="block">
-                        <span className={FORM_FIELD_LABEL}>Business name *</span>
-                        <input
-                          type="text"
-                          value={adminInfoName}
-                          onChange={(e) => setAdminInfoName(e.target.value)}
-                          className={formInputClass(isLight)}
-                          placeholder="Shop / business name"
-                          autoComplete="organization"
-                        />
-                      </label>
-                      <label className="block">
-                        <span className={FORM_FIELD_LABEL}>Phone</span>
-                        <input
-                          type="tel"
-                          value={adminInfoPhone}
-                          onChange={(e) => setAdminInfoPhone(e.target.value)}
-                          className={formInputClass(isLight)}
-                          placeholder="Optional"
-                          autoComplete="tel"
-                        />
-                      </label>
-                      <label className="block">
-                        <span className={FORM_FIELD_LABEL}>Address</span>
-                        <input
-                          type="text"
-                          value={adminInfoAddress}
-                          onChange={(e) => setAdminInfoAddress(e.target.value)}
-                          className={formInputClass(isLight)}
-                          placeholder="Optional"
-                          autoComplete="street-address"
-                        />
-                      </label>
-                      <label className="block">
-                        <span className={FORM_FIELD_LABEL}>Telegram Bot API *</span>
-                        <PasswordField
-                          isLight={isLight}
-                          value={telegramBotToken}
-                          onChange={setTelegramBotToken}
-                          placeholder="123456:AA… from BotFather"
-                          autoComplete="off"
-                        />
-                        <span className={`app-subtext text-[9px] mt-1 block opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
-                          Required. Message /start to your bot once, then continue. Token stays on this device.
-                        </span>
-                      </label>
-                      <label className="block">
-                        <span className={FORM_FIELD_LABEL}>Telegram chat id</span>
-                        <input
-                          type="text"
-                          value={telegramChatId}
-                          onChange={(e) => setTelegramChatId(e.target.value)}
-                          className={formInputClass(isLight)}
-                          placeholder="Optional if you already /start’d the bot"
-                          autoComplete="off"
-                        />
-                      </label>
-
-                      {error && (
-                        <p className="text-xs font-bold text-red-500 text-center" role="alert">
-                          {error}
-                        </p>
-                      )}
-                      <button
-                        type="button"
-                        disabled={
-                          isSubmitting || !adminInfoName.trim() || !looksLikeBotToken(telegramBotToken)
-                        }
-                        onClick={() => void handleBusinessReceiveContinue()}
-                        className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.25em] transition-all active:scale-[0.98] min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
-                      >
-                        {isSubmitting ? 'Connecting database…' : 'Connect & continue'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
             {showSignupInsight && signupConfirmation && (
               <div
                 className="absolute inset-0 z-10 flex items-center justify-center p-4 rounded-2xl bg-black/25 backdrop-blur-sm"
@@ -1490,6 +1374,136 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 }
               />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top-level so it still shows after Skip (dev) sets existingAccount */}
+      {showBusinessSetup && (businessSetup || pendingTelegramAccount) && (
+        <div
+          className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="business-setup-title"
+        >
+          <div
+            className={`w-full max-w-[min(360px,94vw)] max-h-[88vh] overflow-y-auto custom-scrollbar rounded-2xl border shadow-2xl animate-insight-pop ${
+              isLight
+                ? 'bg-white border-black/10 text-black'
+                : 'bg-zinc-900 border-white/12 text-white'
+            }`}
+          >
+            <div className="px-5 pt-5 pb-2 text-center">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <Icons.Trends size={20} className="text-emerald-500" />
+                <h4 id="business-setup-title" className="app-subtext text-sm font-black">
+                  {businessSetup ? 'Access granted · Admin info' : 'Connect Telegram database'}
+                </h4>
+              </div>
+              <p
+                className={`app-subtext text-[10px] leading-relaxed opacity-55 ${isLight ? 'text-black' : 'text-white'}`}
+                style={{ letterSpacing: 0 }}
+              >
+                {businessSetup
+                  ? 'Your 7-character code was approved. Connect a Telegram bot to store this account’s data — Supabase keeps auth/codes only.'
+                  : 'Paste your BotFather token here (dev skip / admin). Message /start to the bot once, then continue.'}
+              </p>
+            </div>
+
+            {businessInfoLoading && businessSetup ? (
+              <div className="px-5 pb-6 flex flex-col items-center gap-3">
+                <span className="auth-spinner" aria-hidden="true" />
+                <p className="app-subtext text-[10px] opacity-45">Preparing admin setup…</p>
+              </div>
+            ) : (
+              <div className="px-5 pb-5 pt-2 space-y-3">
+                {receivedBusinessInfo?.businessName ? (
+                  <BusinessInfoReceiptCard
+                    variant="modal"
+                    badgeLabel="From admin"
+                    businessName={receivedBusinessInfo.businessName}
+                    businessPhone={receivedBusinessInfo.businessPhone}
+                    businessAddress={receivedBusinessInfo.businessAddress}
+                    className="w-full"
+                  />
+                ) : null}
+
+                <label className="block">
+                  <span className={FORM_FIELD_LABEL}>Business name *</span>
+                  <input
+                    type="text"
+                    value={adminInfoName}
+                    onChange={(e) => setAdminInfoName(e.target.value)}
+                    className={formInputClass(isLight)}
+                    placeholder="Shop / business name"
+                    autoComplete="organization"
+                  />
+                </label>
+                <label className="block">
+                  <span className={FORM_FIELD_LABEL}>Phone</span>
+                  <input
+                    type="tel"
+                    value={adminInfoPhone}
+                    onChange={(e) => setAdminInfoPhone(e.target.value)}
+                    className={formInputClass(isLight)}
+                    placeholder="Optional"
+                    autoComplete="tel"
+                  />
+                </label>
+                <label className="block">
+                  <span className={FORM_FIELD_LABEL}>Address</span>
+                  <input
+                    type="text"
+                    value={adminInfoAddress}
+                    onChange={(e) => setAdminInfoAddress(e.target.value)}
+                    className={formInputClass(isLight)}
+                    placeholder="Optional"
+                    autoComplete="street-address"
+                  />
+                </label>
+                <label className="block">
+                  <span className={FORM_FIELD_LABEL}>Telegram Bot API *</span>
+                  <PasswordField
+                    isLight={isLight}
+                    value={telegramBotToken}
+                    onChange={setTelegramBotToken}
+                    placeholder="123456:AA… from BotFather"
+                    autoComplete="off"
+                    autoFocus
+                  />
+                  <span className={`app-subtext text-[9px] mt-1 block opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
+                    Required. Token stays on this device only.
+                  </span>
+                </label>
+                <label className="block">
+                  <span className={FORM_FIELD_LABEL}>Telegram chat id</span>
+                  <input
+                    type="text"
+                    value={telegramChatId}
+                    onChange={(e) => setTelegramChatId(e.target.value)}
+                    className={formInputClass(isLight)}
+                    placeholder="Optional if you already /start’d the bot"
+                    autoComplete="off"
+                  />
+                </label>
+
+                {error && (
+                  <p className="text-xs font-bold text-red-500 text-center" role="alert">
+                    {error}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  disabled={
+                    isSubmitting || !adminInfoName.trim() || !looksLikeBotToken(telegramBotToken)
+                  }
+                  onClick={() => void handleBusinessReceiveContinue()}
+                  className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.25em] transition-all active:scale-[0.98] min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
+                >
+                  {isSubmitting ? 'Connecting database…' : 'Connect & continue'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

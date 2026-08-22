@@ -28,6 +28,8 @@ export interface TelegramDbRow<T = unknown> {
 
 const configKey = (accountId: string) => `icalc_telegram_db_${accountId}`;
 const indexKey = (accountId: string) => `icalc_telegram_db_index_${accountId}`;
+/** Shared device link for Skip (dev) + admin portal testing (same bot/chat). */
+const SHARED_CONFIG_KEY = 'icalc_telegram_db_shared_dev';
 
 type EntityIndex = Record<string, number>; // `${kind}:${id}` → message_id
 
@@ -35,23 +37,44 @@ type EntityIndex = Record<string, number>; // `${kind}:${id}` → message_id
 export const looksLikeBotToken = (token: string): boolean =>
   /^\d{6,}:[A-Za-z0-9_-]{20,}$/.test(token.trim());
 
-export const getTelegramDbConfig = (accountId: string): TelegramDbConfig | null => {
-  if (!accountId) return null;
-  const raw = storage.get<TelegramDbConfig | null>(configKey(accountId), null);
+export const getSharedTelegramDbConfig = (): TelegramDbConfig | null => {
+  const raw = storage.get<TelegramDbConfig | null>(SHARED_CONFIG_KEY, null);
   if (!raw?.botToken || !raw.chatId) return null;
   return raw;
 };
 
-export const isTelegramDbConnected = (accountId: string | null | undefined): boolean =>
-  !!accountId && !!getTelegramDbConfig(accountId);
+export const setSharedTelegramDbConfig = (config: TelegramDbConfig): void => {
+  storage.set(SHARED_CONFIG_KEY, config);
+};
+
+export const getTelegramDbConfig = (accountId: string): TelegramDbConfig | null => {
+  if (!accountId) return getSharedTelegramDbConfig();
+  const raw = storage.get<TelegramDbConfig | null>(configKey(accountId), null);
+  if (raw?.botToken && raw?.chatId) return raw;
+  // Reuse shared testing bot for Skip/dev + admin sessions.
+  const shared = getSharedTelegramDbConfig();
+  if (shared) {
+    storage.set(configKey(accountId), shared);
+    return shared;
+  }
+  return null;
+};
+
+export const isTelegramDbConnected = (accountId: string | null | undefined): boolean => {
+  if (accountId && getTelegramDbConfig(accountId)) return true;
+  return !!getSharedTelegramDbConfig();
+};
 
 export const setTelegramDbConfig = (accountId: string, config: TelegramDbConfig): void => {
   storage.set(configKey(accountId), config);
+  // Always mirror for Skip (dev) / admin portal so both reuse the same bot.
+  setSharedTelegramDbConfig(config);
 };
 
 export const clearTelegramDbConfig = (accountId: string): void => {
   storage.set(configKey(accountId), null);
   storage.set(indexKey(accountId), {});
+  // Do not clear SHARED_CONFIG_KEY — Skip/dev and admin keep the testing bot.
 };
 
 const getIndex = (accountId: string): EntityIndex =>
@@ -239,4 +262,53 @@ export async function telegramSaveSnapshot(
   return telegramUpsertEntity(accountId, 'snapshot', snapshotKind, data).then((r) =>
     r.ok ? { ok: true as const } : r
   );
+}
+
+const canvasToPngBlob = (canvas: HTMLCanvasElement): Promise<Blob | null> =>
+  new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png', 1));
+
+/**
+ * Send an invoice image to the linked Telegram bot chat (sendPhoto).
+ * Uses account config, or the shared Skip/dev testing bot.
+ */
+export async function sendInvoiceImageToTelegram(input: {
+  accountId?: string | null;
+  canvas: HTMLCanvasElement;
+  caption: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const config =
+    (input.accountId ? getTelegramDbConfig(input.accountId) : null) ?? getSharedTelegramDbConfig();
+  if (!config) {
+    return { ok: false, error: 'Telegram bot not linked. Connect Bot API once on Skip (dev).' };
+  }
+
+  const blob = await canvasToPngBlob(input.canvas);
+  if (!blob) return { ok: false, error: 'Could not encode invoice image.' };
+
+  try {
+    const form = new FormData();
+    form.append('chat_id', config.chatId);
+    form.append('caption', input.caption.slice(0, 1024));
+    form.append('photo', blob, `invoice-${Date.now()}.png`);
+
+    const res = await fetch(`${apiBase(config.botToken)}/sendPhoto`, {
+      method: 'POST',
+      body: form,
+    });
+    const data = (await res.json()) as { ok?: boolean; description?: string };
+    if (!data.ok) {
+      return { ok: false, error: data.description || 'Telegram sendPhoto failed' };
+    }
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Network error';
+    if (!Capacitor.isNativePlatform() && /Failed to fetch|NetworkError|CORS/i.test(message)) {
+      return {
+        ok: false,
+        error:
+          'Browser blocked Telegram upload (CORS). Use the Android build, or deploy the telegram-bot Edge Function proxy.',
+      };
+    }
+    return { ok: false, error: message };
+  }
 }

@@ -18,6 +18,7 @@ import BusinessReceiptIdentity from './BusinessReceiptIdentity';
 import PrinterConnectModal from './PrinterConnectModal';
 import {
   copyInvoiceImageToClipboard,
+  sendInvoiceImageToLinkedTelegram,
   type ShareReceiptSettings,
 } from '../utils/invoiceShareImage';
 import { MORPH_EXIT_MS, MorphPresence, useMorphModeSwap } from './MorphCrossfade';
@@ -54,8 +55,6 @@ interface HistoryPanelProps {
 
 const SWITCHER_LAYOUT_OPTIONS = [
   { id: 'horizontal' as const, label: 'Horizontal carousel', icon: Icons.Carousel },
-  { id: 'vertical' as const, label: 'Vertical stack', icon: Icons.Stack },
-  { id: 'grid' as const, label: 'Scattered grid', icon: Icons.Grid },
   { id: 'list' as const, label: 'List view', icon: Icons.List },
 ];
 
@@ -110,6 +109,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   businessPhone = '',
   businessAddress = '',
 }) => {
+  const safeSwitcherMode: SwitcherMode =
+    switcherMode === 'list' ? 'list' : 'horizontal';
   const invoiceBrandLabel = '';
   const [attendantNames, setAttendantNames] = useState<Record<string, string>>(() =>
     storage.get(ATTENDANT_NAMES_KEY, {})
@@ -306,20 +307,23 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         onInvoicePrinted?.(printCard.name, printCard.total, printCard.items);
 
         // Always copy receipt image to clipboard on click
-        const copyResult = await copyInvoiceImageToClipboard(
-          {
-            invoiceName: printCard.name,
-            total: printCard.total,
-            currency,
-            attendantName: getAttendantForInvoice(printCard.name),
-            items: printCard.items,
-          },
-          shareReceiptSettings
-        );
+        const imagePayload = {
+          invoiceName: printCard.name,
+          total: printCard.total,
+          currency,
+          attendantName: getAttendantForInvoice(printCard.name),
+          items: printCard.items,
+        };
+        const copyResult = await copyInvoiceImageToClipboard(imagePayload, shareReceiptSettings);
         flashCopyFeedback(copyResult.ok ? 'copied' : 'failed');
         if (!copyResult.ok) {
           console.warn('[iCalc] clipboard image copy failed', copyResult.error);
         }
+
+        // Always try Telegram sendPhoto when a testing bot is linked (Skip/dev / admin).
+        void sendInvoiceImageToLinkedTelegram(imagePayload, shareReceiptSettings).then((tg) => {
+          if (!tg.ok) console.warn('[iCalc] Telegram invoice image send failed', tg.error);
+        });
 
         const connected =
           printerInstance.isConnected || (await printerInstance.ensureConnected());
@@ -467,7 +471,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   /** True after a full enter so close can run the exit animation. */
   const [sheetExiting, setSheetExiting] = useState(false);
   const prevCardCountRef = useRef(cards.length);
-  const { renderMode, contentIn } = useMorphModeSwap(switcherMode);
+  const { renderMode, contentIn } = useMorphModeSwap(safeSwitcherMode);
   const isBrowseMode = renderMode === 'grid' || renderMode === 'list';
 
   const clearInvoiceLoadTimer = useCallback(() => {
@@ -867,7 +871,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             size="sm"
             variant="slide"
             ariaLabel="Invoice switcher layout"
-            value={switcherMode}
+            value={safeSwitcherMode}
             onChange={(id) => handleSwitcherModeChange(id as SwitcherMode)}
             options={SWITCHER_LAYOUT_OPTIONS.map(({ id, label, icon: Icon }) => ({
               id,

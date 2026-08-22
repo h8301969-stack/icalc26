@@ -1,6 +1,7 @@
 import { CartLineItem } from '../types';
 import { RECEIPT_THEME } from './receiptCanvas';
 import { ReceiptLayoutMode } from './receiptLayout';
+import { sendInvoiceImageToTelegram } from './telegramDb';
 
 export interface ShareReceiptSettings {
   layoutMode: ReceiptLayoutMode;
@@ -177,6 +178,28 @@ export const copyInvoiceImageToClipboard = async (
               : 'Could not copy image.',
       };
     }
+  }
+};
+
+/** Render invoice PNG and sendPhoto to the linked / shared testing Telegram bot. */
+export const sendInvoiceImageToLinkedTelegram = async (
+  payload: InvoiceSharePayload,
+  shareSettings: ShareReceiptSettings,
+  accountId?: string | null
+): Promise<{ ok: boolean; error?: string }> => {
+  try {
+    const canvas = renderInvoiceShareImage(payload, shareSettings);
+    const caption = `🧾 ${payload.invoiceName}\nTotal: ${formatShareTotal(payload.total, payload.currency)}${
+      payload.attendantName?.trim() ? `\nServed by: ${payload.attendantName.trim()}` : ''
+    }`;
+    const result = await sendInvoiceImageToTelegram({
+      accountId,
+      canvas,
+      caption,
+    });
+    return result.ok ? { ok: true } : { ok: false, error: result.error };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Telegram send failed.' };
   }
 };
 

@@ -1255,66 +1255,55 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   };
 
   const handleLogRowClick = useCallback((log: DashboardLogEntry) => {
-    if (log.isUnidentified && log.price !== undefined) {
-      openUnidentifiedPage(log);
-      return;
-    }
-    // “Added item …” activities open the same iOS-style add sheet as +
-    if (log.action.startsWith('Added item')) {
+    // Unidentified (red) and “Added item …” both open the same sheet as orange +
+    if (log.isUnidentified || log.type === 'invoice-unidentified' || log.action.startsWith('Added item')) {
       setInventoryExpanded(true);
       setSelectedItem(null);
+      setActionLogsExpanded(false);
       openAssetAction('add');
       return;
     }
     setActionLogsExpanded(true);
-  }, [openUnidentifiedPage, openAssetAction]);
+  }, [openAssetAction]);
 
   const renderActivityLogRows = (logs: DashboardLogEntry[], limit?: number, clickable = false) => {
     const slice = limit ? logs.slice(0, limit) : logs;
     if (slice.length === 0) {
       return (
-        <p className={`action-log-meta text-[9px] font-medium ${cardSubtextMutedClass}`}>No recent activity</p>
+        <p className={`app-subtext leading-relaxed ${cardSubtextMutedClass}`}>No recent activity</p>
       );
     }
     return (
-      <div className="flex flex-col gap-2" role="list">
+      <div className="flex flex-col gap-3" role="list">
         {slice.map((log) => {
           const actorName = log.profileName ?? activeProfileName;
           const isUpdateLog = log.type === 'price-update' || log.type === 'stock-update';
-          const rowClass = `action-log-row w-full flex items-center justify-between gap-3 min-w-0 text-left px-4 py-3.5 rounded-2xl border transition-all ${
-            isLight
-              ? 'bg-white border-black/6 shadow-sm'
-              : 'bg-white/6 border-white/8'
-          } ${clickable ? 'cursor-pointer active:scale-[0.985] hover:opacity-95' : ''}`;
+          const lineText = log.itemName && !isUpdateLog ? `${log.action} · ${log.itemName}` : log.action;
+          const rowClass = `action-log-row w-full min-w-0 text-left px-1 py-1.5 transition-all ${
+            clickable ? 'cursor-pointer active:opacity-80' : ''
+          }`;
           const rowContent = (
-            <>
-              <div className="flex items-center gap-2.5 min-w-0">
-                {getLogIcon(log.type)}
-                <div className="flex flex-col min-w-0 gap-0.5">
-                  <span
-                    className={`action-log-title text-[12px] font-semibold truncate ${
-                      log.isUnidentified ? 'text-red-500' : isUpdateLog ? 'text-blue-500' : textColorClass
-                    }`}
-                  >
-                    {log.action}
-                  </span>
-                  {log.itemName && !isUpdateLog && (
-                    <span
-                      className={`action-log-meta text-[10px] font-medium truncate ${
-                        log.isUnidentified ? 'text-red-400' : cardSubtextMutedClass
-                      }`}
-                    >
-                      {log.itemName}
-                    </span>
-                  )}
-                </div>
+            <div className="flex items-start gap-2.5 min-w-0">
+              {getLogIcon(log.type)}
+              <div className="flex flex-col min-w-0 flex-1">
+                <span
+                  className={`app-subtext leading-relaxed truncate whitespace-nowrap ${
+                    log.isUnidentified || log.type === 'invoice-unidentified'
+                      ? 'text-red-500'
+                      : isUpdateLog
+                        ? 'text-blue-500'
+                        : textColorClass
+                  }`}
+                >
+                  {lineText}
+                </span>
+                <span
+                  className={`app-subtext leading-relaxed text-[10px] tabular-nums opacity-45 ${cardSubtextMutedClass}`}
+                >
+                  {actorName} · {formatRequestElapsed(log.timestamp, currentTime)} ago
+                </span>
               </div>
-              <span className={`action-log-meta font-num-medium text-[10px] tabular-nums shrink-0 text-right ${cardSubtextMutedClass}`}>
-                {actorName}
-                <span className="opacity-50"> · </span>
-                {formatRequestElapsed(log.timestamp, currentTime)} ago
-              </span>
-            </>
+            </div>
           );
           if (!clickable) {
             return (
@@ -1712,7 +1701,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <div className="flex justify-between items-center mb-6">
                    <div className="space-y-1">
                       <h3 className={`pos-dashboard-section-title text-2xl ${textColorClass}`}>Action Logs</h3>
-                      <p className={`action-log-meta text-[12px] font-medium ${cardSubtextMutedClass}`}>Recent activity · last 24h</p>
+                      <p className={`app-subtext leading-relaxed opacity-45 ${cardSubtextMutedClass}`}>Recent activity · last 24h</p>
                    </div>
                    <div className={`p-3.5 rounded-full bg-blue-500/10 text-blue-500 ${iconLiftLight}`}><Icons.Trends size={24} /></div>
                 </div>
@@ -1938,7 +1927,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               )}
               <div className={`sticky top-0 z-50 -mx-4 px-4 pt-2 pb-4 mb-2 backdrop-blur-3xl ${isLight ? 'bg-[#f2f2f7]/92' : 'bg-black/70'}`}>
                 {/* Top row: Hub + centered title + add */}
-                <div className="relative flex items-center justify-between gap-2 mb-3 min-h-10">
+                <div className="relative flex items-center justify-between gap-2 mb-3 min-h-11">
                   <button
                     onClick={() => { setSelectedItem(null); setInventoryExpanded(false); }}
                     aria-label="Back to Vision Hub"
@@ -1947,7 +1936,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     <HubBackChevron /> Hub
                   </button>
                   <h3
-                    className={`pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center pos-dashboard-section-title text-xl sm:text-2xl ${textColorClass}`}
+                    className={`pointer-events-none absolute inset-x-0 top-[38%] -translate-y-1/2 text-center pos-dashboard-section-title text-[1.5rem] sm:text-[1.8rem] leading-none ${textColorClass}`}
                   >
                     Assets Hub
                   </h3>

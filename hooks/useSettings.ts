@@ -27,7 +27,7 @@ export const DEFAULT_SETTINGS = {
   disableCalculatorCard: false as boolean,
   layoutMode: 'portrait' as 'portrait' | 'landscape',
   layoutModeAuto: true,
-  invoiceSwitcherMode: 'horizontal' as 'horizontal' | 'grid' | 'vertical' | 'list',
+  invoiceSwitcherMode: 'horizontal' as 'horizontal' | 'list',
   expressionViewMode: 'auto' as ExpressionViewMode,
   receiptLayoutMode: 'summary' as ReceiptLayoutMode,
   visionHubDrawerMode: 'click' as 'drag' | 'click',
@@ -94,6 +94,11 @@ const migrateStoredSettings = (stored: Partial<AppSettings> & Record<string, unk
 
   delete merged.invoiceSwitcherGridCols;
   delete merged.invoiceSwitcherGridDensity;
+
+  // Vertical / Scattered removed from invoice switcher.
+  if (merged.invoiceSwitcherMode !== 'horizontal' && merged.invoiceSwitcherMode !== 'list') {
+    merged.invoiceSwitcherMode = 'horizontal';
+  }
 
   return merged as AppSettings;
 };
