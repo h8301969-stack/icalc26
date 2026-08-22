@@ -86,6 +86,9 @@ interface AuthOverlayProps {
   } | null | undefined>;
   onQuickUnlock?: () => void;
   onExitComplete?: () => void;
+  /** Admin portal → Calc (or other gates): show Bot API paste for this account. */
+  telegramGateAccount?: AppAccount | null;
+  onTelegramGateConsumed?: () => void;
 }
 
 const AuthOverlay: React.FC<AuthOverlayProps> = ({
@@ -103,6 +106,8 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   onDevSkip,
   onQuickUnlock,
   onExitComplete,
+  telegramGateAccount = null,
+  onTelegramGateConsumed,
 }) => {
   const isDev = import.meta.env.DEV;
   const [mode, setMode] = useState<AuthMode>(initialMode);
@@ -478,6 +483,26 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         return;
       }
       if (result?.account) {
+        // Dev skip also requires Bot API paste so you can test Telegram DB.
+        if (!isTelegramDbConnected(result.account.id)) {
+          setIsSubmitting(false);
+          setLoadingPhase('default');
+          setPendingTelegramAccount(result.account);
+          setAdminInfoName(
+            typeof settings?.businessName === 'string' && settings.businessName
+              ? settings.businessName
+              : 'Dev shop'
+          );
+          setAdminInfoPhone(typeof settings?.businessPhone === 'string' ? settings.businessPhone : '');
+          setAdminInfoAddress(
+            typeof settings?.businessAddress === 'string' ? settings.businessAddress : ''
+          );
+          setTelegramBotToken('');
+          setTelegramChatId('');
+          setPane('auth');
+          setAuthCardAnimKey((k) => k + 1);
+          return;
+        }
         flushSync(() => setIsEntering(true));
         if ('vibrate' in navigator) navigator.vibrate([10, 30]);
         await wait(AUTH_SUCCESS_HOLD_MS);
@@ -495,7 +520,25 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       setIsSubmitting(false);
       setError('Could not skip auth in dev.');
     }
-  }, [isDev, isLoading, isExiting, onDevSkip, onAdminPortal, onAuthComplete]);
+  }, [isDev, isLoading, isExiting, onDevSkip, onAdminPortal, onAuthComplete, settings]);
+
+  // Admin portal → Calc: force Bot API connect popup when gated.
+  useEffect(() => {
+    if (!telegramGateAccount) return;
+    setPendingTelegramAccount(telegramGateAccount);
+    setAdminInfoName(
+      typeof settings?.businessName === 'string' && settings.businessName
+        ? settings.businessName
+        : 'Admin shop'
+    );
+    setAdminInfoPhone(typeof settings?.businessPhone === 'string' ? settings.businessPhone : '');
+    setAdminInfoAddress(typeof settings?.businessAddress === 'string' ? settings.businessAddress : '');
+    setTelegramBotToken('');
+    setTelegramChatId('');
+    setPane('auth');
+    setAuthCardAnimKey((k) => k + 1);
+    onTelegramGateConsumed?.();
+  }, [telegramGateAccount, onTelegramGateConsumed, settings]);
 
   const dismissSignupConfirmation = useCallback(() => {
     const confirmedEmail = signupConfirmation?.email ?? '';
@@ -608,7 +651,8 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         return;
       }
 
-      let accountPlan: 'premium' | 'regular' = 'regular';
+      let accountPlan: 'premium' | 'regular' =
+        settings?.accountPlan === 'premium' ? 'premium' : 'regular';
       try {
         const { data: planRow } = await supabase
           .from('user_settings')
@@ -617,7 +661,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
           .maybeSingle();
         if (planRow?.account_plan === 'premium') accountPlan = 'premium';
       } catch {
-        // keep regular
+        // keep current
       }
 
       updateSettings?.({
@@ -650,6 +694,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       telegramChatId,
       updateSettings,
       onAuthComplete,
+      settings?.accountPlan,
     ]
   );
 

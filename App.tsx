@@ -35,6 +35,7 @@ import { useAuth } from './hooks/useAuth';
 import { useSupabaseDataSync } from './hooks/useSupabaseDataSync';
 import { useSyncStatus } from './hooks/useSyncStatus';
 import {
+  AppAccount,
   createAdminProfile,
   ensureAdminProfile,
   getAccounts,
@@ -59,6 +60,7 @@ import { CartLineItem, InvoiceActionLog, InvoicePrintLog, SavedInvoice } from '.
 import { usePOSDashboardData } from './hooks/usePOSDashboardData';
 import { clearAppSessionData, isCloudUserAccount } from './utils/freshAppSession';
 import { mergeAccountProfiles } from './utils/supabaseAuth';
+import { isTelegramDbConnected } from './utils/telegramDb';
 import { printerInstance } from './utils/bluetoothPrinter';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -208,6 +210,8 @@ const AppContent: React.FC = () => {
   const [authOverlayMounted, setAuthOverlayMounted] = useState(() => !getAuthSession());
   const sessionBootstrappedRef = useRef(false);
   const isAdminPortalRef = useRef(false);
+  /** After admin portal / Calc — force Bot API paste before calculator. */
+  const [telegramGateAccount, setTelegramGateAccount] = useState<AppAccount | null>(null);
 
   const accountNotifications = useAccountNotifications({
     accountId: account?.id ?? null,
@@ -421,26 +425,48 @@ const AppContent: React.FC = () => {
     setAuthOverlayMounted(false);
   }, [updateSettings, triggerHaptic, settings.profiles, settings.activeProfileId]);
 
-  /** Local guest login for `npm run dev` — does not require Supabase. */
+  /** Local guest login for `npm run dev` — AuthOverlay still asks for Bot API before unlock. */
   const handleDevSkip = useCallback(async () => {
     const guest = skipDevAuthAsAdmin();
     if (!guest) {
       return { error: 'Dev skip only works during npm run dev.' };
     }
-    // Dev skip / admin path: no Telegram Bot API paste required.
     updateSettings({ accountPlan: 'premium' });
-    handleAuthSuccess(guest);
+    // Do not unlock here — AuthOverlay shows Telegram Bot API paste for testing.
     return { account: guest };
-  }, [skipDevAuthAsAdmin, handleAuthSuccess, updateSettings]);
+  }, [skipDevAuthAsAdmin, updateSettings]);
 
   const handleAdminReturnToCalc = useCallback(() => {
     hideAdminPortal();
     closeAllPanels();
+
+    let acc = account;
+    if (!acc && import.meta.env.DEV) {
+      acc = skipDevAuthAsAdmin();
+      if (acc) updateSettings({ accountPlan: 'premium' });
+    }
+
+    // Admin → Calc: also require Bot API paste when not linked (for testing).
+    if (acc && !isTelegramDbConnected(acc.id)) {
+      setTelegramGateAccount(acc);
+      setIsUnlocked(false);
+      setAuthOverlayMounted(true);
+      triggerHaptic(2);
+      return;
+    }
+
     setAuthOverlayMounted(false);
     setIsCalculatorEntering(true);
     setIsUnlocked(true);
     triggerHaptic(2);
-  }, [hideAdminPortal, closeAllPanels, triggerHaptic]);
+  }, [
+    hideAdminPortal,
+    closeAllPanels,
+    triggerHaptic,
+    account,
+    skipDevAuthAsAdmin,
+    updateSettings,
+  ]);
 
   const handleSignup = useCallback(async (username: string, email: string, inviteCode: string) => {
     const result = await signup(username, email, inviteCode);
@@ -1019,12 +1045,17 @@ const AppContent: React.FC = () => {
           updateSettings={updateSettings}
           onSignup={handleSignup}
           onLogin={handleLogin}
-          onAuthComplete={handleAuthSuccess}
+          onAuthComplete={(acc) => {
+            setTelegramGateAccount(null);
+            handleAuthSuccess(acc);
+          }}
           onAdminPortal={handleAdminPortal}
           onFinalizeAccess={handleFinalizeAccess}
           onDevSkip={import.meta.env.DEV ? handleDevSkip : undefined}
           onQuickUnlock={handleQuickUnlock}
           onExitComplete={() => setAuthOverlayMounted(false)}
+          telegramGateAccount={telegramGateAccount}
+          onTelegramGateConsumed={() => setTelegramGateAccount(null)}
         />
       )}
       {isUnlocked && (
