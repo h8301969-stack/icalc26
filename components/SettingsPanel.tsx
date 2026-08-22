@@ -439,13 +439,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   const handleSelectProfile = (profileId: string) => {
     patchDraft({ activeProfileId: profileId });
+    // Profile switch applies immediately so active icons stay in sync across the app.
+    _updateSettings({ activeProfileId: profileId });
   };
 
   const handleAddProfile = async ({ name, avatarUrl, email, phone, sellerType }: NewProfileInput) => {
     const trimmed = name.trim();
     if (!trimmed || trimmed.toLowerCase() === ADMIN_PROFILE_NAME.toLowerCase()) return;
     const profile: UserProfile = {
-      id: `profile-${Date.now()}`,
+      id: crypto.randomUUID(),
       name: trimmed,
       avatarUrl,
       email: email.trim(),
@@ -748,21 +750,51 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             aria-hidden="true"
           />
           <div className="relative flex flex-col items-center gap-3 p-8 pt-6">
-            <button
-              type="button"
-              onClick={() => setShowNotificationsInbox(true)}
-              className={`absolute top-4 right-4 w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-all ${
-                isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'
-              } ${notificationsUnreadCount > 0 ? 'settings-noti-bell--unread' : ''}`}
-              aria-label={`Notifications${notificationsUnreadCount > 0 ? `, ${notificationsUnreadCount} unread` : ''}`}
-            >
-              <Icons.Bell size={20} />
-              {notificationsUnreadCount > 0 && (
-                <span className="noti-bell-indicator" aria-hidden="true" title="Unread notifications">
-                  <span className="noti-bell-indicator__caret" />
-                </span>
-              )}
-            </button>
+            <div className="absolute top-4 right-4 flex items-center gap-1.5 max-w-[min(70%,14rem)]">
+              <div
+                className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full pr-0.5"
+                role="list"
+                aria-label="Account profiles"
+              >
+                {profiles.map((profile) => {
+                  const isActive = profile.id === (draft.activeProfileId ?? activeProfile?.id);
+                  return (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      role="listitem"
+                      onClick={() => handleSelectProfile(profile.id)}
+                      className={`shrink-0 rounded-full p-[2px] transition-all active:scale-90 ${
+                        isActive
+                          ? 'ring-2 ring-blue-500 ring-offset-1 ' +
+                            (isLight ? 'ring-offset-white' : 'ring-offset-zinc-900')
+                          : 'opacity-70 hover:opacity-100'
+                      }`}
+                      aria-label={`Switch to ${profile.name}${isActive ? ', active' : ''}`}
+                      aria-current={isActive ? 'true' : undefined}
+                      title={profile.name}
+                    >
+                      <ProfileAvatar profile={profile} size={28} isLight={isLight} />
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNotificationsInbox(true)}
+                className={`shrink-0 w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+                  isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'
+                } ${notificationsUnreadCount > 0 ? 'settings-noti-bell--unread' : ''}`}
+                aria-label={`Notifications${notificationsUnreadCount > 0 ? `, ${notificationsUnreadCount} unread` : ''}`}
+              >
+                <Icons.Bell size={20} />
+                {notificationsUnreadCount > 0 && (
+                  <span className="noti-bell-indicator" aria-hidden="true" title="Unread notifications">
+                    <span className="noti-bell-indicator__caret" />
+                  </span>
+                )}
+              </button>
+            </div>
             <ProfileAvatar
               profile={activeProfile}
               size={80}

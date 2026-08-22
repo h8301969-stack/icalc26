@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { HistoryItem, InvoiceActionLog, InvoicePrintLog, POSRequest, RestockNote, SavedInvoice, SupplierRecord, SyncState } from '../types';
 import { InventoryItem, PurchaseRecord } from './usePOS';
 import { isCloudBackendEnabled } from '../utils/supabase';
+import { isTelegramDbConnected, telegramSaveSnapshot } from '../utils/telegramDb';
 
 import { FRESH_INVOICE_NAME } from '../utils/freshAppSession';
 import {
@@ -108,8 +109,24 @@ export const useSupabaseDataSync = ({
     setHydrateEpoch(0);
   }, [userId]);
 
+  // Telegram DB: keep local device state; snapshot inventory to the linked bot (no Supabase writes).
   useEffect(() => {
-    if (!authReady || !userId || !isCloudBackendEnabled()) return;
+    if (!authReady || !userId || !isTelegramDbConnected(userId)) return;
+    hydratedRef.current = true;
+    if (inventorySyncTimerRef.current) window.clearTimeout(inventorySyncTimerRef.current);
+    inventorySyncTimerRef.current = window.setTimeout(() => {
+      void telegramSaveSnapshot(userId, 'inventory', inventoryRef.current).catch((error) =>
+        console.warn('[iCalc telegram] inventory snapshot failed', error)
+      );
+    }, SYNC_DEBOUNCE_MS);
+    return () => {
+      if (inventorySyncTimerRef.current) window.clearTimeout(inventorySyncTimerRef.current);
+    };
+  }, [authReady, userId, inventory]);
+
+  useEffect(() => {
+    // Telegram-linked accounts keep POS data off Supabase.
+    if (!authReady || !userId || !isCloudBackendEnabled() || isTelegramDbConnected(userId)) return;
 
     let cancelled = false;
 
@@ -260,7 +277,7 @@ export const useSupabaseDataSync = ({
   }, [authReady, userId, setHistory, setInventory, setPurchases, setSuppliers, setRequests, setRestocks]);
 
   useEffect(() => {
-    if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
+    if (!authReady || !userId || !isCloudBackendEnabled() || isTelegramDbConnected(userId) || !hydratedRef.current || hydratingRef.current) return;
 
     if (inventorySyncTimerRef.current) window.clearTimeout(inventorySyncTimerRef.current);
     inventorySyncTimerRef.current = window.setTimeout(() => {
@@ -277,7 +294,7 @@ export const useSupabaseDataSync = ({
   }, [authReady, userId, inventory, setInventory, hydrateEpoch]);
 
   useEffect(() => {
-    if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
+    if (!authReady || !userId || !isCloudBackendEnabled() || isTelegramDbConnected(userId) || !hydratedRef.current || hydratingRef.current) return;
 
     if (historySyncTimerRef.current) window.clearTimeout(historySyncTimerRef.current);
     historySyncTimerRef.current = window.setTimeout(() => {
@@ -294,7 +311,7 @@ export const useSupabaseDataSync = ({
   }, [authReady, userId, history, setHistory, hydrateEpoch]);
 
   useEffect(() => {
-    if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
+    if (!authReady || !userId || !isCloudBackendEnabled() || isTelegramDbConnected(userId) || !hydratedRef.current || hydratingRef.current) return;
 
     if (purchasesSyncTimerRef.current) window.clearTimeout(purchasesSyncTimerRef.current);
     purchasesSyncTimerRef.current = window.setTimeout(() => {
@@ -311,7 +328,7 @@ export const useSupabaseDataSync = ({
   }, [authReady, userId, purchases, setPurchases, hydrateEpoch]);
 
   useEffect(() => {
-    if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
+    if (!authReady || !userId || !isCloudBackendEnabled() || isTelegramDbConnected(userId) || !hydratedRef.current || hydratingRef.current) return;
 
     if (dashboardSyncTimerRef.current) window.clearTimeout(dashboardSyncTimerRef.current);
     dashboardSyncTimerRef.current = window.setTimeout(() => {
@@ -340,7 +357,7 @@ export const useSupabaseDataSync = ({
   }, [authReady, userId, suppliers, requests, restocks, setSuppliers, setRequests, setRestocks, hydrateEpoch]);
 
   useEffect(() => {
-    if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
+    if (!authReady || !userId || !isCloudBackendEnabled() || isTelegramDbConnected(userId) || !hydratedRef.current || hydratingRef.current) return;
 
     if (invoiceSyncTimerRef.current) window.clearTimeout(invoiceSyncTimerRef.current);
     invoiceSyncTimerRef.current = window.setTimeout(() => {

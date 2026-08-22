@@ -317,17 +317,105 @@ export const getSupabaseSessionAccount = async (): Promise<AppAccount | null> =>
   return fetchAccountFromSession(data.session, username);
 };
 
+const isUuid = (id: string): boolean =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+
+/** Deterministic UUID so legacy `profile-…` ids map to the same cloud row every sync. */
+const stableUuidFromString = (input: string): string => {
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < input.length; i += 1) {
+    bytes[i % 16] ^= input.charCodeAt(i) & 0xff;
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+/** Map app profile id → DB primary key (admin always uses fixed UUID). */
+const toDbProfileId = (profile: UserProfile, userId: string): string => {
+  if (profile.isSystem || profile.name === '@admin') return ADMIN_PROFILE_UUID;
+  if (isUuid(profile.id)) return profile.id;
+  return stableUuidFromString(`${userId}:${profile.id}`);
+};
+
+/**
+ * Upsert every profile row for this account. Never deletes remote profiles
+ * so account users remain durable across devices and reinstalls.
+ * Returns profiles with cloud-safe ids (callers should persist the remap).
+ */
 export const syncProfilesToSupabase = async (
   profiles: UserProfile[],
   activeProfileId: string
-): Promise<void> => {
-  if (!isCloudBackendEnabled()) return;
+): Promise<UserProfile[]> => {
+  if (!isCloudBackendEnabled()) return ensureAdminProfile(profiles);
   const { data } = await supabase.auth.getSession();
   const userId = data.session?.user.id;
-  if (!userId) return;
+  if (!userId) return ensureAdminProfile(profiles);
+
+  const normalized = ensureAdminProfile(profiles);
+  const idMap = new Map<string, string>();
+  const rows = normalized.map((profile, index) => {
+    const dbId = toDbProfileId(profile, userId);
+    idMap.set(profile.id, dbId);
+    const isSystem = !!(profile.isSystem || profile.name === '@admin');
+    return {
+      id: dbId,
+      user_id: userId,
+      name: isSystem ? '@admin' : profile.name,
+      avatar_url: sanitizeAvatarForDb(profile.avatarUrl ?? ''),
+      is_system: isSystem,
+      sort_order: index,
+    };
+  });
+
+  const { error: upsertError } = await supabase
+    .from('user_profiles')
+    .upsert(rows, { onConflict: 'id' });
+  if (upsertError) {
+    console.warn('[iCalc auth] user_profiles upsert failed', upsertError.message);
+  }
+
+  const nextActive =
+    idMap.get(activeProfileId) ??
+    (isUuid(activeProfileId) ? activeProfileId : null) ??
+    rows.find((r) => !r.is_system)?.id ??
+    rows[0]?.id ??
+    null;
 
   await supabase.from('user_settings').upsert({
     user_id: userId,
-    active_profile_id: activeProfileId,
+    active_profile_id: nextActive,
   });
+
+  // Keep local admin id convention; remap legacy ids to their cloud UUIDs.
+  return normalized.map((profile) => {
+    if (profile.isSystem || profile.name === '@admin') {
+      return { ...createAdminProfile(), avatarUrl: profile.avatarUrl ?? '' };
+    }
+    return { ...profile, id: idMap.get(profile.id) ?? profile.id };
+  });
+};
+
+/** Union remote + local profiles by id; keep local avatar/name when both exist. */
+export const mergeAccountProfiles = (
+  remote: UserProfile[],
+  local: UserProfile[]
+): UserProfile[] => {
+  const byId = new Map<string, UserProfile>();
+  for (const p of ensureAdminProfile(remote)) byId.set(p.id, p);
+  for (const p of ensureAdminProfile(local)) {
+    const existing = byId.get(p.id);
+    if (!existing) {
+      byId.set(p.id, p);
+      continue;
+    }
+    byId.set(p.id, {
+      ...existing,
+      ...p,
+      avatarUrl: p.avatarUrl || existing.avatarUrl,
+      name: p.name || existing.name,
+    });
+  }
+  return ensureAdminProfile([...byId.values()]);
 };

@@ -562,6 +562,73 @@
   transform: scale(0.96);
 }
 
+.telegram-db-reader {
+  letter-spacing: 0;
+  -webkit-overflow-scrolling: touch;
+}
+.telegram-db-reader .telegram-db-h1 {
+  font-size: 1.35rem;
+  font-weight: 900;
+  margin: 0.35rem 0 0.65rem;
+  letter-spacing: 0;
+}
+.telegram-db-reader .telegram-db-h2 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin: 1.1rem 0 0.45rem;
+  letter-spacing: 0;
+}
+.telegram-db-reader .telegram-db-h3 {
+  font-size: 0.95rem;
+  font-weight: 800;
+  margin: 0.9rem 0 0.35rem;
+  letter-spacing: 0;
+}
+.telegram-db-reader .telegram-db-p {
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.45;
+  margin: 0.25rem 0;
+  opacity: 0.92;
+  letter-spacing: 0;
+}
+.telegram-db-reader .telegram-db-ul {
+  margin: 0.35rem 0 0.55rem 1.1rem;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.telegram-db-reader .telegram-db-pre,
+.telegram-db-reader .telegram-db-table-line {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0.45rem 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  background: rgba(127, 127, 127, 0.12);
+  letter-spacing: 0;
+}
+.telegram-db-reader .telegram-db-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75em;
+  padding: 0.05em 0.35em;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.16);
+}
+.telegram-db-reader .telegram-db-hr {
+  border: none;
+  border-top: 1px solid rgba(127, 127, 127, 0.25);
+  margin: 0.85rem 0;
+}
+.telegram-db-reader .telegram-db-spacer {
+  height: 0.45rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .admin-portal-shell,
   .admin-portal-header,

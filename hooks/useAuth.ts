@@ -31,6 +31,7 @@ import {
   signupWithSupabase,
   syncProfilesToSupabase,
 } from '../utils/supabaseAuth';
+// syncProfilesToSupabase now upserts user_profiles (durable per account)
 
 const persistLocalSession = (account: AppAccount) => {
   setAuthSession({ accountId: account.id, username: account.username });
@@ -314,33 +315,48 @@ export const useAuth = () => {
     [account]
   );
 
-  const syncProfiles = useCallback((profiles: UserProfile[], activeProfileId: string) => {
-    const session = getAuthSession();
-    if (!session) return;
+  const syncProfiles = useCallback(
+    async (profiles: UserProfile[], activeProfileId: string): Promise<UserProfile[]> => {
+      const session = getAuthSession();
+      const normalizedProfiles = ensureAdminProfile(profiles);
+      if (!session) return normalizedProfiles;
 
-    const normalizedProfiles = ensureAdminProfile(profiles);
+      if (isCloudBackendEnabled()) {
+        const synced = await syncProfilesToSupabase(normalizedProfiles, activeProfileId);
+        const nextActive = synced.some((p) => p.id === activeProfileId)
+          ? activeProfileId
+          : synced.find((p) => p.id !== synced.find((x) => x.isSystem)?.id)?.id ??
+            synced[0]?.id ??
+            '';
+        setAccount((prev) => {
+          if (!prev) return prev;
+          return { ...prev, profiles: synced, activeProfileId: nextActive };
+        });
+        return synced;
+      }
 
-    if (isCloudBackendEnabled()) {
-      void syncProfilesToSupabase(normalizedProfiles, activeProfileId);
-    } else {
       const current = getAccountById(session.accountId);
-      if (!current) return;
-      const unchanged =
-        current.activeProfileId === activeProfileId &&
-        JSON.stringify(current.profiles) === JSON.stringify(normalizedProfiles);
-      if (unchanged) return;
-      updateAccountProfiles(current.id, profiles, activeProfileId);
-    }
+      if (current) {
+        const unchanged =
+          current.activeProfileId === activeProfileId &&
+          JSON.stringify(current.profiles) === JSON.stringify(normalizedProfiles);
+        if (!unchanged) {
+          updateAccountProfiles(current.id, normalizedProfiles, activeProfileId);
+        }
+      }
 
-    setAccount((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        profiles: normalizedProfiles,
-        activeProfileId,
-      };
-    });
-  }, []);
+      setAccount((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          profiles: normalizedProfiles,
+          activeProfileId,
+        };
+      });
+      return normalizedProfiles;
+    },
+    []
+  );
 
   const verifyPassword = useCallback(
     async (password: string) => {

@@ -9,6 +9,7 @@ import { ExpressionViewMode, normalizeExpressionViewMode } from '../utils/expres
 import { ReceiptLayoutMode } from '../utils/receiptLayout';
 import { isCloudBackendEnabled } from '../utils/supabase';
 import { fetchSettingsFromSupabase, syncSettingsToSupabase } from '../utils/supabaseDataSync';
+import { isTelegramDbConnected, telegramSaveSnapshot } from '../utils/telegramDb';
 
 const SETTINGS_KEY = 'calc_settings';
 const SETTINGS_SYNC_DEBOUNCE_MS = 1200;
@@ -119,6 +120,12 @@ export const useSettings = (options: UseSettingsOptions = {}) => {
 
   useEffect(() => {
     if (!authReady || !userId || !isCloudBackendEnabled()) return;
+    // Per-account Telegram DB: keep settings local (+ Telegram snapshot), skip Supabase.
+    if (isTelegramDbConnected(userId)) {
+      settingsHydratedRef.current = true;
+      settingsHydratingRef.current = false;
+      return;
+    }
 
     let cancelled = false;
     settingsHydratingRef.current = true;
@@ -156,6 +163,12 @@ export const useSettings = (options: UseSettingsOptions = {}) => {
 
     if (settingsSyncTimerRef.current) window.clearTimeout(settingsSyncTimerRef.current);
     settingsSyncTimerRef.current = window.setTimeout(() => {
+      if (isTelegramDbConnected(userId)) {
+        void telegramSaveSnapshot(userId, 'settings', settingsRef.current).catch((error) =>
+          console.warn('[iCalc telegram] settings snapshot failed', error)
+        );
+        return;
+      }
       void syncSettingsToSupabase(userId, settingsRef.current).catch((error) =>
         console.error('[iCalc sync] settings save failed', error)
       );
@@ -217,7 +230,7 @@ export const useSettings = (options: UseSettingsOptions = {}) => {
     extras?: Pick<UserProfile, 'email' | 'phone' | 'sellerType'>
   ) => {
     const profile: UserProfile = {
-      id: `profile-${Date.now()}`,
+      id: crypto.randomUUID(),
       name: name.trim(),
       avatarUrl,
       ...extras,

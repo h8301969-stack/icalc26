@@ -16,6 +16,11 @@ import { MorphCrossfade } from './MorphCrossfade';
 import PasswordField from './PasswordField';
 import { supabase } from '../utils/supabase';
 import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
+import {
+  connectTelegramDatabase,
+  isTelegramDbConnected,
+  looksLikeBotToken,
+} from '../utils/telegramDb';
 
 type AuthMode = 'signup' | 'login';
 type AuthPane = 'idle' | 'auth' | 'settings';
@@ -116,6 +121,13 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [businessSetup, setBusinessSetup] = useState<{ accessCode: string; username: string } | null>(null);
   const [receivedBusinessInfo, setReceivedBusinessInfo] = useState<AccessBusinessInfo | null>(null);
   const [businessInfoLoading, setBusinessInfoLoading] = useState(false);
+  const [adminInfoName, setAdminInfoName] = useState('');
+  const [adminInfoPhone, setAdminInfoPhone] = useState('');
+  const [adminInfoAddress, setAdminInfoAddress] = useState('');
+  const [telegramBotToken, setTelegramBotToken] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
+  /** Logged-in account that still needs a Telegram bot linked. */
+  const [pendingTelegramAccount, setPendingTelegramAccount] = useState<AppAccount | null>(null);
   const [loadingPhase, setLoadingPhase] = useState<AuthLoadingPhase>('default');
   const pendingPollRef = useRef<number | null>(null);
   const pendingUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -131,7 +143,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
   const isLoading = isSubmitting || isEntering;
   const showSignupInsight = signupConfirmation !== null;
-  const showBusinessSetup = businessSetup !== null;
+  const showBusinessSetup = businessSetup !== null || pendingTelegramAccount !== null;
   const isIdle = pane === 'idle' && !isLoading;
   const showAuthForm = pane === 'auth';
   const showSettings = pane === 'settings';
@@ -534,6 +546,11 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     if (!businessSetup) {
       setReceivedBusinessInfo(null);
       setBusinessInfoLoading(false);
+      setAdminInfoName('');
+      setAdminInfoPhone('');
+      setAdminInfoAddress('');
+      setTelegramBotToken('');
+      setTelegramChatId('');
       return;
     }
 
@@ -543,15 +560,17 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
     void fetchAccessCodeBusinessInfo(businessSetup.accessCode).then((result) => {
       if (cancelled) return;
-      if (result.ok === true) {
-        setReceivedBusinessInfo(result.info);
-      } else {
-        setReceivedBusinessInfo({
-          businessName: '',
-          businessPhone: '',
-          businessAddress: '',
-        });
-        setError(result.error);
+      const info: AccessBusinessInfo =
+        result.ok === true
+          ? result.info
+          : { businessName: '', businessPhone: '', businessAddress: '' };
+      setReceivedBusinessInfo(info);
+      setAdminInfoName(info.businessName);
+      setAdminInfoPhone(info.businessPhone);
+      setAdminInfoAddress(info.businessAddress);
+      if (result.ok === false) {
+        // Prefill may be empty until admin filled codes — user can type Admin info here.
+        setError(null);
       }
       setBusinessInfoLoading(false);
     });
@@ -561,25 +580,89 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     };
   }, [businessSetup]);
 
+  const finishWithTelegramAccount = useCallback(
+    async (account: AppAccount) => {
+      const name = adminInfoName.trim();
+      const token = telegramBotToken.trim();
+      if (!name) {
+        setError('Business name is required.');
+        return;
+      }
+      if (!looksLikeBotToken(token)) {
+        setError('Telegram Bot API token is required (from BotFather).');
+        return;
+      }
+
+      setError(null);
+      setIsSubmitting(true);
+
+      const linked = await connectTelegramDatabase({
+        accountId: account.id,
+        botToken: token,
+        chatId: telegramChatId.trim() || undefined,
+      });
+      if (linked.ok === false) {
+        setIsSubmitting(false);
+        setError(linked.error);
+        return;
+      }
+
+      updateSettings?.({
+        businessName: name,
+        businessPhone: adminInfoPhone.trim(),
+        businessAddress: adminInfoAddress.trim(),
+      });
+
+      flushSync(() => {
+        setIsEntering(true);
+        setLoadingPhase('default');
+      });
+      if ('vibrate' in navigator) navigator.vibrate([10, 30]);
+      await wait(AUTH_SUCCESS_HOLD_MS);
+      flushSync(() => {
+        setIsEntering(false);
+        setIsSubmitting(false);
+        setIsExiting(true);
+        setBusinessSetup(null);
+        setPendingTelegramAccount(null);
+      });
+      onAuthComplete(account);
+    },
+    [
+      adminInfoName,
+      adminInfoPhone,
+      adminInfoAddress,
+      telegramBotToken,
+      telegramChatId,
+      updateSettings,
+      onAuthComplete,
+    ]
+  );
+
   const handleBusinessReceiveContinue = useCallback(async () => {
-    if (!businessSetup) return;
-    const info = receivedBusinessInfo;
-    if (!info?.businessName.trim()) {
-      setError('Business details are not ready yet. Ask your admin to set them when granting access.');
+    if (pendingTelegramAccount) {
+      await finishWithTelegramAccount(pendingTelegramAccount);
       return;
     }
+    if (!businessSetup) return;
 
     setError(null);
     setIsSubmitting(true);
 
-    updateSettings?.({
-      businessName: info.businessName.trim(),
-      businessPhone: info.businessPhone.trim(),
-      businessAddress: info.businessAddress.trim(),
-    });
+    if (!onFinalizeAccess) {
+      setIsSubmitting(false);
+      setError('Cannot complete access.');
+      return;
+    }
+    const finalized = await onFinalizeAccess(businessSetup.accessCode, businessSetup.username);
+    if (finalized.error || !finalized.account) {
+      setIsSubmitting(false);
+      setError(finalized.error ?? 'Could not complete access.');
+      return;
+    }
 
-    await completeAccessGrant(businessSetup.accessCode, businessSetup.username);
-  }, [businessSetup, receivedBusinessInfo, updateSettings, completeAccessGrant]);
+    await finishWithTelegramAccount(finalized.account);
+  }, [pendingTelegramAccount, businessSetup, onFinalizeAccess, finishWithTelegramAccount]);
 
   const handleAccessStatus = useCallback(
     async (accessCode: string, pendingUsername: string, status: string) => {
@@ -616,6 +699,12 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
           stopPausedWatch();
           stopPendingWatch();
           setLoadingPhase('default');
+          if (!isTelegramDbConnected(result.account.id)) {
+            setIsSubmitting(false);
+            setPendingTelegramAccount(result.account);
+            setPane('auth');
+            return;
+          }
           flushSync(() => setIsEntering(true));
           if ('vibrate' in navigator) navigator.vibrate([10, 30]);
           await wait(AUTH_SUCCESS_HOLD_MS);
@@ -744,6 +833,21 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       if (!result.account) {
         setIsSubmitting(false);
         setError('Could not complete sign in. Please try again.');
+        return;
+      }
+
+      // Returning login: require Telegram DB link if this account has none yet.
+      if (!isTelegramDbConnected(result.account.id)) {
+        setIsSubmitting(false);
+        setLoadingPhase('default');
+        setPendingTelegramAccount(result.account);
+        setAdminInfoName(typeof settings?.businessName === 'string' ? settings.businessName : '');
+        setAdminInfoPhone(typeof settings?.businessPhone === 'string' ? settings.businessPhone : '');
+        setAdminInfoAddress(typeof settings?.businessAddress === 'string' ? settings.businessAddress : '');
+        setTelegramBotToken('');
+        setTelegramChatId('');
+        setPane('auth');
+        setAuthCardAnimKey((k) => k + 1);
         return;
       }
 
@@ -1077,7 +1181,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
               </div>
             </div>
 
-            {showBusinessSetup && businessSetup && (
+            {showBusinessSetup && (businessSetup || pendingTelegramAccount) && (
               <div
                 className="absolute inset-0 z-10 flex items-center justify-center p-4 rounded-2xl bg-black/25 backdrop-blur-sm"
                 role="dialog"
@@ -1085,53 +1189,121 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 aria-labelledby="business-setup-title"
               >
                 <div
-                  className={`invoice-receipt-stage w-full max-w-[min(320px,92vw)] rounded-2xl border shadow-2xl animate-insight-pop overflow-hidden ${
+                  className={`w-full max-w-[min(360px,94vw)] max-h-[88vh] overflow-y-auto custom-scrollbar rounded-2xl border shadow-2xl animate-insight-pop ${
                     isLight
                       ? 'bg-white border-black/10 text-black'
                       : 'bg-zinc-900 border-white/12 text-white'
                   }`}
                 >
-                  <div className="px-5 pt-5 pb-3 text-center">
+                  <div className="px-5 pt-5 pb-2 text-center">
                     <div className="flex items-center justify-center gap-2 mb-2">
                       <Icons.Trends size={20} className="text-emerald-500" />
                       <h4 id="business-setup-title" className="app-subtext text-sm font-black">
-                        Access granted
+                        {businessSetup ? 'Access granted · Admin info' : 'Connect Telegram database'}
                       </h4>
                     </div>
-                    <p className={`app-subtext text-[10px] leading-relaxed opacity-45 ${isLight ? 'text-black' : 'text-white'}`}>
-                      You are receiving your business profile
+                    <p
+                      className={`app-subtext text-[10px] leading-relaxed opacity-55 ${isLight ? 'text-black' : 'text-white'}`}
+                      style={{ letterSpacing: 0 }}
+                    >
+                      {businessSetup
+                        ? 'Your 7-character code was approved. Connect a Telegram bot to store this account’s data — Supabase keeps auth/codes only.'
+                        : 'Link a BotFather token to this account’s database. App data stays off Supabase.'}
                     </p>
                   </div>
 
-                  {businessInfoLoading ? (
+                  {businessInfoLoading && businessSetup ? (
                     <div className="px-5 pb-6 flex flex-col items-center gap-3">
                       <span className="auth-spinner" aria-hidden="true" />
-                      <p className="app-subtext text-[10px] opacity-45">Loading business details…</p>
+                      <p className="app-subtext text-[10px] opacity-45">Preparing admin setup…</p>
                     </div>
                   ) : (
-                    <>
-                      <BusinessInfoReceiptCard
-                        variant="modal"
-                        badgeLabel="Receiving"
-                        businessName={receivedBusinessInfo?.businessName || '—'}
-                        businessPhone={receivedBusinessInfo?.businessPhone}
-                        businessAddress={receivedBusinessInfo?.businessAddress}
-                        className="mx-auto w-full"
-                      />
-                      <div className="px-5 pb-5 pt-3">
-                        {error && (
-                          <p className="text-xs font-bold text-red-500 mb-3 text-center" role="alert">{error}</p>
-                        )}
-                        <button
-                          type="button"
-                          disabled={isSubmitting || !receivedBusinessInfo?.businessName.trim()}
-                          onClick={() => void handleBusinessReceiveContinue()}
-                          className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all active:scale-[0.98] min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
-                        >
-                          {isSubmitting ? 'Opening workspace…' : 'Continue'}
-                        </button>
-                      </div>
-                    </>
+                    <div className="px-5 pb-5 pt-2 space-y-3">
+                      {receivedBusinessInfo?.businessName ? (
+                        <BusinessInfoReceiptCard
+                          variant="modal"
+                          badgeLabel="From admin"
+                          businessName={receivedBusinessInfo.businessName}
+                          businessPhone={receivedBusinessInfo.businessPhone}
+                          businessAddress={receivedBusinessInfo.businessAddress}
+                          className="w-full"
+                        />
+                      ) : null}
+
+                      <label className="block">
+                        <span className={FORM_FIELD_LABEL}>Business name *</span>
+                        <input
+                          type="text"
+                          value={adminInfoName}
+                          onChange={(e) => setAdminInfoName(e.target.value)}
+                          className={formInputClass(isLight)}
+                          placeholder="Shop / business name"
+                          autoComplete="organization"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className={FORM_FIELD_LABEL}>Phone</span>
+                        <input
+                          type="tel"
+                          value={adminInfoPhone}
+                          onChange={(e) => setAdminInfoPhone(e.target.value)}
+                          className={formInputClass(isLight)}
+                          placeholder="Optional"
+                          autoComplete="tel"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className={FORM_FIELD_LABEL}>Address</span>
+                        <input
+                          type="text"
+                          value={adminInfoAddress}
+                          onChange={(e) => setAdminInfoAddress(e.target.value)}
+                          className={formInputClass(isLight)}
+                          placeholder="Optional"
+                          autoComplete="street-address"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className={FORM_FIELD_LABEL}>Telegram Bot API *</span>
+                        <PasswordField
+                          isLight={isLight}
+                          value={telegramBotToken}
+                          onChange={setTelegramBotToken}
+                          placeholder="123456:AA… from BotFather"
+                          autoComplete="off"
+                        />
+                        <span className={`app-subtext text-[9px] mt-1 block opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
+                          Required. Message /start to your bot once, then continue. Token stays on this device.
+                        </span>
+                      </label>
+                      <label className="block">
+                        <span className={FORM_FIELD_LABEL}>Telegram chat id</span>
+                        <input
+                          type="text"
+                          value={telegramChatId}
+                          onChange={(e) => setTelegramChatId(e.target.value)}
+                          className={formInputClass(isLight)}
+                          placeholder="Optional if you already /start’d the bot"
+                          autoComplete="off"
+                        />
+                      </label>
+
+                      {error && (
+                        <p className="text-xs font-bold text-red-500 text-center" role="alert">
+                          {error}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        disabled={
+                          isSubmitting || !adminInfoName.trim() || !looksLikeBotToken(telegramBotToken)
+                        }
+                        onClick={() => void handleBusinessReceiveContinue()}
+                        className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.25em] transition-all active:scale-[0.98] min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
+                      >
+                        {isSubmitting ? 'Connecting database…' : 'Connect & continue'}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

@@ -43,8 +43,6 @@ import {
 } from './utils/auth';
 import { SyncStatusIndicator } from './components/SyncStatusIndicator';
 import AccountToastHost from './components/AccountToastHost';
-import SettingsNotificationsInbox from './components/SettingsNotificationsInbox';
-import AdminProfilesPopup from './components/AdminProfilesPopup';
 import { useAccountNotifications } from './hooks/useAccountNotifications';
 
 import { usePOS, InventoryItem } from './hooks/usePOS';
@@ -60,6 +58,7 @@ import {
 import { CartLineItem, InvoiceActionLog, InvoicePrintLog, SavedInvoice } from './types';
 import { usePOSDashboardData } from './hooks/usePOSDashboardData';
 import { clearAppSessionData, isCloudUserAccount } from './utils/freshAppSession';
+import { mergeAccountProfiles } from './utils/supabaseAuth';
 import { printerInstance } from './utils/bluetoothPrinter';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -207,8 +206,6 @@ const AppContent: React.FC = () => {
   const [isCalculatorEntering, setIsCalculatorEntering] = useState(false);
   // Don't flash signup/login when a session already exists — wait for restore.
   const [authOverlayMounted, setAuthOverlayMounted] = useState(() => !getAuthSession());
-  const [floatingNotiInboxOpen, setFloatingNotiInboxOpen] = useState(false);
-  const [adminProfilesOpen, setAdminProfilesOpen] = useState(false);
   const sessionBootstrappedRef = useRef(false);
   const isAdminPortalRef = useRef(false);
 
@@ -262,6 +259,13 @@ const AppContent: React.FC = () => {
     [closeAllPanels]
   );
 
+  /** Foreground resume: keep whatever screen the user left (do not close panels). */
+  const resumeWhereLeftOff = useCallback(() => {
+    if (isAdminPortalRef.current) return;
+    setAuthOverlayMounted(false);
+    setIsUnlocked(true);
+  }, []);
+
   // While using the calculator: auto-scan printers USB → Bluetooth → WiFi.
   useEffect(() => {
     if (!authReady || !account || !isUnlocked) {
@@ -295,13 +299,15 @@ const AppContent: React.FC = () => {
     isAdminPortalRef.current = isAdminPortal;
   }, [isAdminPortal]);
 
-  // Cold start / session restore: signed-in users skip signup/login and open calculator.
+  // Cold start only: signed-in users skip auth once. Later account hydrates must not reset UI.
   useEffect(() => {
     if (!authReady) return;
 
     if (account) {
-      if (!isAdminPortal) {
-        openCalculatorHome({ animate: !sessionBootstrappedRef.current });
+      if (!isAdminPortal && !sessionBootstrappedRef.current) {
+        openCalculatorHome({ animate: true });
+      } else if (!isAdminPortal && !isUnlocked) {
+        resumeWhereLeftOff();
       }
       sessionBootstrappedRef.current = true;
       return;
@@ -311,7 +317,7 @@ const AppContent: React.FC = () => {
     setIsUnlocked(false);
     setAuthOverlayMounted(true);
     sessionBootstrappedRef.current = true;
-  }, [authReady, account, isAdminPortal, openCalculatorHome]);
+  }, [authReady, account, isAdminPortal, isUnlocked, openCalculatorHome, resumeWhereLeftOff]);
 
   // Admin portal always runs as the @admin profile.
   useEffect(() => {
@@ -325,25 +331,20 @@ const AppContent: React.FC = () => {
     });
   }, [isAdminPortal, settings.profiles, settings.activeProfileId, updateSettings]);
 
-  // Any app reopen / foreground resume while logged in → calculator.
+  // Background → foreground: restore session UI without closing POS/settings/history.
   useEffect(() => {
     if (!authReady || !account) return;
 
-    const resumeToCalculator = () => {
-      if (isAdminPortalRef.current) return;
-      openCalculatorHome({ animate: false });
-    };
-
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') resumeToCalculator();
+      if (document.visibilityState === 'visible') resumeWhereLeftOff();
     };
     document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('pageshow', resumeToCalculator);
+    window.addEventListener('pageshow', resumeWhereLeftOff);
 
     let removeCap: (() => void) | undefined;
     if (Capacitor.isNativePlatform()) {
       void CapApp.addListener('appStateChange', ({ isActive }) => {
-        if (isActive) resumeToCalculator();
+        if (isActive) resumeWhereLeftOff();
       }).then((handle) => {
         removeCap = () => {
           void handle.remove();
@@ -353,23 +354,48 @@ const AppContent: React.FC = () => {
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('pageshow', resumeToCalculator);
+      window.removeEventListener('pageshow', resumeWhereLeftOff);
       removeCap?.();
     };
-  }, [authReady, account, openCalculatorHome]);
+  }, [authReady, account, resumeWhereLeftOff]);
 
+  // Keep account profiles durable: merge cloud ∪ local, upsert to cloud, never drop users.
   useEffect(() => {
     if (!account) return;
     const settingsProfiles = settings.profiles ?? [];
     const settingsActiveId = settings.activeProfileId ?? '';
-    if (
-      account.activeProfileId === settingsActiveId &&
-      JSON.stringify(account.profiles) === JSON.stringify(ensureAdminProfile(settingsProfiles))
-    ) {
+    const merged = mergeAccountProfiles(account.profiles, settingsProfiles);
+    const mergedActive = merged.some((p) => p.id === settingsActiveId)
+      ? settingsActiveId
+      : merged.some((p) => p.id === account.activeProfileId)
+        ? account.activeProfileId
+        : merged[0]?.id ?? '';
+
+    const settingsSame =
+      JSON.stringify(ensureAdminProfile(settingsProfiles)) === JSON.stringify(merged) &&
+      settingsActiveId === mergedActive;
+    if (!settingsSame) {
+      updateSettings({ profiles: merged, activeProfileId: mergedActive });
       return;
     }
-    syncProfiles(settingsProfiles, settingsActiveId);
-  }, [account, settings.profiles, settings.activeProfileId, syncProfiles]);
+
+    const accountSame =
+      account.activeProfileId === mergedActive &&
+      JSON.stringify(account.profiles) === JSON.stringify(merged);
+    if (accountSame) return;
+
+    void syncProfiles(merged, mergedActive).then((synced) => {
+      if (
+        JSON.stringify(synced) !== JSON.stringify(merged) ||
+        !synced.some((p) => p.id === mergedActive)
+      ) {
+        const nextActive = synced.some((p) => p.id === mergedActive)
+          ? mergedActive
+          : synced[0]?.id ?? '';
+        updateSettings({ profiles: synced, activeProfileId: nextActive });
+      }
+    });
+  }, [account, settings.profiles, settings.activeProfileId, syncProfiles, updateSettings]);
 
   const handleAuthSuccess = useCallback((acc: NonNullable<typeof account>) => {
     // Cloud accounts: do NOT wipe local React state here. Clearing used to race an empty
@@ -379,15 +405,21 @@ const AppContent: React.FC = () => {
       // Drop stale guest/local storage keys only; hydrate replaces in-memory state.
       clearAppSessionData();
     }
+    const mergedProfiles = mergeAccountProfiles(acc.profiles, settings.profiles ?? []);
+    const nextActive = mergedProfiles.some((p) => p.id === acc.activeProfileId)
+      ? acc.activeProfileId
+      : mergedProfiles.some((p) => p.id === settings.activeProfileId)
+        ? settings.activeProfileId
+        : mergedProfiles[0]?.id ?? '';
     updateSettings({
-      profiles: acc.profiles,
-      activeProfileId: acc.activeProfileId,
+      profiles: mergedProfiles,
+      activeProfileId: nextActive,
     });
     triggerHaptic(2);
     setIsCalculatorEntering(true);
     setIsUnlocked(true);
     setAuthOverlayMounted(false);
-  }, [updateSettings, triggerHaptic]);
+  }, [updateSettings, triggerHaptic, settings.profiles, settings.activeProfileId]);
 
   /** Local guest login for `npm run dev` — does not require Supabase. */
   const handleDevSkip = useCallback(async () => {
@@ -1518,54 +1550,6 @@ const AppContent: React.FC = () => {
         onAccountNotify={handleAccountNotify}
       />
       {isUnlocked && <AccountToastHost isLight={isLight} api={accountNotifications} />}
-      {isUnlocked && (
-        <>
-          <div className="floating-fab-stack">
-            <button
-              type="button"
-              className={`floating-noti-bell ${isLight ? 'floating-noti-bell--light' : 'floating-noti-bell--dark'} ${
-                accountNotifications.unreadCount > 0 ? 'floating-noti-bell--unread' : ''
-              } active:scale-95`}
-              onClick={() => setFloatingNotiInboxOpen(true)}
-              aria-label={`Notifications${accountNotifications.unreadCount > 0 ? `, ${accountNotifications.unreadCount} unread` : ''}`}
-            >
-              <span className="floating-noti-bell__icon inline-flex">
-                <Icons.Bell size={20} />
-              </span>
-              {accountNotifications.unreadCount > 0 && (
-                <span className="noti-bell-indicator" aria-hidden="true">
-                  <span className="noti-bell-indicator__caret" />
-                </span>
-              )}
-            </button>
-            {canViewTransactions && (
-              <button
-                type="button"
-                className={`floating-profiles-btn ${isLight ? 'floating-profiles-btn--light' : 'floating-profiles-btn--dark'} active:scale-95`}
-                onClick={() => setAdminProfilesOpen(true)}
-                aria-label="View account profiles"
-              >
-                <Icons.Users size={20} />
-              </button>
-            )}
-          </div>
-          <SettingsNotificationsInbox
-            isOpen={floatingNotiInboxOpen}
-            onClose={() => setFloatingNotiInboxOpen(false)}
-            isLight={isLight}
-            notifications={accountNotifications.items}
-            activeProfileId={settings.activeProfileId ?? ''}
-            onMarkRead={accountNotifications.markRead}
-          />
-          <AdminProfilesPopup
-            isOpen={adminProfilesOpen}
-            onClose={() => setAdminProfilesOpen(false)}
-            isLight={isLight}
-            profiles={settings.profiles ?? []}
-            activeProfileId={settings.activeProfileId ?? ''}
-          />
-        </>
-      )}
       <SyncStatusIndicator
         syncState={syncStatus.syncState}
         isLight={isLight}

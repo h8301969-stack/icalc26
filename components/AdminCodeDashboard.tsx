@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icons } from '../constants';
 import {
   AccessCodeRow,
@@ -17,6 +17,82 @@ import { ADMIN_PROFILE_NAME, createAdminProfile } from '../utils/auth';
 import { UserProfile } from '../types';
 import { FORM_FIELD_LABEL, FORM_SECTION_TITLE, formInputClass, formTextareaClass } from '../utils/formFields';
 import ProfileAvatar from './ProfileAvatar';
+import { MorphPresence } from './MorphCrossfade';
+import telegramDbMarkdown from '../telegramdb.md?raw';
+
+const renderSimpleMarkdown = (source: string): string => {
+  const escape = (s: string) =>
+    s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  const lines = source.replace(/\r\n/g, '\n').split('\n');
+  const out: string[] = [];
+  let inCode = false;
+  let inList = false;
+  const closeList = () => {
+    if (inList) {
+      out.push('</ul>');
+      inList = false;
+    }
+  };
+  const inlineFormat = (text: string) =>
+    escape(text)
+      .replace(/`([^`]+)`/g, '<code class="telegram-db-code">$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  for (const line of lines) {
+    if (line.trim().startsWith('```')) {
+      if (inCode) {
+        out.push('</code></pre>');
+        inCode = false;
+      } else {
+        closeList();
+        out.push('<pre class="telegram-db-pre"><code>');
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) {
+      out.push(`${escape(line)}\n`);
+      continue;
+    }
+    if (/^---+$/.test(line.trim())) {
+      closeList();
+      out.push('<hr class="telegram-db-hr" />');
+      continue;
+    }
+    const heading = line.match(/^(#{1,3})\s+(.*)$/);
+    if (heading) {
+      closeList();
+      const level = heading[1].length;
+      out.push(`<h${level} class="telegram-db-h${level}">${inlineFormat(heading[2])}</h${level}>`);
+      continue;
+    }
+    if (/^\|.+\|$/.test(line.trim())) {
+      closeList();
+      out.push(`<pre class="telegram-db-table-line">${escape(line)}</pre>`);
+      continue;
+    }
+    if (/^[-*]\s+/.test(line)) {
+      if (!inList) {
+        out.push('<ul class="telegram-db-ul">');
+        inList = true;
+      }
+      out.push(`<li>${inlineFormat(line.replace(/^[-*]\s+/, ''))}</li>`);
+      continue;
+    }
+    closeList();
+    if (!line.trim()) {
+      out.push('<div class="telegram-db-spacer"></div>');
+      continue;
+    }
+    out.push(`<p class="telegram-db-p">${inlineFormat(line)}</p>`);
+  }
+  closeList();
+  if (inCode) out.push('</code></pre>');
+  return out.join('');
+};
 
 type AdminTab = 'unused' | 'pending' | 'approved';
 
@@ -113,8 +189,10 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const [revealedPasswordIds, setRevealedPasswordIds] = useState<Set<string>>(() => new Set());
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
+  const [showTelegramDbDoc, setShowTelegramDbDoc] = useState(false);
   const longPressTimer = useRef<number | null>(null);
   const copyFeedbackTimer = useRef<number | null>(null);
+  const telegramDbHtml = useMemo(() => renderSimpleMarkdown(telegramDbMarkdown), []);
 
   const panelClass = isLight
     ? 'bg-white/90 border-black/10 text-black'
@@ -431,14 +509,26 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
             <p className="text-lg font-black truncate">{profile.name || ADMIN_PROFILE_NAME}</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => void handleExit()}
-          className={`admin-interactive h-10 w-10 rounded-full flex items-center justify-center border ${isLight ? 'bg-white/80 border-black/10' : 'bg-white/10 border-white/15'}`}
-          aria-label="Exit admin portal"
-        >
-          <Icons.X size={18} />
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowTelegramDbDoc(true)}
+            className={`admin-interactive h-10 px-3 rounded-full flex items-center justify-center gap-1.5 border text-[10px] font-black uppercase ${isLight ? 'bg-white/80 border-black/10' : 'bg-white/10 border-white/15'}`}
+            aria-label="Read telegramdb.md"
+            title="Telegram database design"
+          >
+            <Icons.List size={14} />
+            DB
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleExit()}
+            className={`admin-interactive h-10 w-10 rounded-full flex items-center justify-center border ${isLight ? 'bg-white/80 border-black/10' : 'bg-white/10 border-white/15'}`}
+            aria-label="Exit admin portal"
+          >
+            <Icons.X size={18} />
+          </button>
+        </div>
       </div>
 
       <div className="flex justify-center px-4 pb-4">
@@ -981,6 +1071,67 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
           {adminProfile.name} · secure code management
         </p>
       </div>
+
+      <MorphPresence show={showTelegramDbDoc}>
+        {(visible) => (
+          <div
+            className={`fixed inset-0 z-[1200] flex items-end sm:items-center justify-center p-4 ${
+              visible ? 'pointer-events-auto' : 'pointer-events-none'
+            }`}
+            role="presentation"
+            aria-hidden={!visible}
+          >
+            <div
+              className={`absolute inset-0 cursor-pointer morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'} ${
+                isLight ? 'bg-[#f2f2f7]/92' : 'bg-black/75'
+              }`}
+              onClick={() => setShowTelegramDbDoc(false)}
+              aria-hidden="true"
+            />
+            <div
+              className={`relative w-full max-w-lg max-h-[82vh] flex flex-col rounded-[28px] overflow-hidden shadow-[0_40px_120px_rgba(0,0,0,0.55)] morph-panel ${
+                visible ? 'morph-panel--in' : 'morph-panel--out'
+              } ${isLight ? 'bg-white text-zinc-900' : 'bg-[#141416] text-zinc-100'}`}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="telegram-db-doc-title"
+            >
+              <div
+                className={`flex items-start justify-between gap-3 px-5 pt-5 pb-3 border-b shrink-0 ${
+                  isLight ? 'border-black/8' : 'border-white/10'
+                }`}
+              >
+                <div className="min-w-0">
+                  <h3 id="telegram-db-doc-title" className="text-lg font-black" style={{ letterSpacing: 0 }}>
+                    telegramdb.md
+                  </h3>
+                  <p
+                    className={`text-[11px] font-medium mt-0.5 ${isLight ? 'text-black/50' : 'text-white/50'}`}
+                    style={{ letterSpacing: 0 }}
+                  >
+                    Per-account Telegram DB · Supabase = auth + codes
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTelegramDbDoc(false)}
+                  className={`admin-interactive h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${
+                    isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'
+                  }`}
+                  aria-label="Close telegramdb.md"
+                >
+                  <Icons.X size={16} />
+                </button>
+              </div>
+              <div
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4 custom-scrollbar telegram-db-reader"
+                style={{ letterSpacing: 0 }}
+                dangerouslySetInnerHTML={{ __html: telegramDbHtml }}
+              />
+            </div>
+          </div>
+        )}
+      </MorphPresence>
     </div>
   );
 };
