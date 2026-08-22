@@ -197,7 +197,8 @@ export const sendInvoiceImageToLinkedTelegram = async (
       canvas,
       caption,
     });
-    return result.ok ? { ok: true } : { ok: false, error: result.error };
+    if (result.ok === false) return { ok: false as const, error: result.error };
+    return { ok: true as const };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Telegram send failed.' };
   }

@@ -138,6 +138,38 @@ function formatRequestElapsed(timestamp: number, now: Date): string {
   return `${days}d ${hrs % 24}h ${mins % 60}m`;
 }
 
+/** Business day rolls at 05:00 local — logs are hidden for prior days, never deleted. */
+const ACTION_LOG_DAY_HOUR = 5;
+
+function getBusinessDayStart(at: Date | number, hour = ACTION_LOG_DAY_HOUR): number {
+  const d = new Date(at);
+  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hour, 0, 0, 0);
+  if (d.getTime() < start.getTime()) start.setDate(start.getDate() - 1);
+  return start.getTime();
+}
+
+function getBusinessDayKey(at: Date | number): string {
+  const start = new Date(getBusinessDayStart(at));
+  const y = start.getFullYear();
+  const m = String(start.getMonth() + 1).padStart(2, '0');
+  const day = String(start.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatBusinessDayLabel(dayKey: string): string {
+  const [y, m, d] = dayKey.split('-').map(Number);
+  const date = new Date(y, (m || 1) - 1, d || 1);
+  const mon = date.toLocaleString([], { month: 'short' }).toUpperCase();
+  return `${mon}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function businessDayRange(dayKey: string): { start: number; end: number } {
+  const [y, m, d] = dayKey.split('-').map(Number);
+  const start = new Date(y, (m || 1) - 1, d || 1, ACTION_LOG_DAY_HOUR, 0, 0, 0).getTime();
+  const end = start + 86400000;
+  return { start, end };
+}
+
 const POSDashboard: React.FC<POSDashboardProps> = ({
   history: _history,
   items,
@@ -219,6 +251,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [actionLogSearchQuery, setActionLogSearchQuery] = useState('');
   const [showActionLogSearch, setShowActionLogSearch] = useState(false);
   const [actionLogFilter, setActionLogFilter] = useState<DashboardLogFilter>('all');
+  /** Selected business day (5am→5am). Logs are never deleted — only filtered by this day. */
+  const [actionLogDayKey, setActionLogDayKey] = useState(() => getBusinessDayKey(Date.now()));
   const [namingUnidentified, setNamingUnidentified] = useState<{ price: number; quantity: number } | null>(null);
   /** Asset Hub + menu: dropdown for add item / restock forms */
   type AssetActionMode = 'add' | 'restock';
@@ -404,15 +438,18 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       .filter((card) => card.items.length > 0 || (parseFloat(card.total) || 0) > 0);
   }, [printLogs, invoiceActionLogs, invoiceName]);
 
-  const todayStart = useMemo(
-    () =>
-      new Date(
-        currentTime.getFullYear(),
-        currentTime.getMonth(),
-        currentTime.getDate()
-      ).getTime(),
-    [currentTime]
-  );
+  /** Stats “today” aligns with action-log business day (rolls at 05:00). */
+  const todayStart = useMemo(() => getBusinessDayStart(currentTime), [currentTime]);
+
+  const currentBusinessDayKey = useMemo(() => getBusinessDayKey(currentTime), [currentTime]);
+
+  const actionLogFollowTodayRef = useRef(true);
+  // When the clock crosses 05:00, snap to the new day unless the user picked another date.
+  useEffect(() => {
+    if (actionLogFollowTodayRef.current) {
+      setActionLogDayKey(currentBusinessDayKey);
+    }
+  }, [currentBusinessDayKey]);
 
   const monthStart = useMemo(
     () => new Date(currentTime.getFullYear(), currentTime.getMonth(), 1).getTime(),
@@ -578,8 +615,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const latestPurchaseTotal = purchases.length > 0 ? purchases[0].total : 0;
   const latestPurchaseName = purchases.length > 0 ? purchases[0].itemName : 'Latest Transaction';
 
-  const systemLogs = useMemo((): DashboardLogEntry[] => {
-    const dayAgo = Date.now() - 86400000;
+  /** Full durable feed — never wiped; print events included so stats and logs stay in sync. */
+  const allSystemLogs = useMemo((): DashboardLogEntry[] => {
     const inventoryLogs: DashboardLogEntry[] = items.flatMap((item) =>
       item.activities.map((log) => ({
         id: log.id,
@@ -605,10 +642,32 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       profileName: log.profileName,
       source: 'invoice' as const,
     }));
-    return [...inventoryLogs, ...invoiceLogs]
-      .filter((log) => log.timestamp >= dayAgo)
-      .sort((a, b) => b.timestamp - a.timestamp);
-  }, [items, invoiceActionLogs, currency]);
+    const printEntries: DashboardLogEntry[] = printLogs.map((log) => ({
+      id: log.id,
+      timestamp: log.timestamp,
+      action: `Printed invoice ${log.invoiceName}`,
+      itemName: formatCurrency(log.total),
+      type: 'sale' as const,
+      isUnidentified: false,
+      invoiceName: log.invoiceName,
+      source: 'invoice' as const,
+    }));
+    return [...inventoryLogs, ...invoiceLogs, ...printEntries].sort(
+      (a, b) => b.timestamp - a.timestamp
+    );
+  }, [items, invoiceActionLogs, printLogs, currency, formatCurrency]);
+
+  const actionLogDayOptions = useMemo(() => {
+    const keys = new Set<string>([currentBusinessDayKey]);
+    for (const log of allSystemLogs) keys.add(getBusinessDayKey(log.timestamp));
+    return [...keys].sort((a, b) => (a < b ? 1 : -1));
+  }, [allSystemLogs, currentBusinessDayKey]);
+
+  /** Visible logs for the selected business day (5am→5am). Older days stay stored. */
+  const systemLogs = useMemo((): DashboardLogEntry[] => {
+    const { start, end } = businessDayRange(actionLogDayKey);
+    return allSystemLogs.filter((log) => log.timestamp >= start && log.timestamp < end);
+  }, [allSystemLogs, actionLogDayKey]);
 
   const filteredActionLogs = useMemo(() => {
     const now = Date.now();
@@ -620,7 +679,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     } else if (actionLogFilter === 'sale') {
       result = result.filter((log) => log.type === 'sale');
     } else if (actionLogFilter === 'invoice') {
-      result = result.filter((log) => log.type === 'invoice-add' || log.type === 'invoice-unidentified');
+      result = result.filter(
+        (log) =>
+          log.type === 'invoice-add' ||
+          log.type === 'invoice-unidentified' ||
+          log.action.startsWith('Printed invoice')
+      );
     } else if (actionLogFilter === 'unidentified') {
       result = result.filter((log) => log.isUnidentified);
     } else if (actionLogFilter === 'updates') {
@@ -1352,8 +1416,37 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           <Icons.Search size={18} />
         </button>
       </div>
+      <div className="flex justify-center px-1 -mt-1 mb-2">
+        <label className="relative inline-flex flex-col items-center">
+          <span className="sr-only">Action log date</span>
+          <select
+            value={actionLogDayKey}
+            onChange={(e) => {
+              const next = e.target.value;
+              actionLogFollowTodayRef.current = next === currentBusinessDayKey;
+              setActionLogDayKey(next);
+            }}
+            className={`appearance-none text-center font-black tracking-tight text-xl pl-4 pr-8 py-1.5 rounded-full outline-none cursor-pointer ${
+              isLight ? 'bg-black/5 text-zinc-900' : 'bg-white/10 text-white'
+            }`}
+            aria-label="Preferred action log date"
+          >
+            {actionLogDayOptions.map((key) => (
+              <option key={key} value={key}>
+                {formatBusinessDayLabel(key)}
+                {key === currentBusinessDayKey ? ' · today' : ''}
+              </option>
+            ))}
+          </select>
+          <span className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] opacity-50 ${textColorClass}`} aria-hidden>
+            ▾
+          </span>
+        </label>
+      </div>
       <h3 className={`pos-dashboard-section-title text-4xl px-1 ${textColorClass}`}>Action Logs</h3>
-      <p className={`action-log-meta px-1 -mt-4 text-[12px] font-medium ${cardSubtextMutedClass}`}>Recent activity · last 24h</p>
+      <p className={`app-subtext leading-relaxed opacity-45 px-1 -mt-4 ${cardSubtextMutedClass}`}>
+        {formatBusinessDayLabel(actionLogDayKey)} · day starts 5:00 AM · never deleted
+      </p>
 
       {showActionLogSearch && (
         <input
@@ -1698,10 +1791,48 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 className={`col-span-2 p-10 rounded-2xl ${levitateClass} text-left cursor-pointer active:scale-[0.99] transition-all`}
                 aria-label="Open all action logs"
               >
+                <div
+                  className="flex justify-center mb-4"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <label className="relative inline-flex flex-col items-center">
+                    <span className="sr-only">Action log date</span>
+                    <select
+                      value={actionLogDayKey}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        actionLogFollowTodayRef.current = next === currentBusinessDayKey;
+                        setActionLogDayKey(next);
+                      }}
+                      className={`appearance-none text-center font-black tracking-tight text-lg pl-4 pr-8 py-1.5 rounded-full outline-none cursor-pointer ${
+                        isLight
+                          ? 'bg-black/5 text-zinc-900'
+                          : 'bg-white/10 text-white'
+                      }`}
+                      aria-label="Preferred action log date"
+                    >
+                      {actionLogDayOptions.map((key) => (
+                        <option key={key} value={key}>
+                          {formatBusinessDayLabel(key)}
+                          {key === currentBusinessDayKey ? ' · today' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <span
+                      className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] opacity-50 ${textColorClass}`}
+                      aria-hidden
+                    >
+                      ▾
+                    </span>
+                  </label>
+                </div>
                 <div className="flex justify-between items-center mb-6">
                    <div className="space-y-1">
                       <h3 className={`pos-dashboard-section-title text-2xl ${textColorClass}`}>Action Logs</h3>
-                      <p className={`app-subtext leading-relaxed opacity-45 ${cardSubtextMutedClass}`}>Recent activity · last 24h</p>
+                      <p className={`app-subtext leading-relaxed opacity-45 ${cardSubtextMutedClass}`}>
+                        Day starts 5:00 AM · logs stay stored
+                      </p>
                    </div>
                    <div className={`p-3.5 rounded-full bg-blue-500/10 text-blue-500 ${iconLiftLight}`}><Icons.Trends size={24} /></div>
                 </div>
@@ -1710,7 +1841,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     renderActivityLogRows(systemLogs, 8, true)
                   ) : (
                     <div className="py-16 text-center space-y-3">
-                       <p className={`action-log-meta text-[10px] font-medium ${cardSubtextMutedClass}`}>No log data yet</p>
+                       <p className={`app-subtext leading-relaxed opacity-45 ${cardSubtextMutedClass}`}>
+                         No activity for {formatBusinessDayLabel(actionLogDayKey)}
+                       </p>
                     </div>
                   )}
                 </div>

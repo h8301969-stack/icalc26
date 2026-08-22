@@ -28,8 +28,11 @@ export interface TelegramDbRow<T = unknown> {
 
 const configKey = (accountId: string) => `icalc_telegram_db_${accountId}`;
 const indexKey = (accountId: string) => `icalc_telegram_db_index_${accountId}`;
-/** Shared device link for Skip (dev) + admin portal testing (same bot/chat). */
-const SHARED_CONFIG_KEY = 'icalc_telegram_db_shared_dev';
+/** One-time owner link for Skip (dev) + admin portal (prod + local). */
+const OWNER_LINK_KEY = 'icalc_telegram_owner_link';
+const OWNER_LINK_KEY_LEGACY = 'icalc_telegram_db_shared_dev';
+/** Stable id used when binding the owner link before a real user session exists. */
+export const OWNER_TELEGRAM_ACCOUNT_ID = 'icalc-owner-device';
 
 type EntityIndex = Record<string, number>; // `${kind}:${id}` → message_id
 
@@ -38,43 +41,57 @@ export const looksLikeBotToken = (token: string): boolean =>
   /^\d{6,}:[A-Za-z0-9_-]{20,}$/.test(token.trim());
 
 export const getSharedTelegramDbConfig = (): TelegramDbConfig | null => {
-  const raw = storage.get<TelegramDbConfig | null>(SHARED_CONFIG_KEY, null);
+  const raw =
+    storage.get<TelegramDbConfig | null>(OWNER_LINK_KEY, null) ??
+    storage.get<TelegramDbConfig | null>(OWNER_LINK_KEY_LEGACY, null);
   if (!raw?.botToken || !raw.chatId) return null;
+  // Migrate legacy key once.
+  storage.set(OWNER_LINK_KEY, raw);
   return raw;
 };
 
 export const setSharedTelegramDbConfig = (config: TelegramDbConfig): void => {
-  storage.set(SHARED_CONFIG_KEY, config);
+  storage.set(OWNER_LINK_KEY, config);
+  storage.set(OWNER_LINK_KEY_LEGACY, config);
+};
+
+export const hasOwnerTelegramLink = (): boolean => !!getSharedTelegramDbConfig();
+
+/** Attach the saved owner bot/chat to any account (Skip/dev or admin Calc). */
+export const bindAccountToOwnerTelegram = (accountId: string): TelegramDbConfig | null => {
+  const shared = getSharedTelegramDbConfig();
+  if (!shared || !accountId) return shared;
+  storage.set(configKey(accountId), shared);
+  return shared;
 };
 
 export const getTelegramDbConfig = (accountId: string): TelegramDbConfig | null => {
   if (!accountId) return getSharedTelegramDbConfig();
   const raw = storage.get<TelegramDbConfig | null>(configKey(accountId), null);
   if (raw?.botToken && raw?.chatId) return raw;
-  // Reuse shared testing bot for Skip/dev + admin sessions.
-  const shared = getSharedTelegramDbConfig();
-  if (shared) {
-    storage.set(configKey(accountId), shared);
-    return shared;
-  }
-  return null;
+  return bindAccountToOwnerTelegram(accountId);
 };
 
 export const isTelegramDbConnected = (accountId: string | null | undefined): boolean => {
-  if (accountId && getTelegramDbConfig(accountId)) return true;
-  return !!getSharedTelegramDbConfig();
+  if (hasOwnerTelegramLink()) return true;
+  if (accountId && storage.get<TelegramDbConfig | null>(configKey(accountId), null)?.botToken) {
+    return true;
+  }
+  return false;
 };
 
-export const setTelegramDbConfig = (accountId: string, config: TelegramDbConfig): void => {
+export const setTelegramDbConfig = (
+  accountId: string,
+  config: TelegramDbConfig,
+  opts?: { asOwnerLink?: boolean }
+): void => {
   storage.set(configKey(accountId), config);
-  // Always mirror for Skip (dev) / admin portal so both reuse the same bot.
-  setSharedTelegramDbConfig(config);
+  if (opts?.asOwnerLink) setSharedTelegramDbConfig(config);
 };
 
 export const clearTelegramDbConfig = (accountId: string): void => {
   storage.set(configKey(accountId), null);
   storage.set(indexKey(accountId), {});
-  // Do not clear SHARED_CONFIG_KEY — Skip/dev and admin keep the testing bot.
 };
 
 const getIndex = (accountId: string): EntityIndex =>
@@ -168,9 +185,15 @@ export async function connectTelegramDatabase(input: {
   accountId: string;
   botToken: string;
   chatId?: string;
+  /** When true, also save as the one-time owner link (Skip/dev + admin portal). */
+  asOwnerLink?: boolean;
 }): Promise<{ ok: true; config: TelegramDbConfig } | { ok: false; error: string }> {
   const verified = await verifyTelegramBotToken(input.botToken);
   if (verified.ok === false) return verified;
+
+  if (input.asOwnerLink && !input.chatId?.trim()) {
+    return { ok: false, error: 'Chat ID is required.' };
+  }
 
   const chat = await resolveTelegramStorageChat(input.botToken, input.chatId);
   if (chat.ok === false) return chat;
@@ -181,7 +204,7 @@ export async function connectTelegramDatabase(input: {
     botUsername: verified.username,
     connectedAt: Date.now(),
   };
-  setTelegramDbConfig(input.accountId, config);
+  setTelegramDbConfig(input.accountId, config, { asOwnerLink: !!input.asOwnerLink });
 
   // Seed an index marker message so the chat is clearly the app DB.
   await telegramCall(config.botToken, 'sendMessage', {
@@ -191,7 +214,7 @@ export async function connectTelegramDatabase(input: {
         v: 1,
         kind: 'icalc_db_meta',
         user_id: input.accountId,
-        payload: { connected: true, bot: config.botUsername },
+        payload: { connected: true, bot: config.botUsername, owner: !!input.asOwnerLink },
         updated_at: new Date().toISOString(),
       },
       null,
@@ -201,6 +224,19 @@ export async function connectTelegramDatabase(input: {
   });
 
   return { ok: true, config };
+}
+
+/** One-time (or Settings update) owner Bot API + chat ID for admin / Skip (dev). */
+export async function connectOwnerTelegramLink(input: {
+  botToken: string;
+  chatId: string;
+}): Promise<{ ok: true; config: TelegramDbConfig } | { ok: false; error: string }> {
+  return connectTelegramDatabase({
+    accountId: OWNER_TELEGRAM_ACCOUNT_ID,
+    botToken: input.botToken,
+    chatId: input.chatId.trim(),
+    asOwnerLink: true,
+  });
 }
 
 export async function telegramUpsertEntity<T>(

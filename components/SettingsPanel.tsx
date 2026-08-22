@@ -21,6 +21,7 @@ import FluidSegmentControl from './FluidSegmentControl';
 import FluidToggle from './FluidToggle';
 import BusinessInfoReceiptCard from './BusinessInfoReceiptCard';
 import PasswordField from './PasswordField';
+import { formInputClass } from '../utils/formFields';
 import { updateUserBusinessInfo } from '../utils/accessControl';
 import { MorphPresence } from './MorphCrossfade';
 import SettingsNotificationsInbox from './SettingsNotificationsInbox';
@@ -32,6 +33,11 @@ import {
   formatReleaseElapsed,
   type AppReleaseInfo,
 } from '../utils/appRelease';
+import {
+  connectOwnerTelegramLink,
+  getSharedTelegramDbConfig,
+  looksLikeBotToken,
+} from '../utils/telegramDb';
 
 
 interface SettingsSlice {
@@ -177,6 +183,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showNotificationsInbox, setShowNotificationsInbox] = useState(false);
   const wasOpenRef = useRef(false);
+  const [tgBotToken, setTgBotToken] = useState('');
+  const [tgChatId, setTgChatId] = useState('');
+  const [tgSaveError, setTgSaveError] = useState<string | null>(null);
+  const [tgSaveOk, setTgSaveOk] = useState(false);
+  const [tgSaving, setTgSaving] = useState(false);
   const [phoneRelease, setPhoneRelease] = useState<AppReleaseInfo | null>(null);
   const [phoneReleaseLoading, setPhoneReleaseLoading] = useState(false);
   const [phoneReleaseNow, setPhoneReleaseNow] = useState(() => Date.now());
@@ -539,6 +550,31 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     </div>
   );
 
+  const linkedOwnerTg = getSharedTelegramDbConfig();
+
+  const handleSaveOwnerTelegram = async () => {
+    setTgSaveError(null);
+    setTgSaveOk(false);
+    if (!looksLikeBotToken(tgBotToken) || !tgChatId.trim()) {
+      setTgSaveError('Bot API and chat ID are both required.');
+      return;
+    }
+    setTgSaving(true);
+    const result = await connectOwnerTelegramLink({
+      botToken: tgBotToken.trim(),
+      chatId: tgChatId.trim(),
+    });
+    setTgSaving(false);
+    if (result.ok === false) {
+      setTgSaveError(result.error);
+      return;
+    }
+    setTgSaveOk(true);
+    setTgBotToken('');
+    setTgChatId('');
+    window.setTimeout(() => setTgSaveOk(false), 2500);
+  };
+
   const renderSecuritySection = () => {
     if (!accountUsername || !onChangePassword || !onLogout) return null;
     return (
@@ -576,6 +612,53 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             Click here to sign out
           </button>
         </div>
+
+        {isAdminProfile(activeProfile) && (
+          <div className={`mt-6 pt-5 border-t ${isLight ? 'border-zinc-200/80' : 'border-white/10'}`}>
+            <h4 className="settings-card-title text-base mb-1">Telegram (owner)</h4>
+            <p className={`app-subtext text-[10px] mb-3 ${isLight ? 'text-black/50' : 'text-white/50'}`} style={{ letterSpacing: 0 }}>
+              One-time Bot API + chat ID for admin portal / Skip (dev). Only @admin can change this.
+            </p>
+            {linkedOwnerTg ? (
+              <p className={`app-subtext text-[11px] mb-3 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} style={{ letterSpacing: 0 }}>
+                Linked {linkedOwnerTg.botUsername || 'bot'} · chat {linkedOwnerTg.chatId}
+              </p>
+            ) : (
+              <p className={`app-subtext text-[11px] mb-3 text-amber-500`} style={{ letterSpacing: 0 }}>
+                Not linked yet — paste below once.
+              </p>
+            )}
+            <div className="space-y-2">
+              <PasswordField
+                isLight={isLight}
+                value={tgBotToken}
+                onChange={setTgBotToken}
+                placeholder="Bot API token"
+                autoComplete="off"
+              />
+              <input
+                type="text"
+                value={tgChatId}
+                onChange={(e) => setTgChatId(e.target.value)}
+                className={formInputClass(isLight)}
+                placeholder="Chat ID"
+                autoComplete="off"
+              />
+              {tgSaveError && <p className="text-xs font-bold text-red-500">{tgSaveError}</p>}
+              {tgSaveOk && <p className="text-xs font-bold text-emerald-500">Saved. Skip/admin will reuse this.</p>}
+              <button
+                type="button"
+                disabled={tgSaving}
+                onClick={() => void handleSaveOwnerTelegram()}
+                className={`w-full py-3 rounded-xl text-sm font-black active:scale-[0.98] disabled:opacity-50 ${
+                  isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+                }`}
+              >
+                {tgSaving ? 'Saving…' : linkedOwnerTg ? 'Update Telegram link' : 'Save Telegram link'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   };

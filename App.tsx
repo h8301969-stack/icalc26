@@ -60,7 +60,11 @@ import { CartLineItem, InvoiceActionLog, InvoicePrintLog, SavedInvoice } from '.
 import { usePOSDashboardData } from './hooks/usePOSDashboardData';
 import { clearAppSessionData, isCloudUserAccount } from './utils/freshAppSession';
 import { mergeAccountProfiles } from './utils/supabaseAuth';
-import { isTelegramDbConnected } from './utils/telegramDb';
+import {
+  bindAccountToOwnerTelegram,
+  hasOwnerTelegramLink,
+  isTelegramDbConnected,
+} from './utils/telegramDb';
 import { printerInstance } from './utils/bluetoothPrinter';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -256,9 +260,13 @@ const AppContent: React.FC = () => {
     setSettingsSectionIndex(0);
   }, []);
 
-  /** Hold lock screen until this account has linked a Telegram bot (Skip/dev + users). */
+  /** Hold lock screen until owner Bot API+chat is saved (once), then reuse forever on device. */
   const holdForTelegramLink = useCallback((acc: AppAccount | null | undefined): boolean => {
     if (!acc?.id || isAdminPortalRef.current) return false;
+    if (hasOwnerTelegramLink()) {
+      bindAccountToOwnerTelegram(acc.id);
+      return false;
+    }
     if (isTelegramDbConnected(acc.id)) return false;
     setTelegramGateAccount(acc);
     setIsUnlocked(false);
@@ -1572,8 +1580,14 @@ const AppContent: React.FC = () => {
         activeProfileId={settings.activeProfileId ?? ''}
         onInvoicePrinted={handleDrawerInvoicePrinted}
         onSelectInvoice={handleSelectInvoice}
-        switcherMode={settings.invoiceSwitcherMode ?? 'horizontal'}
-        onSwitcherModeChange={(mode) => updateSettings({ invoiceSwitcherMode: mode })}
+        switcherMode={
+          settings.invoiceSwitcherMode === 'list' ? 'list' : 'horizontal'
+        }
+        onSwitcherModeChange={(mode) =>
+          updateSettings({
+            invoiceSwitcherMode: mode === 'list' ? 'list' : 'horizontal',
+          })
+        }
         onActiveChange={setIsHistoryPanelActive}
         shareReceiptSettings={{
           layoutMode: settings.receiptLayoutMode ?? 'summary',

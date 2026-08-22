@@ -26,7 +26,7 @@ import FluidSegmentControl from './FluidSegmentControl';
 
 const ATTENDANT_NAMES_KEY = 'invoice_attendant_names';
 
-type SwitcherMode = 'horizontal' | 'grid' | 'vertical' | 'list';
+type SwitcherMode = 'horizontal' | 'list';
 
 interface HistoryPanelProps {
   isOpen: boolean;
@@ -472,7 +472,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const [sheetExiting, setSheetExiting] = useState(false);
   const prevCardCountRef = useRef(cards.length);
   const { renderMode, contentIn } = useMorphModeSwap(safeSwitcherMode);
-  const isBrowseMode = renderMode === 'grid' || renderMode === 'list';
+  const isBrowseMode = renderMode === 'list';
 
   const clearInvoiceLoadTimer = useCallback(() => {
     if (invoiceLoadTimerRef.current !== null) {
@@ -617,10 +617,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         if (e.key === 'ArrowRight') previewInvoice(Math.min(activeIdx + 1, cards.length - 1));
         if (e.key === 'ArrowLeft') previewInvoice(Math.max(activeIdx - 1, 0));
       }
-      if (renderMode === 'vertical') {
-        if (e.key === 'ArrowDown') previewInvoice(Math.min(activeIdx + 1, cards.length - 1));
-        if (e.key === 'ArrowUp') previewInvoice(Math.max(activeIdx - 1, 0));
-      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -642,21 +638,18 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     if (!isDragging || isBrowseMode) return;
     const dx = e.clientX - dragStartX.current;
     const dy = e.clientY - dragStartY.current;
-    const primaryAxis = renderMode === 'vertical' ? 'y' : 'x';
-
     if (dragAxis.current === 'none' && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
       dragAxis.current = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
     }
-    if (dragAxis.current !== primaryAxis) return;
+    if (dragAxis.current !== 'x') return;
 
-    setDragDelta((primaryAxis === 'x' ? dx : dy) * DRAG_FACTOR);
-  }, [isDragging, renderMode, isBrowseMode]);
+    setDragDelta(dx * DRAG_FACTOR);
+  }, [isDragging, isBrowseMode]);
 
   const onPointerUp = useCallback(() => {
     if (!isDragging || isBrowseMode) return;
     setIsDragging(false);
-    const primaryAxis = renderMode === 'vertical' ? 'y' : 'x';
-    if (dragAxis.current === primaryAxis) {
+    if (dragAxis.current === 'x') {
       const absDelta = Math.abs(dragDelta);
       let nextIdx = activeIdx;
       if (dragDelta < -SWIPE_THRESHOLD) {
@@ -685,7 +678,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   const handleSwitcherModeChange = useCallback(
     (mode: SwitcherMode) => {
-      if (mode !== 'grid' && mode !== 'list') setFocusZoomed(false);
+      if (mode !== 'list') setFocusZoomed(false);
       setDragDelta(0);
       setIsDragging(false);
       dragAxis.current = 'none';
@@ -1376,46 +1369,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
       {renderSwitcherLayoutToolbar()}
 
-      {renderMode === 'grid' ? (
-        <>
-          <div
-            className={`absolute inset-0 z-10 flex flex-col ${browseSheetClass} ${
-              focusZoomed ? 'pointer-events-none' : ''
-            }`}
-            role="region"
-            aria-label="Invoice scattered grid"
-          >
-            <div className={`${modeContentClass} flex flex-col flex-1 min-h-0`}>
-              <div
-                className={`shrink-0 px-5 pt-[4.5rem] pb-3 transition-[filter,opacity] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                  focusZoomed ? 'blur-md opacity-40' : ''
-                }`}
-              >
-                <div className="text-sm font-black tracking-tight text-white drop-shadow-sm">
-                  Invoices
-                </div>
-              </div>
-
-              <div
-                className={`invoice-receipt-stage flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-6 sm:px-5 sm:pb-8 transition-[filter,opacity,transform] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                  focusZoomed ? 'blur-xl brightness-[0.45] scale-[0.96]' : ''
-                }`}
-              >
-                <div
-                  className="grid min-h-full content-start justify-items-center"
-                  style={{
-                    gridTemplateColumns: `repeat(auto-fill, minmax(${SCATTERED_GRID_MIN_TILE}, 1fr))`,
-                    gap: SCATTERED_GRID_GAP,
-                  }}
-                >
-                  {cards.map((card, idx) => renderGridTile(card, idx))}
-                </div>
-              </div>
-            </div>
-          </div>
-          {renderFocusOverlay()}
-        </>
-      ) : renderMode === 'list' ? (
+      {renderMode === 'list' ? (
         <>
           <div
             className={`absolute inset-0 z-10 flex flex-col ${browseSheetClass} ${
@@ -1455,10 +1409,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         <div
           ref={stageRef}
           className={`relative z-20 ${receiptStageClass} select-none overflow-visible ${sheetClass}`}
-          style={{
-            touchAction:
-              renderMode === 'horizontal' ? 'pan-x' : renderMode === 'vertical' ? 'pan-y' : 'auto',
-          }}
+          style={{ touchAction: 'pan-x' }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -1467,50 +1418,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           role="region"
         >
           <div className={`absolute inset-0 ${modeContentClass}`}>
-            {renderMode === 'vertical'
-              ? cards.map((card, idx) => {
-                  const {
-                    translateX,
-                    translateY,
-                    scale,
-                    opacity,
-                    blurPx,
-                    zIndex,
-                    transformOrigin,
-                    isActive,
-                    hidden,
-                  } = getVerticalCardStyle(idx);
-
-                  if (hidden) return null;
-
-                  return (
-                    <div
-                      key={card.id}
-                      aria-label={`Invoice card: ${card.name}`}
-                      inert={!isActive || !isOpen ? true : undefined}
-                      role={isActive ? 'dialog' : undefined}
-                      aria-modal={isActive ? true : undefined}
-                      className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]`}
-                      style={{
-                        transform: `translateX(${translateX}) translateY(${translateY}) scale(${scale})`,
-                        transformOrigin,
-                        opacity,
-                        zIndex,
-                        filter: blurPx > 0 ? `blur(${blurPx}px)` : 'none',
-                        transition: isDragging
-                          ? 'none'
-                          : 'transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1), filter 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
-                        pointerEvents: 'auto',
-                        cursor: isActive ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
-                      }}
-                      onClick={() => handleCardSelectClick(idx)}
-                    >
-                      {renderCardBody(card, isActive)}
-                      {renderInvoiceLoadingOverlay(idx)}
-                    </div>
-                  );
-                })
-              : cards.map((card, idx) => {
+            {cards.map((card, idx) => {
                   const {
                     translateX,
                     translateY,
@@ -1534,7 +1442,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                       aria-modal={isActive ? true : undefined}
                       className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]`}
                       style={{
-                        transform: `translateX(${translateX}) translateY(${translateY}px) scale(${scale})`,
+                        transform: `translateX(${translateX}) translateY(${translateY}) scale(${scale})`,
                         transformOrigin,
                         opacity,
                         zIndex,
