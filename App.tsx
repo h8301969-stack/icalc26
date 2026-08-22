@@ -79,6 +79,7 @@ const AppContent: React.FC = () => {
     login,
     logout,
     skipDevAuthAsAdmin,
+    openDevAdminPortal,
     syncProfiles,
     changePassword,
     verifyPassword,
@@ -233,7 +234,7 @@ const AppContent: React.FC = () => {
   const emitAccountNotification = accountNotifications.emit;
   const handleAccountNotify = useCallback(
     (input: {
-      kind: 'item_added' | 'item_restocked' | 'price_updated' | 'stock_updated';
+      kind: 'item_added' | 'item_restocked' | 'price_updated' | 'stock_updated' | 'image_updated';
       title: string;
       body: string;
     }) => {
@@ -559,6 +560,7 @@ const AppContent: React.FC = () => {
     return { account: result.account };
   }, [finalizeApprovedAccess]);
 
+  /** Show AdminCodeDashboard (generate codes). Caller must already set admin session token. */
   const handleAdminPortal = useCallback(() => {
     const profiles = ensureAdminProfile(settings.profiles ?? []);
     const admin = profiles.find((p) => isAdminProfile(p)) ?? createAdminProfile();
@@ -567,8 +569,23 @@ const AppContent: React.FC = () => {
       activeProfileId: admin.id,
     });
     triggerHaptic(2);
+    setIsUnlocked(false);
+    setTelegramGateAccount(null);
     setAuthOverlayMounted(false);
   }, [settings.profiles, updateSettings, triggerHaptic]);
+
+  /**
+   * Lock-screen Admin entry (dev one-tap). Prod uses the password form in AuthOverlay.
+   * Opens the generate-code portal even when a Skip/session account already exists.
+   */
+  const handleOpenAdminFromLock = useCallback(async () => {
+    if (!import.meta.env.DEV) {
+      return { error: 'Enter the admin password on the sign-in form.' };
+    }
+    const result = await openDevAdminPortal();
+    if ('error' in result && result.error) return { error: result.error };
+    return { adminPortal: true as const };
+  }, [openDevAdminPortal]);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -1098,6 +1115,7 @@ const AppContent: React.FC = () => {
             handleAuthSuccess(acc);
           }}
           onAdminPortal={handleAdminPortal}
+          onOpenAdminFromLock={import.meta.env.DEV ? handleOpenAdminFromLock : undefined}
           onFinalizeAccess={handleFinalizeAccess}
           onDevSkip={import.meta.env.DEV ? handleDevSkip : undefined}
           onQuickUnlock={

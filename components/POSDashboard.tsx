@@ -83,11 +83,25 @@ interface POSDashboardProps {
   onVerifyAdminPassword?: (password: string) => Promise<{ error?: string; ok?: boolean }>;
   /** Fan-out inventory change alerts to other profiles on this account. */
   onAccountNotify?: (input: {
-    kind: 'item_added' | 'item_restocked' | 'price_updated' | 'stock_updated';
+    kind: 'item_added' | 'item_restocked' | 'price_updated' | 'stock_updated' | 'image_updated';
     title: string;
     body: string;
   }) => void;
 }
+
+/** Accept any common photo container; empty MIME (HEIC etc.) falls back to extension. */
+const PHOTO_ACCEPT =
+  'image/*,image/jpeg,image/png,image/webp,image/gif,image/bmp,image/avif,image/heic,image/heif,image/tiff,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.heic,.heif,.tif,.tiff,.jfif,.dng';
+const PHOTO_EXT_RE = /\.(jpe?g|png|gif|webp|avif|heic|heif|bmp|tiff?|jfif|dng)$/i;
+
+const isLikelyImageFile = (file: File): boolean => {
+  if (file.type.startsWith('image/')) return true;
+  if (!file.type || file.type === 'application/octet-stream') {
+    return PHOTO_EXT_RE.test(file.name);
+  }
+  return PHOTO_EXT_RE.test(file.name);
+};
+
 
 type DashboardLogFilter = 'all' | 'restock' | 'sale' | 'invoice' | 'unidentified' | 'updates' | '24h' | '48h' | '7d';
 
@@ -438,9 +452,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       .filter((card) => card.items.length > 0 || (parseFloat(card.total) || 0) > 0);
   }, [printLogs, invoiceActionLogs, invoiceName]);
 
-  /** Stats “today” aligns with action-log business day (rolls at 05:00). */
-  const todayStart = useMemo(() => getBusinessDayStart(currentTime), [currentTime]);
-
   const currentBusinessDayKey = useMemo(() => getBusinessDayKey(currentTime), [currentTime]);
 
   const actionLogFollowTodayRef = useRef(true);
@@ -451,22 +462,25 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     }
   }, [currentBusinessDayKey]);
 
-  const monthStart = useMemo(
-    () => new Date(currentTime.getFullYear(), currentTime.getMonth(), 1).getTime(),
-    [currentTime]
-  );
+  /** Preferred day range drives both Action Logs and dashboard stat cards. */
+  const selectedDayRange = useMemo(() => businessDayRange(actionLogDayKey), [actionLogDayKey]);
+
+  const monthStart = useMemo(() => {
+    const [y, m] = actionLogDayKey.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, 1).getTime();
+  }, [actionLogDayKey]);
 
   const stats = useMemo(() => {
+    const { start, end } = selectedDayRange;
+    const dayCards = paidInvoiceCards.filter(
+      (c) => c.latestTimestamp >= start && c.latestTimestamp < end
+    );
     const monthlyRev = paidInvoiceCards
       .filter((c) => c.latestTimestamp >= monthStart)
       .reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0);
-    const dailyRev = paidInvoiceCards
-      .filter((c) => c.latestTimestamp >= todayStart)
-      .reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0);
+    const dailyRev = dayCards.reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0);
     const totalRev = paidInvoiceCards.reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0);
-    const invoicesToday = paidInvoiceCards.filter(
-      (c) => c.latestTimestamp >= todayStart
-    ).length;
+    const invoicesToday = dayCards.length;
     const customerCount = paidInvoiceCards.length;
     const avgPerCustomer = customerCount > 0 ? totalRev / customerCount : 0;
     const stockLevel = items.length > 0
@@ -475,13 +489,14 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     const criticalItems = items.filter((i) => i.stock < i.threshold).length;
 
     return { totalRev, monthlyRev, dailyRev, avgPerCustomer, invoicesToday, stockLevel, criticalItems };
-  }, [paidInvoiceCards, items, monthStart, todayStart]);
+  }, [paidInvoiceCards, items, monthStart, selectedDayRange]);
 
   const invoicesTodayList = useMemo(() => {
+    const { start, end } = selectedDayRange;
     return paidInvoiceCards
-      .filter((card) => card.latestTimestamp >= todayStart)
+      .filter((card) => card.latestTimestamp >= start && card.latestTimestamp < end)
       .sort((a, b) => b.latestTimestamp - a.latestTimestamp);
-  }, [paidInvoiceCards, todayStart]);
+  }, [paidInvoiceCards, selectedDayRange]);
 
   const customerPrintCounts = useMemo(() => {
     const printCounts = new Map<string, number>();
@@ -538,8 +553,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       kind: 'invoice' | 'purchase';
     }> = [];
 
+    const { start, end } = selectedDayRange;
     paidInvoiceCards
-      .filter((c) => c.latestTimestamp >= todayStart)
+      .filter((c) => c.latestTimestamp >= start && c.latestTimestamp < end)
       .forEach((c) => {
         rows.push({
           id: c.id,
@@ -552,7 +568,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       });
 
     return rows.sort((a, b) => b.timestamp - a.timestamp);
-  }, [paidInvoiceCards, todayStart]);
+  }, [paidInvoiceCards, selectedDayRange]);
 
   const hubCollapsed = !inventoryExpanded && !purchasesExpanded
     && !avgCustomerExpanded && !invoicesTodayExpanded
@@ -1033,14 +1049,26 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     });
   }, [resetAssetFormFields]);
 
-  const handlePickItemImage = useCallback((file: File | null) => {
-    if (!file || !file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') setNewItemImage(reader.result);
-    };
-    reader.readAsDataURL(file);
+  const readImageFileAsDataUrl = useCallback((file: File): Promise<string | null> => {
+    if (!isLikelyImageFile(file)) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve(typeof reader.result === 'string' ? reader.result : null);
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
   }, []);
+
+  const handlePickItemImage = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      const dataUrl = await readImageFileAsDataUrl(file);
+      if (dataUrl) setNewItemImage(dataUrl);
+    },
+    [readImageFileAsDataUrl]
+  );
 
   const handleChooseItemPhoto = useCallback(async () => {
     if (Capacitor.isNativePlatform()) {
@@ -1055,7 +1083,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       }
       return;
     }
-    // Web fallback — trigger hidden file input
+    // Web fallback — trigger hidden file input (all photo formats)
     document.getElementById('asset-item-image-input')?.click();
   }, []);
 
@@ -1309,6 +1337,75 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       });
     },
     [activeProfileName, formatCurrency, onAccountNotify, setItems]
+  );
+
+  const commitImageUpdate = useCallback(
+    (item: InventoryItem, imageDataUrl: string) => {
+      if (!imageDataUrl || imageDataUrl === item.image) return;
+      const now = Date.now();
+      const action = `${item.name} image updated`;
+      setItems((prev) =>
+        prev.map((row) => {
+          if (row.id !== item.id) return row;
+          return {
+            ...row,
+            image: imageDataUrl,
+            activities: [
+              {
+                id: crypto.randomUUID(),
+                type: 'image-update' as const,
+                action,
+                time: 'Just now',
+                timestamp: now,
+                profileName: activeProfileName,
+              },
+              ...row.activities,
+            ],
+          };
+        })
+      );
+      onAccountNotify?.({
+        kind: 'image_updated',
+        title: 'Item image updated',
+        body: action,
+      });
+    },
+    [activeProfileName, onAccountNotify, setItems]
+  );
+
+  const editImageItemIdRef = useRef<string | null>(null);
+
+  const handleEditItemImageFile = useCallback(
+    async (file: File | null) => {
+      const itemId = editImageItemIdRef.current;
+      editImageItemIdRef.current = null;
+      if (!file || !itemId) return;
+      const item = items.find((i) => i.id === itemId);
+      if (!item) return;
+      const dataUrl = await readImageFileAsDataUrl(file);
+      if (dataUrl) commitImageUpdate(item, dataUrl);
+    },
+    [items, readImageFileAsDataUrl, commitImageUpdate]
+  );
+
+  const handleChooseExistingItemPhoto = useCallback(
+    async (item: InventoryItem) => {
+      if (Capacitor.isNativePlatform()) {
+        const result = await pickPhotoFromGallery();
+        if (result.success && result.imageData) {
+          commitImageUpdate(item, result.imageData);
+          return;
+        }
+        if (result.error) {
+          console.warn('[iCalc] photo pick failed', result.error);
+          alert(result.error);
+        }
+        return;
+      }
+      editImageItemIdRef.current = item.id;
+      document.getElementById('asset-item-edit-image-input')?.click();
+    },
+    [commitImageUpdate]
   );
 
   const getItemActivityLogs = (item: InventoryItem) => {
@@ -1614,6 +1711,29 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           <div className="relative h-56 sm:h-72">
             <img src={resolveInventoryImage(item.image)} alt={item.name} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent" aria-hidden="true" />
+            {(canEditStock || canEditPrice) && (
+              <button
+                type="button"
+                onClick={() => void handleChooseExistingItemPhoto(item)}
+                className="absolute top-3 right-3 z-10 w-11 h-11 rounded-full flex items-center justify-center bg-black/55 text-white backdrop-blur-sm border border-white/20 active:scale-90 transition-transform"
+                aria-label={`Change image for ${item.name}`}
+                title="Change image"
+              >
+                <Icons.Pencil size={18} />
+              </button>
+            )}
+            <input
+              id="asset-item-edit-image-input"
+              type="file"
+              accept={PHOTO_ACCEPT}
+              onChange={(e) => {
+                void handleEditItemImageFile(e.target.files?.[0] ?? null);
+                e.target.value = '';
+              }}
+              aria-hidden="true"
+              tabIndex={-1}
+              className="sr-only"
+            />
           </div>
           <div className={`p-8 space-y-8 ${textColorClass}`}>
             <div className="flex justify-between items-start gap-4">
@@ -1728,10 +1848,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               {/* PERFORMANCE MICRO CARDS — real values for @admin, masked for mini-profiles */}
               <div className="col-span-2 grid grid-cols-2 gap-5">
                 {[
-                  { label: 'Monthly Rev', val: formatCurrency(stats.monthlyRev.toFixed(2)), onClick: () => setMonthlyRevExpanded(true) },
-                  { label: 'Daily Sales', val: formatCurrency(stats.dailyRev.toFixed(2)), onClick: () => setDailySalesExpanded(true) },
-                  { label: 'Avg Customer', val: formatCurrency(stats.avgPerCustomer.toFixed(2)), onClick: () => setAvgCustomerExpanded(true) },
-                  { label: 'Invoices Today', val: String(stats.invoicesToday), onClick: () => setInvoicesTodayExpanded(true) },
+                  { label: 'Monthly Rev', hint: null as string | null, val: formatCurrency(stats.monthlyRev.toFixed(2)), onClick: () => setMonthlyRevExpanded(true) },
+                  { label: 'Daily Sales', hint: formatBusinessDayLabel(actionLogDayKey), val: formatCurrency(stats.dailyRev.toFixed(2)), onClick: () => setDailySalesExpanded(true) },
+                  { label: 'Avg Customer', hint: null, val: formatCurrency(stats.avgPerCustomer.toFixed(2)), onClick: () => setAvgCustomerExpanded(true) },
+                  { label: 'Invoices', hint: formatBusinessDayLabel(actionLogDayKey), val: String(stats.invoicesToday), onClick: () => setInvoicesTodayExpanded(true) },
                 ].map((card, idx) => (
                   <div
                     key={idx}
@@ -1740,7 +1860,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     role={canViewTransactions ? 'button' : undefined}
                     tabIndex={canViewTransactions ? 0 : undefined}
                     onKeyDown={canViewTransactions ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.onClick!(); } } : undefined}
-                    aria-label={canViewTransactions ? card.label : `${card.label}, admin only`}
+                    aria-label={canViewTransactions ? `${card.label}${card.hint ? `, ${card.hint}` : ''}` : `${card.label}, admin only`}
                   >
                     <p className={`pos-subtext text-[9px] font-black mb-2 tracking-normal ${cardSubtextMutedClass}`}>{card.label}</p>
                     <p
@@ -1749,9 +1869,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     >
                       {canViewTransactions ? card.val : '*****'}
                     </p>
-                    {!canViewTransactions && (
+                    {canViewTransactions && card.hint ? (
+                      <p className={`pos-subtext text-[8px] font-bold mt-1 ${cardSubtextMutedClass}`} style={{ letterSpacing: 0 }}>{card.hint}</p>
+                    ) : !canViewTransactions ? (
                       <p className={`pos-subtext text-[8px] font-black mt-1 ${cardSubtextMutedClass}`}>@admin only</p>
-                    )}
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -1916,7 +2038,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <HubBackChevron /> Hub
               </button>
               <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Daily Sales</h3>
-              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.dailyRev.toFixed(2))} today • sorted by time</p>
+              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.dailyRev.toFixed(2))} · {formatBusinessDayLabel(actionLogDayKey)} • sorted by time</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
                 <div className="relative">
@@ -2002,8 +2124,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <HubBackChevron /> Hub
               </button>
-              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Invoices Today</h3>
-              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>Sorted by most recent activity</p>
+              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Invoices</h3>
+              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatBusinessDayLabel(actionLogDayKey)} · sorted by most recent</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
                 <div className="relative">
@@ -2284,9 +2406,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       <input
                         id="asset-item-image-input"
                         type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={(e) => handlePickItemImage(e.target.files?.[0] ?? null)}
+                        accept={PHOTO_ACCEPT}
+                        onChange={(e) => {
+                          void handlePickItemImage(e.target.files?.[0] ?? null);
+                          e.target.value = '';
+                        }}
                         aria-hidden="true"
                         tabIndex={-1}
                         className="sr-only"

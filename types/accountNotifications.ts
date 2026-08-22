@@ -4,7 +4,8 @@ export type AccountNotificationKind =
   | 'item_added'
   | 'item_restocked'
   | 'price_updated'
-  | 'stock_updated';
+  | 'stock_updated'
+  | 'image_updated';
 
 export interface AccountNotification {
   id: string;

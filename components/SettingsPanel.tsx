@@ -13,6 +13,7 @@ import {
 import { CartLineItem, NewProfileInput, UserProfile } from '../types';
 import ProfileAvatar from './ProfileAvatar';
 import ProfilePickerModal from './ProfilePickerModal';
+import AdminProfilesPopup from './AdminProfilesPopup';
 import { STANDBY_TIMER_OPTIONS } from '../hooks/useStandby';
 import { ADMIN_PROFILE_NAME, ensureAdminProfile, isAdminProfile } from '../utils/auth';
 import { EXPRESSION_VIEW_OPTIONS } from '../utils/expressionDisplay';
@@ -38,6 +39,7 @@ import {
   getSharedTelegramDbConfig,
   looksLikeBotToken,
 } from '../utils/telegramDb';
+import { heartbeatProfilePresence, touchProfilePresence } from '../utils/profilePresence';
 
 
 interface SettingsSlice {
@@ -167,6 +169,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [showWifiForm, setShowWifiForm] = useState(false);
   const [detectedPaperWidth, setDetectedPaperWidth] = useState(() => printerInstance.paperWidth);
   const [isProfilePickerOpen, setIsProfilePickerOpen] = useState(false);
+  const [showAdminProfiles, setShowAdminProfiles] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -200,9 +203,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       setBaselineFp(settingsFingerprint(snap));
       setDraft(snap);
       setBusinessSyncError(null);
+      if (snap.activeProfileId) touchProfilePresence(snap.activeProfileId);
     }
+    if (!isOpen) setShowAdminProfiles(false);
     wasOpenRef.current = isOpen;
   }, [isOpen, settings]);
+
+  // Keep active profile last-seen fresh while Settings stays open
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = draft.activeProfileId || settings.activeProfileId || '';
+    if (!id) return;
+    heartbeatProfilePresence(id);
+    const tick = window.setInterval(() => heartbeatProfilePresence(id), 30_000);
+    return () => window.clearInterval(tick);
+  }, [isOpen, draft.activeProfileId, settings.activeProfileId]);
 
   // Load latest phone release metadata whenever Settings opens (web download card)
   useEffect(() => {
@@ -451,6 +466,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const canEditBusinessInfo = isAdminProfile(activeProfile);
 
   const handleSelectProfile = (profileId: string) => {
+    touchProfilePresence(profileId);
     patchDraft({ activeProfileId: profileId });
     // Profile switch applies immediately so active icons stay in sync across the app.
     _updateSettings({ activeProfileId: profileId });
@@ -835,35 +851,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             aria-hidden="true"
           />
           <div className="relative flex flex-col items-center gap-3 p-8 pt-6">
-            <div className="absolute top-4 right-4 flex items-center gap-1.5 max-w-[min(70%,14rem)]">
-              <div
-                className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full pr-0.5"
-                role="list"
-                aria-label="Account profiles"
+            <div className="absolute top-4 right-4 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowAdminProfiles(true)}
+                className={`shrink-0 w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+                  isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'
+                }`}
+                aria-label="Account profiles — tap for active/inactive, hold a profile for last seen"
+                title="Profiles"
               >
-                {profiles.map((profile) => {
-                  const isActive = profile.id === (draft.activeProfileId ?? activeProfile?.id);
-                  return (
-                    <button
-                      key={profile.id}
-                      type="button"
-                      role="listitem"
-                      onClick={() => handleSelectProfile(profile.id)}
-                      className={`shrink-0 rounded-full p-[2px] transition-all active:scale-90 ${
-                        isActive
-                          ? 'ring-2 ring-blue-500 ring-offset-1 ' +
-                            (isLight ? 'ring-offset-white' : 'ring-offset-zinc-900')
-                          : 'opacity-70 hover:opacity-100'
-                      }`}
-                      aria-label={`Switch to ${profile.name}${isActive ? ', active' : ''}`}
-                      aria-current={isActive ? 'true' : undefined}
-                      title={profile.name}
-                    >
-                      <ProfileAvatar profile={profile} size={28} isLight={isLight} />
-                    </button>
-                  );
-                })}
-              </div>
+                <Icons.Users size={20} />
+              </button>
               <button
                 type="button"
                 onClick={() => setShowNotificationsInbox(true)}
@@ -913,6 +912,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             (draft.accountPlan ?? settings.accountPlan ?? 'regular') === 'premium' ||
             isAdminProfile(activeProfile)
           }
+        />
+
+        <AdminProfilesPopup
+          isOpen={showAdminProfiles && isOpen}
+          onClose={() => setShowAdminProfiles(false)}
+          isLight={isLight}
+          profiles={profiles}
+          activeProfileId={draft.activeProfileId ?? activeProfile?.id ?? ''}
+          onSelectProfile={handleSelectProfile}
         />
 
         <SettingsNotificationsInbox

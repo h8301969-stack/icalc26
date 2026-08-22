@@ -108,10 +108,12 @@ export const pickPhotoFromGallery = async (): Promise<ReceiptPhotoResult> => {
     }
 
     const photo = await Camera.getPhoto({
-      quality: 85,
+      quality: 90,
       allowEditing: false,
       resultType: CameraResultType.Base64,
       source: CameraSource.Photos,
+      // Prefer the system file picker so all photo formats are selectable.
+      webUseInput: true,
     });
 
     return {
