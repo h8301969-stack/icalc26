@@ -45,6 +45,7 @@ interface AuthSettingsSlice {
   businessName?: string;
   businessPhone?: string;
   businessAddress?: string;
+  accountPlan?: 'premium' | 'regular';
 }
 
 type AuthLoadingPhase =
@@ -607,10 +608,23 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         return;
       }
 
+      let accountPlan: 'premium' | 'regular' = 'regular';
+      try {
+        const { data: planRow } = await supabase
+          .from('user_settings')
+          .select('account_plan')
+          .eq('user_id', account.id)
+          .maybeSingle();
+        if (planRow?.account_plan === 'premium') accountPlan = 'premium';
+      } catch {
+        // keep regular
+      }
+
       updateSettings?.({
         businessName: name,
         businessPhone: adminInfoPhone.trim(),
         businessAddress: adminInfoAddress.trim(),
+        accountPlan,
       });
 
       flushSync(() => {

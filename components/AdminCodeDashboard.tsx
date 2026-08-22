@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icons } from '../constants';
 import {
+  AccessCodePlan,
   AccessCodeRow,
   adminApproveCode,
+  adminClearUnusedAccessCodes,
   adminDenyCode,
   adminGrantAccess,
+  adminIssueAccessCode,
   adminSetAccessBusinessInfo,
   adminListCodes,
   adminListPasswordHistory,
@@ -107,7 +110,7 @@ interface AdminCodeDashboardProps {
 }
 
 const TABS: { id: AdminTab; label: string }[] = [
-  { id: 'unused', label: 'Unused' },
+  { id: 'unused', label: 'Issued' },
   { id: 'pending', label: 'Pending' },
   { id: 'approved', label: 'Approved' },
 ];
@@ -190,6 +193,9 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [showTelegramDbDoc, setShowTelegramDbDoc] = useState(false);
+  const [issuingPlan, setIssuingPlan] = useState<AccessCodePlan | null>(null);
+  const [lastIssuedCode, setLastIssuedCode] = useState<string | null>(null);
+  const clearedUnusedRef = useRef(false);
   const longPressTimer = useRef<number | null>(null);
   const copyFeedbackTimer = useRef<number | null>(null);
   const telegramDbHtml = useMemo(() => renderSimpleMarkdown(telegramDbMarkdown), []);
@@ -227,6 +233,18 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     [adminToken, tab]
   );
 
+  // One-time wipe of the old 200 unused seed pool when admin portal opens.
+  useEffect(() => {
+    if (clearedUnusedRef.current) return;
+    clearedUnusedRef.current = true;
+    void adminClearUnusedAccessCodes(adminToken).then((result) => {
+      if (result.ok && result.deleted > 0) {
+        setSuccessNotice(`Cleared ${result.deleted} old unused codes. Mint new ones with Premium / Regular.`);
+        window.setTimeout(() => setSuccessNotice(null), 4000);
+      }
+    });
+  }, [adminToken]);
+
   useEffect(() => {
     void loadCodes({ showLoading: true });
     if (tab !== 'pending') void refreshPendingCount();
@@ -255,6 +273,28 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     copyFeedbackTimer.current = window.setTimeout(() => setCopiedCode(null), COPY_FEEDBACK_MS);
     if ('vibrate' in navigator) navigator.vibrate(8);
   }, []);
+
+  const handleIssueCode = useCallback(
+    async (plan: AccessCodePlan) => {
+      setIssuingPlan(plan);
+      setError(null);
+      const result = await adminIssueAccessCode(adminToken, plan);
+      setIssuingPlan(null);
+      if (result.ok === false) {
+        setError(result.error);
+        return;
+      }
+      setLastIssuedCode(result.code);
+      setSuccessNotice(
+        `${plan === 'premium' ? 'Premium' : 'Regular'} code ${result.code} ready — tap to copy.`
+      );
+      window.setTimeout(() => setSuccessNotice(null), 5000);
+      setTab('unused');
+      await handleCopyCode(result.code);
+      void loadCodes({ showLoading: false });
+    },
+    [adminToken, handleCopyCode, loadCodes]
+  );
 
   const renderCopyableCode = (
     code: string,
@@ -566,8 +606,39 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         </div>
       </div>
 
+      <div className="px-4 pb-3 max-w-lg mx-auto w-full grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          disabled={!!issuingPlan}
+          onClick={() => void handleIssueCode('premium')}
+          className="admin-interactive rounded-2xl px-3 py-3.5 text-left bg-violet-600 text-white shadow-lg disabled:opacity-50"
+        >
+          <p className="text-[10px] font-black uppercase tracking-wider opacity-80">Generate</p>
+          <p className="text-base font-black">
+            {issuingPlan === 'premium' ? 'Minting…' : 'Premium'}
+          </p>
+          <p className="text-[9px] font-semibold opacity-75 mt-0.5" style={{ letterSpacing: 0 }}>
+            Mini-profiles allowed
+          </p>
+        </button>
+        <button
+          type="button"
+          disabled={!!issuingPlan}
+          onClick={() => void handleIssueCode('regular')}
+          className="admin-interactive rounded-2xl px-3 py-3.5 text-left bg-zinc-700 text-white shadow-lg disabled:opacity-50"
+        >
+          <p className="text-[10px] font-black uppercase tracking-wider opacity-80">Generate</p>
+          <p className="text-base font-black">
+            {issuingPlan === 'regular' ? 'Minting…' : 'Regular'}
+          </p>
+          <p className="text-[9px] font-semibold opacity-75 mt-0.5" style={{ letterSpacing: 0 }}>
+            Single profile only
+          </p>
+        </button>
+      </div>
+
       <p className="app-subtext text-center opacity-45 px-4 pb-2 text-white">
-        Tap code to copy · tap card for details · hold for quick open
+        Premium / Regular mint a fresh 7-char code · tap code to copy · hold card for details
       </p>
 
       <div className="flex-1 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
@@ -579,6 +650,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         {successNotice && (
           <p className="admin-section-enter text-center app-hint font-bold text-emerald-500 mb-3 px-2" role="status">
             {successNotice}
+            {lastIssuedCode ? ` (${lastIssuedCode})` : ''}
           </p>
         )}
 
@@ -588,7 +660,9 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
           </div>
         ) : codes.length === 0 ? (
           <p className={`admin-list-enter text-center text-sm opacity-50 py-16 ${isLight ? 'text-black' : 'text-white'}`}>
-            No codes in this view.
+            {tab === 'unused'
+              ? 'No issued codes yet. Tap Premium or Regular to mint one.'
+              : 'No codes in this view.'}
           </p>
         ) : (
           <div key={tab} className="admin-list-enter max-w-lg mx-auto space-y-3">
@@ -614,6 +688,14 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     {renderCopyableCode(row.code, 'text-lg', { stopCard: true })}
+                    <p
+                      className={`text-[9px] font-black uppercase mt-1 ${
+                        row.plan === 'premium' ? 'text-violet-400' : 'opacity-50'
+                      }`}
+                      style={{ letterSpacing: 0 }}
+                    >
+                      {row.plan === 'premium' ? 'Premium' : 'Regular'}
+                    </p>
                     {row.username && (
                       <p className="text-sm font-bold truncate mt-1">{row.username}</p>
                     )}

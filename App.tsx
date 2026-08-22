@@ -427,9 +427,11 @@ const AppContent: React.FC = () => {
     if (!guest) {
       return { error: 'Dev skip only works during npm run dev.' };
     }
+    // Dev skip / admin path: no Telegram Bot API paste required.
+    updateSettings({ accountPlan: 'premium' });
     handleAuthSuccess(guest);
     return { account: guest };
-  }, [skipDevAuthAsAdmin, handleAuthSuccess]);
+  }, [skipDevAuthAsAdmin, handleAuthSuccess, updateSettings]);
 
   const handleAdminReturnToCalc = useCallback(() => {
     hideAdminPortal();

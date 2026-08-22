@@ -16,6 +16,8 @@ interface ProfilePickerModalProps {
   onAddProfile: (profile: NewProfileInput) => void | Promise<void>;
   onUpdateProfileAvatar: (profileId: string, avatarUrl: string) => void;
   onVerifyAdminPassword?: (password: string) => Promise<{ error?: string; ok?: boolean }>;
+  /** Premium (or @admin) can create mini-profiles; Regular cannot. */
+  canCreateMiniProfiles?: boolean;
 }
 
 const isValidEmail = (email: string): boolean =>
@@ -39,6 +41,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
   onAddProfile,
   onUpdateProfileAvatar,
   onVerifyAdminPassword,
+  canCreateMiniProfiles = true,
 }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [newName, setNewName] = useState('');
@@ -277,7 +280,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                 {isAdding ? 'New profile' : 'Profiles'}
               </h3>
               <div className="flex items-center gap-2">
-                {!isAdding && (
+                {!isAdding && canCreateMiniProfiles && (
                   <button
                     type="button"
                     onClick={() => setIsAdding(true)}

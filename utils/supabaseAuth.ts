@@ -296,6 +296,11 @@ export const completeApprovedSignup = async (
 
   await seedUserRows(data.session.user.id, username, accessCode);
   await recordUserPasswordChange(accessCode, 'signup');
+  // Copy Premium/Regular plan from the access code onto user_settings.
+  await supabase.rpc('apply_access_code_plan_to_user', {
+    p_code: accessCode.trim().toUpperCase(),
+    p_user_id: data.session.user.id,
+  });
   const account = await fetchAccountFromSession(data.session, username);
   if (!account) return { error: 'Could not finalize account.' };
   return { account };

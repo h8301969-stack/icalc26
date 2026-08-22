@@ -4,9 +4,13 @@ const ADMIN_SESSION_KEY = 'icalc_admin_session';
 
 export type AccessCodeStatus = 'unused' | 'pending' | 'approved' | 'paused' | 'denied';
 
+export type AccessCodePlan = 'premium' | 'regular';
+
 export interface AccessCodeRow {
   code: string;
   status: AccessCodeStatus;
+  /** Premium = can create mini-profiles; Regular = cannot. */
+  plan?: AccessCodePlan | null;
   username: string | null;
   email: string | null;
   user_id: string | null;
@@ -350,6 +354,36 @@ export const adminListCodes = async (
   if (error) return { ok: false, error: error.message };
   if (!data?.ok) return { ok: false, error: (data?.error as string) ?? 'Unauthorized.' };
   return { ok: true, codes: (data.codes as AccessCodeRow[]) ?? [] };
+};
+
+/** Mint one unused 7-char code (Premium or Regular). Replaces the old 200-code seed pool. */
+export const adminIssueAccessCode = async (
+  token: string,
+  plan: AccessCodePlan
+): Promise<{ ok: true; code: string; plan: AccessCodePlan } | { ok: false; error: string }> => {
+  const { data, error } = await supabase.rpc('admin_issue_access_code', {
+    p_token: token,
+    p_plan: plan,
+  });
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) return { ok: false, error: (data?.error as string) ?? 'Could not issue code.' };
+  return {
+    ok: true,
+    code: String(data.code ?? ''),
+    plan: (data.plan === 'premium' ? 'premium' : 'regular') as AccessCodePlan,
+  };
+};
+
+/** Delete all unused codes (cleanup of the old 200-seed pool). */
+export const adminClearUnusedAccessCodes = async (
+  token: string
+): Promise<{ ok: true; deleted: number } | { ok: false; error: string }> => {
+  const { data, error } = await supabase.rpc('admin_clear_unused_access_codes', {
+    p_token: token,
+  });
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) return { ok: false, error: (data?.error as string) ?? 'Could not clear unused codes.' };
+  return { ok: true, deleted: Number(data.deleted ?? 0) };
 };
 
 export const adminApproveCode = async (token: string, code: string, memo?: string) => {

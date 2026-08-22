@@ -39,6 +39,8 @@ export const DEFAULT_SETTINGS = {
   businessName: '',
   businessPhone: '',
   businessAddress: '',
+  /** From access code: premium can create mini-profiles; regular cannot. */
+  accountPlan: 'regular' as 'premium' | 'regular',
 };
 
 export type AppSettings = typeof DEFAULT_SETTINGS;

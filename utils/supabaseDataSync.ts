@@ -766,6 +766,7 @@ type DbUserSettingsRow = {
   business_name?: string | null;
   business_phone?: string | null;
   business_address?: string | null;
+  account_plan?: string | null;
   updated_at?: string;
 };
 
@@ -792,6 +793,7 @@ const mapDbSettingsToApp = (row: DbUserSettingsRow): Partial<AppSettings> => ({
   businessName: row.business_name ?? '',
   businessPhone: row.business_phone ?? '',
   businessAddress: row.business_address ?? '',
+  accountPlan: row.account_plan === 'premium' ? 'premium' : 'regular',
 });
 
 const mapAppSettingsToDb = (
@@ -818,6 +820,7 @@ const mapAppSettingsToDb = (
   business_name: settings.businessName?.trim() || null,
   business_phone: settings.businessPhone?.trim() || null,
   business_address: settings.businessAddress?.trim() || null,
+  account_plan: settings.accountPlan === 'premium' ? 'premium' : 'regular',
 });
 
 export const fetchSettingsFromSupabase = async (
@@ -828,7 +831,7 @@ export const fetchSettingsFromSupabase = async (
   const { data, error } = await supabase
     .from('user_settings')
     .select(
-      'accent_color, glass_blur, haptic_feedback, haptic_intensity, theme_mode, currency, custom_wallpapers, ui_scale, disable_calculator_card, layout_mode, layout_mode_auto, invoice_switcher_mode, expression_view_mode, receipt_layout_mode, standby_timer_seconds, active_profile_id, business_name, business_phone, business_address, updated_at'
+      'accent_color, glass_blur, haptic_feedback, haptic_intensity, theme_mode, currency, custom_wallpapers, ui_scale, disable_calculator_card, layout_mode, layout_mode_auto, invoice_switcher_mode, expression_view_mode, receipt_layout_mode, standby_timer_seconds, active_profile_id, business_name, business_phone, business_address, account_plan, updated_at'
     )
     .eq('user_id', userId)
     .maybeSingle();

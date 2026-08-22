@@ -53,6 +53,7 @@ interface SettingsSlice {
   businessAddress?: string;
   currency?: string;
   ghsCalculatorStyle?: 'ghs' | 'cedis';
+  accountPlan?: 'premium' | 'regular';
 }
 
 const cloneSettings = (s: SettingsSlice): SettingsSlice =>
@@ -77,6 +78,7 @@ const settingsFingerprint = (s: SettingsSlice): string =>
     businessAddress: s.businessAddress ?? '',
     currency: s.currency,
     ghsCalculatorStyle: s.ghsCalculatorStyle ?? 'ghs',
+    accountPlan: s.accountPlan ?? 'regular',
   });
 
 interface SettingsPanelProps {
@@ -824,6 +826,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           onAddProfile={handleAddProfile}
           onUpdateProfileAvatar={handleUpdateProfileAvatar}
           onVerifyAdminPassword={onVerifyAdminPassword}
+          canCreateMiniProfiles={
+            (draft.accountPlan ?? settings.accountPlan ?? 'regular') === 'premium' ||
+            isAdminProfile(activeProfile)
+          }
         />
 
         <SettingsNotificationsInbox
