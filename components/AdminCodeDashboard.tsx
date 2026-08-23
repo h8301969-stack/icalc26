@@ -124,16 +124,16 @@ const PLAN_COPY: Record<
 > = {
   premium: {
     title: 'Premium',
-    blurb: 'Full shop account — mini-profiles allowed',
+    blurb: 'For shops with staff profiles',
     howTo:
-      'Give this code to an owner who needs staff profiles (@admin + workers), inventory, and multi-device use. They sign up with the 7-character code, wait for your Approve, then connect Telegram.',
+      'Hand this code to the owner. They sign up, you approve, then they connect Telegram. Staff mini-profiles are allowed.',
     accent: 'bg-violet-600',
   },
   regular: {
     title: 'Regular',
-    blurb: 'Single-operator account — no mini-profiles',
+    blurb: 'For one person running the shop',
     howTo:
-      'Give this code to a solo seller. One profile only (cannot add staff mini-profiles). Same signup → Approve → Telegram connect flow.',
+      'Hand this code to a solo seller. One profile only — no staff accounts. Same idea: sign up, you approve, then Telegram.',
     accent: 'bg-zinc-700',
   },
 };
@@ -269,7 +269,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     clearedUnusedRef.current = true;
     void adminClearUnusedAccessCodes(adminToken).then((result) => {
       if (result.ok && result.deleted > 0) {
-        setSuccessNotice(`Cleared ${result.deleted} unused codes. Use New → Premium / Regular.`);
+        setSuccessNotice(`Cleared ${result.deleted} old unused codes.`);
         window.setTimeout(() => setSuccessNotice(null), 3500);
       }
     });
@@ -324,7 +324,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         return;
       }
       setLastIssuedCode(result.code);
-      setSuccessNotice(`${PLAN_COPY[plan].title} code ready — copied`);
+      setSuccessNotice(`${PLAN_COPY[plan].title} code ready — copied to clipboard`);
       window.setTimeout(() => setSuccessNotice(null), 4000);
       setTab('new');
       await handleCopyCode(result.code);
@@ -657,7 +657,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         {tab === 'new' ? (
           <div className="admin-list-enter max-w-lg mx-auto space-y-4">
             <p className="app-subtext text-center opacity-50 text-[11px]" style={{ letterSpacing: 0 }}>
-              Tap a plan to generate a fresh 7-character code. Previous unused codes are cleared first.
+              Pick Premium or Regular. We’ll make a new code and clear old unused ones.
             </p>
             {(['premium', 'regular'] as AccessCodePlan[]).map((plan) => {
               const copy = PLAN_COPY[plan];
@@ -673,7 +673,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-[10px] font-black uppercase tracking-wider opacity-80">
-                        {busy ? 'Generating…' : 'Code generator'}
+                        {busy ? 'Making code…' : 'New code'}
                       </p>
                       <p className="text-xl font-black mt-0.5">{copy.title}</p>
                       <p className="text-[11px] font-semibold opacity-85 mt-1" style={{ letterSpacing: 0 }}>
@@ -699,11 +699,11 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
             {lastIssuedCode && (
               <div className={`rounded-2xl border px-4 py-4 ${panelClass}`}>
                 <p className="text-[10px] font-black uppercase opacity-50 mb-2" style={{ letterSpacing: 0 }}>
-                  Latest code
+                  Ready to share
                 </p>
                 {renderCopyableCode(lastIssuedCode, 'text-2xl')}
                 <p className="app-subtext text-[10px] opacity-50 mt-3" style={{ letterSpacing: 0 }}>
-                  Share this code for signup. It moves to Pending when they request access, then Active after you Approve.
+                  Send this for signup. It shows under Pending when they request access, then Active after you approve.
                 </p>
               </div>
             )}
@@ -1217,7 +1217,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
 
       <div className="px-4 pb-4 text-center">
         <p className="app-hint opacity-40 text-white">
-          {adminProfile.name} · secure code management
+          {adminProfile.name} · access codes
         </p>
       </div>
 

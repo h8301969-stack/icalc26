@@ -1117,8 +1117,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     setItems(prev => [newItem, ...prev]);
     onAccountNotify?.({
       kind: 'item_added',
-      title: 'New item added',
-      body: `${newItem.name} · stock ${stock}${grams > 0 ? ` · ${grams}g` : ''} · ${formatCurrency(String(newItem.price))}`,
+      title: `Added ${newItem.name}`,
+      body: `Stock ${stock}${grams > 0 ? ` · ${grams}g` : ''} · ${formatCurrency(String(newItem.price))}`,
     });
     closeAssetAction();
   };
@@ -1167,8 +1167,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     const restocked = items.find((i) => i.id === restockItemId);
     onAccountNotify?.({
       kind: 'item_restocked',
-      title: 'Item restocked',
-      body: `${restocked?.name ?? 'Item'} · +${addQty}${grams > 0 ? ` · ${grams}g` : ''}`,
+      title: `Restocked ${restocked?.name ?? 'item'}`,
+      body: `+${addQty}${grams > 0 ? ` · ${grams}g` : ''}`,
     });
     closeAssetAction();
   };
@@ -1291,8 +1291,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       setStockEditValue(String(parsed));
       onAccountNotify?.({
         kind: 'stock_updated',
-        title: 'Stock updated',
-        body: action,
+        title: `${item.name} stock changed`,
+        body: `${item.stock} → ${parsed}`,
       });
     },
     [activeProfileName, onAccountNotify, setItems]
@@ -1332,8 +1332,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       setPriceEditValue(String(parsed));
       onAccountNotify?.({
         kind: 'price_updated',
-        title: 'Price updated',
-        body: action,
+        title: `${item.name} price changed`,
+        body: `${oldLabel} → ${newLabel}`,
       });
     },
     [activeProfileName, formatCurrency, onAccountNotify, setItems]
@@ -1366,8 +1366,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       );
       onAccountNotify?.({
         kind: 'image_updated',
-        title: 'Item image updated',
-        body: action,
+        title: `${item.name} photo changed`,
+        body: 'New photo saved',
       });
     },
     [activeProfileName, onAccountNotify, setItems]
@@ -1542,7 +1542,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       </div>
       <h3 className={`pos-dashboard-section-title text-4xl px-1 ${textColorClass}`}>Action Logs</h3>
       <p className={`app-subtext leading-relaxed opacity-45 px-1 -mt-4 ${cardSubtextMutedClass}`}>
-        {formatBusinessDayLabel(actionLogDayKey)} · day starts 5:00 AM · never deleted
+        {formatBusinessDayLabel(actionLogDayKey)} · from 5:00 AM
       </p>
 
       {showActionLogSearch && (
@@ -1848,9 +1848,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               {/* PERFORMANCE MICRO CARDS — real values for @admin, masked for mini-profiles */}
               <div className="col-span-2 grid grid-cols-2 gap-5">
                 {[
-                  { label: 'Monthly Rev', hint: null as string | null, val: formatCurrency(stats.monthlyRev.toFixed(2)), onClick: () => setMonthlyRevExpanded(true) },
-                  { label: 'Daily Sales', hint: formatBusinessDayLabel(actionLogDayKey), val: formatCurrency(stats.dailyRev.toFixed(2)), onClick: () => setDailySalesExpanded(true) },
-                  { label: 'Avg Customer', hint: null, val: formatCurrency(stats.avgPerCustomer.toFixed(2)), onClick: () => setAvgCustomerExpanded(true) },
+                  { label: 'This month', hint: null as string | null, val: formatCurrency(stats.monthlyRev.toFixed(2)), onClick: () => setMonthlyRevExpanded(true) },
+                  { label: 'Sales', hint: formatBusinessDayLabel(actionLogDayKey), val: formatCurrency(stats.dailyRev.toFixed(2)), onClick: () => setDailySalesExpanded(true) },
+                  { label: 'Avg / customer', hint: null, val: formatCurrency(stats.avgPerCustomer.toFixed(2)), onClick: () => setAvgCustomerExpanded(true) },
                   { label: 'Invoices', hint: formatBusinessDayLabel(actionLogDayKey), val: String(stats.invoicesToday), onClick: () => setInvoicesTodayExpanded(true) },
                 ].map((card, idx) => (
                   <div
@@ -1885,20 +1885,24 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <div className="absolute inset-0 p-8 flex flex-col justify-between">
                   <div className="flex items-center gap-5 translate-y-2">
                     <div className={`p-4 rounded-[13px] bg-orange-500/20 text-orange-500 backdrop-blur-3xl border border-white/10 ${iconLiftDark}`}><Icons.Scientific size={28} /></div>
-                    <span className={`pos-subtext text-[10px] font-black opacity-90 drop-shadow-md ${heroSubtextClass}`}>Live Matrix</span>
+                    <span className={`pos-subtext text-[10px] font-black opacity-90 drop-shadow-md ${heroSubtextClass}`}>Stock health</span>
                   </div>
                   <div className="space-y-1 relative z-10 translate-y-2">
                     <div className="flex items-end justify-between">
                       <div className="text-7xl font-black tracking-tighter text-white drop-shadow-[0_8px_24px_rgba(0,0,0,0.7)]">{stats.stockLevel}%</div>
                       <div className="text-right pb-3">
-                        <p className={`pos-subtext text-[9px] font-black mb-1.5 ${heroSubtextClass}`}>Network Load</p>
+                        <p className={`pos-subtext text-[9px] font-black mb-1.5 ${heroSubtextClass}`}>Low stock</p>
                         <div className={`pos-subtext px-4 py-1.5 rounded-full text-[9px] font-black backdrop-blur-3xl shadow-2xl ${stats.criticalItems > 0 ? 'bg-red-500/80 text-white' : 'bg-green-500/80 text-white'}`}>
-                          {stats.criticalItems} Alerts
+                          {stats.criticalItems === 0
+                            ? 'All good'
+                            : `${stats.criticalItems} low`}
                         </div>
                       </div>
                     </div>
                     <div className="pt-2">
-                      <p className={`app-subtext leading-relaxed max-w-[280px] ${heroSubtextClass}`}>Inventory flow optimized within margins. Real-time neural processing active.</p>
+                      <p className={`app-subtext leading-relaxed max-w-[280px] ${heroSubtextClass}`}>
+                        Compared with each item’s restock level
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1953,7 +1957,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                    <div className="space-y-1">
                       <h3 className={`pos-dashboard-section-title text-2xl ${textColorClass}`}>Action Logs</h3>
                       <p className={`app-subtext leading-relaxed opacity-45 ${cardSubtextMutedClass}`}>
-                        Day starts 5:00 AM · logs stay stored
+                        From 5:00 AM
                       </p>
                    </div>
                    <div className={`p-3.5 rounded-full bg-blue-500/10 text-blue-500 ${iconLiftLight}`}><Icons.Trends size={24} /></div>
@@ -1986,7 +1990,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <HubBackChevron /> Hub
               </button>
               <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Monthly Revenue</h3>
-              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.monthlyRev.toFixed(2))} this month • sorted by date</p>
+              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.monthlyRev.toFixed(2))} this month</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
                 <div className="relative">
@@ -2038,7 +2042,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <HubBackChevron /> Hub
               </button>
               <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Daily Sales</h3>
-              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.dailyRev.toFixed(2))} · {formatBusinessDayLabel(actionLogDayKey)} • sorted by time</p>
+              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.dailyRev.toFixed(2))} · {formatBusinessDayLabel(actionLogDayKey)}</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
                 <div className="relative">
@@ -2125,7 +2129,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 <HubBackChevron /> Hub
               </button>
               <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Invoices</h3>
-              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatBusinessDayLabel(actionLogDayKey)} · sorted by most recent</p>
+              <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatBusinessDayLabel(actionLogDayKey)}</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
                 <div className="relative">
@@ -2232,7 +2236,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 ) : (
                   <div className={`col-span-full p-12 text-center rounded-2xl ${isLight ? 'bg-white/70' : 'bg-white/5'}`}>
                     <p className={`pos-subtext text-[10px] font-black ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                      No items in {activeWholesaleName}. Tap + on the orange button, then add a product to this list.
+                      Nothing in {activeWholesaleName} yet. Tap + to add something.
                     </p>
                   </div>
                 )}
@@ -2329,7 +2333,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 {paidInvoiceCards.length === 0 && (
                   <div className="p-10 text-center">
                     <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>No transactions yet</p>
-                    <p className={`app-subtext text-[10px] opacity-45 mt-2 ${textColorClass}`}>Transactions appear after a confirmed print</p>
+                    <p className={`app-subtext text-[10px] opacity-45 mt-2 ${textColorClass}`}>Shows up after you print</p>
                   </div>
                 )}
               </div>

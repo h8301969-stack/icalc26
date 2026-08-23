@@ -681,11 +681,11 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     const token = telegramBotToken.trim();
     const chatId = telegramChatId.trim();
     if (!looksLikeBotToken(token)) {
-      setError('Telegram Bot API token is required (from BotFather).');
+      setError('Paste the bot token from BotFather.');
       return;
     }
     if (!chatId) {
-      setError('Chat ID is required.');
+      setError('Paste your chat ID too.');
       return;
     }
 
@@ -743,7 +743,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         return;
       }
       if (!looksLikeBotToken(token)) {
-        setError('Telegram Bot API token is required (from BotFather).');
+        setError('Paste the bot token from BotFather.');
         return;
       }
 
@@ -1161,7 +1161,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         </div>
       </div>
 
-      <div className="flex flex-col items-center justify-center flex-1 w-full max-w-sm gap-6 pt-16">
+      <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full max-w-sm gap-6 pt-16 overflow-y-auto custom-scrollbar">
         {!showSettings && (
           <div className={`text-center select-none pointer-events-none transition-opacity duration-300 ${isLoading ? 'opacity-40' : 'opacity-100'}`}>
             <p className="font-num-light text-5xl tracking-tighter tabular-nums opacity-80" style={{ color: textColor }}>
@@ -1212,7 +1212,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
               <div className="mb-5 text-center space-y-1">
                 <p className="text-sm font-black tracking-tight">Admin portal</p>
                 <p className={`app-subtext text-[10px] ${isLight ? 'text-black/50' : 'text-white/50'}`} style={{ letterSpacing: 0 }}>
-                  Enter admin password to open generate codes
+                  Enter your admin password
                 </p>
               </div>
             ) : (
@@ -1334,8 +1334,8 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                           isLight ? 'text-black' : 'text-white'
                         }`}
                       >
-                        Enter your username, email, and one-time signup code. After confirming your
-                        email, sign in with your username or email.
+                        Use your username, email, and the 7-character signup code.
+                        Confirm your email, then sign in.
                       </p>
                     </div>
                   </div>
@@ -1360,7 +1360,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                     }`}
                   >
                     {adminEntryMode ? (
-                      'Open generate codes'
+                      'Open admin'
                     ) : (
                     <MorphCrossfade
                       center
@@ -1435,59 +1435,73 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         )}
       </div>
 
-      {isIdle && (
-        <div className="flex flex-col items-center w-full max-w-xs select-none">
-          <p
-            className="app-subtext text-[10px] animate-swipe-hint-pulse opacity-45 text-center pointer-events-none"
-            style={{ color: textColor }}
-          >
-            Click or swipe to continue
-          </p>
-          <div className="flex items-center gap-3 opacity-30 mt-4 pointer-events-none" style={{ color: textColor }}>
-            <Icons.History size={20} />
-            <div className="w-1 h-1 rounded-full bg-current" />
-            <Icons.Scientific size={20} />
-            <div className="w-1 h-1 rounded-full bg-current" />
-            <Icons.Trends size={20} />
-          </div>
-          <div className="mt-5 flex flex-col items-center gap-2 pointer-events-auto">
-            <button
-              type="button"
-              onClick={() => void handleAdminFromLock()}
-              disabled={isLoading || isExiting}
-              className={`app-subtext px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.25em] border transition-all active:scale-95 disabled:opacity-40 ${
-                isLight
-                  ? 'border-black/25 text-black/55 hover:text-black/75'
-                  : 'border-white/25 text-white/55 hover:text-white/75'
-              }`}
+      <div className="relative z-10 shrink-0 w-full max-w-sm flex flex-col items-center gap-3 pb-[max(0.25rem,env(safe-area-inset-bottom))]">
+        {isIdle && (
+          <div className="flex flex-col items-center w-full select-none">
+            <p
+              className="app-subtext text-[10px] animate-swipe-hint-pulse opacity-45 text-center pointer-events-none"
+              style={{ color: textColor }}
             >
-              Admin · generate codes
-            </button>
-            {isDev && onDevSkip && (
+              Click or swipe to continue
+            </p>
+            <div className="flex items-center gap-3 opacity-30 mt-3 pointer-events-none" style={{ color: textColor }}>
+              <Icons.History size={20} />
+              <div className="w-1 h-1 rounded-full bg-current" />
+              <Icons.Scientific size={20} />
+              <div className="w-1 h-1 rounded-full bg-current" />
+              <Icons.Trends size={20} />
+            </div>
+            {/* stopPropagation so taps don’t also fire lock-screen “continue” */}
+            <div
+              className="mt-4 flex flex-wrap items-center justify-center gap-2 pointer-events-auto"
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+            >
               <button
                 type="button"
-                onClick={handleDevSkip}
-                className={`app-subtext px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.25em] border border-dashed transition-all active:scale-95 ${
+                onClick={() => void handleAdminFromLock()}
+                disabled={isLoading || isExiting}
+                className={`shrink-0 px-3.5 py-2 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all active:scale-95 disabled:opacity-40 ${
                   isLight
-                    ? 'border-black/20 text-black/45 hover:text-black/65'
-                    : 'border-white/20 text-white/45 hover:text-white/65'
+                    ? 'border-black/25 text-black/60 bg-white/40 hover:text-black/80'
+                    : 'border-white/25 text-white/60 bg-black/25 hover:text-white/85'
                 }`}
+                aria-label="Admin generate codes"
               >
-                Skip login (dev)
+                Admin
               </button>
-            )}
+              {isDev && onDevSkip && (
+                <button
+                  type="button"
+                  onClick={handleDevSkip}
+                  disabled={isLoading || isExiting}
+                  className={`shrink-0 px-3.5 py-2 rounded-full text-[10px] font-black uppercase tracking-wider border border-dashed transition-all active:scale-95 disabled:opacity-40 ${
+                    isLight
+                      ? 'border-black/20 text-black/45 hover:text-black/65'
+                      : 'border-white/20 text-white/45 hover:text-white/65'
+                  }`}
+                  aria-label="Skip login for development"
+                >
+                  Skip (dev)
+                </button>
+              )}
+            </div>
             {error && (
-              <p className="text-[10px] font-bold text-red-500 text-center max-w-[16rem]" role="alert">
+              <p className="mt-2 text-[10px] font-bold text-red-500 text-center max-w-[16rem] px-2" role="alert">
                 {error}
               </p>
             )}
           </div>
-        </div>
-      )}
+        )}
 
-      <p className={`app-subtext text-[10px] opacity-45 text-center pb-2 transition-opacity duration-300 normal-case ${isLoading ? 'opacity-20' : ''}`} style={{ color: textColor }}>
-        © 2026 iCalc
-      </p>
+        <p
+          className={`app-subtext text-[10px] opacity-45 text-center transition-opacity duration-300 normal-case pointer-events-none ${isLoading ? 'opacity-20' : ''}`}
+          style={{ color: textColor }}
+        >
+          © 2026 iCalc
+        </p>
+      </div>
 
       {isLoading && (
         <div
@@ -1556,8 +1570,8 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 <Icons.Trends size={20} className="text-emerald-500" />
                 <h4 id="business-setup-title" className="app-subtext text-sm font-black">
                   {businessSetup
-                    ? 'Access granted · Admin info'
-                    : 'Connect Telegram (one-time)'}
+                    ? 'You’re in — shop details'
+                    : 'Connect Telegram'}
                 </h4>
               </div>
               <p
@@ -1565,31 +1579,30 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 style={{ letterSpacing: 0 }}
               >
                 {businessSetup
-                  ? 'Your 7-character code was approved. Connect a Telegram bot for this shop account.'
-                  : 'Paste Bot API + chat ID once. Skip (dev) and Admin portal reuse the same link on this device (including production).'}
-              </p>
-            </div>
+                  ? 'Your code was approved. Connect a Telegram bot for this shop.'
+                  : 'Paste your bot token and chat ID once. We’ll reuse it on this device.'}
+              </p>            </div>
 
             {businessInfoLoading && businessSetup ? (
               <div className="px-5 pb-6 flex flex-col items-center gap-3">
                 <span className="auth-spinner" aria-hidden="true" />
-                <p className="app-subtext text-[10px] opacity-45">Preparing admin setup…</p>
+                <p className="app-subtext text-[10px] opacity-45">One moment…</p>
               </div>
             ) : showOwnerTelegramSetup && !businessSetup ? (
               <div className="px-5 pb-5 pt-2 space-y-3">
                 <label className="block">
-                  <span className={FORM_FIELD_LABEL}>Telegram Bot API *</span>
+                  <span className={FORM_FIELD_LABEL}>Bot token *</span>
                   <PasswordField
                     isLight={isLight}
                     value={telegramBotToken}
                     onChange={setTelegramBotToken}
-                    placeholder="123456:AA… from BotFather"
+                    placeholder="From BotFather"
                     autoComplete="off"
                     autoFocus
                   />
                 </label>
                 <label className="block">
-                  <span className={FORM_FIELD_LABEL}>Telegram chat ID *</span>
+                  <span className={FORM_FIELD_LABEL}>Chat ID *</span>
                   <input
                     type="text"
                     value={telegramChatId}
@@ -1599,7 +1612,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                     autoComplete="off"
                   />
                   <span className={`app-subtext text-[9px] mt-1 block opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
-                    Required. Saved on this device only — change later in Settings (@admin).
+                    Saved on this device. Change later in Settings as @admin.
                   </span>
                 </label>
                 {error && (
@@ -1667,24 +1680,24 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   />
                 </label>
                 <label className="block">
-                  <span className={FORM_FIELD_LABEL}>Telegram Bot API *</span>
+                  <span className={FORM_FIELD_LABEL}>Bot token *</span>
                   <PasswordField
                     isLight={isLight}
                     value={telegramBotToken}
                     onChange={setTelegramBotToken}
-                    placeholder="123456:AA… from BotFather"
+                    placeholder="From BotFather"
                     autoComplete="off"
                     autoFocus
                   />
                 </label>
                 <label className="block">
-                  <span className={FORM_FIELD_LABEL}>Telegram chat id</span>
+                  <span className={FORM_FIELD_LABEL}>Chat ID</span>
                   <input
                     type="text"
                     value={telegramChatId}
                     onChange={(e) => setTelegramChatId(e.target.value)}
                     className={formInputClass(isLight)}
-                    placeholder="Optional if you already /start’d the bot"
+                    placeholder="Optional if you already messaged the bot"
                     autoComplete="off"
                   />
                 </label>

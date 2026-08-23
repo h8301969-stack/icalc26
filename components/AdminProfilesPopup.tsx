@@ -130,7 +130,7 @@ const AdminProfilesPopup: React.FC<AdminProfilesPopupProps> = ({
               <div className="min-w-0">
                 <h3 className="text-base font-black tracking-tight">Profiles</h3>
                 <p className={`app-subtext text-[10px] ${isLight ? 'text-black/50' : 'text-white/50'}`} style={{ letterSpacing: 0 }}>
-                  Tap active/inactive · hold for last seen
+                  Tap to switch · hold for details
                 </p>
               </div>
               <button

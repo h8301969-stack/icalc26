@@ -134,7 +134,7 @@ const SettingsNotificationsInbox: React.FC<SettingsNotificationsInboxProps> = ({
             <div className="overflow-y-auto custom-scrollbar space-y-2 min-h-0 flex-1">
               {filtered.length === 0 ? (
                 <div className={`p-10 text-center rounded-2xl ${isLight ? 'bg-zinc-50' : 'bg-white/5'}`}>
-                  <p className="text-[11px] font-black opacity-50">No notifications in this range</p>
+                  <p className="text-[11px] font-black opacity-50">Nothing here for this range</p>
                 </div>
               ) : (
                 filtered.map((n) => (

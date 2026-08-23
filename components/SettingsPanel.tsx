@@ -572,7 +572,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setTgSaveError(null);
     setTgSaveOk(false);
     if (!looksLikeBotToken(tgBotToken) || !tgChatId.trim()) {
-      setTgSaveError('Bot API and chat ID are both required.');
+      setTgSaveError('Need both the bot token and chat ID.');
       return;
     }
     setTgSaving(true);
@@ -625,15 +625,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 : 'bg-white/8 border-white/14 text-white/85'
             }`}
           >
-            Click here to sign out
+            Sign out
           </button>
         </div>
 
         {isAdminProfile(activeProfile) && (
           <div className={`mt-6 pt-5 border-t ${isLight ? 'border-zinc-200/80' : 'border-white/10'}`}>
-            <h4 className="settings-card-title text-base mb-1">Telegram (owner)</h4>
+            <h4 className="settings-card-title text-base mb-1">Owner Telegram</h4>
             <p className={`app-subtext text-[10px] mb-3 ${isLight ? 'text-black/50' : 'text-white/50'}`} style={{ letterSpacing: 0 }}>
-              One-time Bot API + chat ID for admin portal / Skip (dev). Only @admin can change this.
+              Your shop bot. Only @admin can change this.
             </p>
             {linkedOwnerTg ? (
               <p className={`app-subtext text-[11px] mb-3 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} style={{ letterSpacing: 0 }}>
@@ -641,7 +641,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </p>
             ) : (
               <p className={`app-subtext text-[11px] mb-3 text-amber-500`} style={{ letterSpacing: 0 }}>
-                Not linked yet — paste below once.
+                Not linked yet — paste once below.
               </p>
             )}
             <div className="space-y-2">
@@ -649,7 +649,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 isLight={isLight}
                 value={tgBotToken}
                 onChange={setTgBotToken}
-                placeholder="Bot API token"
+                placeholder="Bot token from BotFather"
                 autoComplete="off"
               />
               <input
@@ -661,7 +661,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 autoComplete="off"
               />
               {tgSaveError && <p className="text-xs font-bold text-red-500">{tgSaveError}</p>}
-              {tgSaveOk && <p className="text-xs font-bold text-emerald-500">Saved. Skip/admin will reuse this.</p>}
+              {tgSaveOk && <p className="text-xs font-bold text-emerald-500">Saved — we’ll use this for Admin and Skip.</p>}
               <button
                 type="button"
                 disabled={tgSaving}
@@ -670,7 +670,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                 }`}
               >
-                {tgSaving ? 'Saving…' : linkedOwnerTg ? 'Update Telegram link' : 'Save Telegram link'}
+                {tgSaving ? 'Saving…' : linkedOwnerTg ? 'Update Telegram' : 'Save Telegram'}
               </button>
             </div>
           </div>
@@ -858,7 +858,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 className={`shrink-0 w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-all ${
                   isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'
                 }`}
-                aria-label="Account profiles — tap for active/inactive, hold a profile for last seen"
+                aria-label="Profiles — tap to switch, hold for details"
                 title="Profiles"
               >
                 <Icons.Users size={20} />
@@ -1350,14 +1350,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <div className="settings-card p-6 shadow-2xl">
             {renderSettingsCardHeader('Get iCalc on your phone', <Icons.Download size={22} />)}
             <p className={`app-subtext text-[11px] font-medium mb-2 ${isLight ? 'text-black/60' : 'text-white/60'}`} style={{ letterSpacing: 0 }}>
-              Install the newest release anytime — this link always opens the latest build.
+              Download the latest phone app.
             </p>
             <p className={`text-[11px] font-semibold mb-4 ${isLight ? 'text-black/45' : 'text-white/45'}`} style={{ letterSpacing: 0 }}>
               {phoneReleaseLoading
-                ? 'Checking latest release…'
+                ? 'Checking for updates…'
                 : phoneRelease
-                  ? `Latest release · ${formatReleaseElapsed(phoneRelease.publishedAt, phoneReleaseNow)} ago`
-                  : 'Latest release ready to install'}
+                  ? `Updated ${formatReleaseElapsed(phoneRelease.publishedAt, phoneReleaseNow)} ago`
+                  : 'Ready to download'}
             </p>
             <a
               href={PHONE_APP_DOWNLOAD_URL}
@@ -1367,7 +1367,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               style={{ letterSpacing: 0 }}
             >
               <Icons.Download size={16} />
-              Get latest on phone
+              Download for phone
             </a>
           </div>
         )}
