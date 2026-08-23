@@ -33,6 +33,7 @@ import {
 const SETTINGS_SECTION_COUNT = 3;
 import { useAuth } from './hooks/useAuth';
 import { useSupabaseDataSync } from './hooks/useSupabaseDataSync';
+import { useDataMemorySync } from './hooks/useDataMemorySync';
 import { useSyncStatus } from './hooks/useSyncStatus';
 import {
   AppAccount,
@@ -61,10 +62,12 @@ import { usePOSDashboardData } from './hooks/usePOSDashboardData';
 import { clearAppSessionData, isCloudUserAccount } from './utils/freshAppSession';
 import { mergeAccountProfiles } from './utils/supabaseAuth';
 import {
+  applyShopTelegramLocally,
   bindAccountToOwnerTelegram,
   hasOwnerTelegramLink,
   isTelegramDbConnected,
 } from './utils/telegramDb';
+import { fetchMyShopTelegram } from './utils/accessControl';
 import { printerInstance } from './utils/bluetoothPrinter';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -79,7 +82,6 @@ const AppContent: React.FC = () => {
     login,
     logout,
     skipDevAuthAsAdmin,
-    openDevAdminPortal,
     syncProfiles,
     changePassword,
     verifyPassword,
@@ -154,9 +156,23 @@ const AppContent: React.FC = () => {
     recordPrint,
     resolveUnidentifiedPrice,
     hydrateInvoiceState,
+    replaceInvoiceHistory,
     getInvoiceExpression,
     getSavedInvoices,
   } = useInvoice(expression, items, settings.currency, activeProfileName);
+
+  const dataMemory = useDataMemorySync({
+    accountId: account?.id ?? null,
+    authReady,
+    pastLogs,
+    printLogs,
+    inventory: items,
+    settings,
+    wholesales,
+    activeWholesaleId,
+    getSavedInvoices,
+    replaceInvoiceHistory,
+  });
 
   /** Record a sale when Print is used (invoice switcher or Vision Hub drawer). */
   const handleDrawerInvoicePrinted = useCallback(
@@ -461,17 +477,30 @@ const AppContent: React.FC = () => {
       activeProfileId: nextActive,
     });
     triggerHaptic(2);
-    // Bot API must be linked first (Skip/dev clears it so the paste popup always shows).
-    if (!isTelegramDbConnected(acc.id)) {
+
+    const unlock = () => {
+      setTelegramGateAccount(null);
+      setIsCalculatorEntering(true);
+      setIsUnlocked(true);
+      setAuthOverlayMounted(false);
+    };
+
+    // Prefer Telegram already on device; else pull shop bot saved at admin approve.
+    if (isTelegramDbConnected(acc.id)) {
+      unlock();
+      return;
+    }
+
+    void fetchMyShopTelegram().then((remote) => {
+      if (remote.ok) {
+        applyShopTelegramLocally(acc.id, remote.botToken, remote.chatId);
+        unlock();
+        return;
+      }
       setTelegramGateAccount(acc);
       setIsUnlocked(false);
       setAuthOverlayMounted(true);
-      return;
-    }
-    setTelegramGateAccount(null);
-    setIsCalculatorEntering(true);
-    setIsUnlocked(true);
-    setAuthOverlayMounted(false);
+    });
   }, [updateSettings, triggerHaptic, settings.profiles, settings.activeProfileId]);
 
   /** Local guest login for `npm run dev` — AuthOverlay still asks for Bot API before unlock. */
@@ -574,18 +603,6 @@ const AppContent: React.FC = () => {
     setAuthOverlayMounted(false);
   }, [settings.profiles, updateSettings, triggerHaptic]);
 
-  /**
-   * Lock-screen Admin entry (dev one-tap). Prod uses the password form in AuthOverlay.
-   * Opens the generate-code portal even when a Skip/session account already exists.
-   */
-  const handleOpenAdminFromLock = useCallback(async () => {
-    if (!import.meta.env.DEV) {
-      return { error: 'Enter the admin password on the sign-in form.' };
-    }
-    const result = await openDevAdminPortal();
-    if ('error' in result && result.error) return { error: result.error };
-    return { adminPortal: true as const };
-  }, [openDevAdminPortal]);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -1115,7 +1132,6 @@ const AppContent: React.FC = () => {
             handleAuthSuccess(acc);
           }}
           onAdminPortal={handleAdminPortal}
-          onOpenAdminFromLock={import.meta.env.DEV ? handleOpenAdminFromLock : undefined}
           onFinalizeAccess={handleFinalizeAccess}
           onDevSkip={import.meta.env.DEV ? handleDevSkip : undefined}
           onQuickUnlock={
@@ -1580,6 +1596,7 @@ const AppContent: React.FC = () => {
         notifications={accountNotifications.items}
         notificationsUnreadCount={accountNotifications.unreadCount}
         onMarkNotificationsRead={accountNotifications.markRead}
+        dataMemory={dataMemory}
       />
 
       <HistoryPanel

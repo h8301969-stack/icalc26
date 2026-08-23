@@ -181,6 +181,23 @@ export async function resolveTelegramStorageChat(
   };
 }
 
+/**
+ * Save shop bot/chat locally without re-verifying against Telegram network
+ * (used when credentials were already stored by admin on approve).
+ */
+export const applyShopTelegramLocally = (
+  accountId: string,
+  botToken: string,
+  chatId: string
+): void => {
+  if (!accountId || !botToken.trim() || !chatId.trim()) return;
+  setTelegramDbConfig(accountId, {
+    botToken: botToken.trim(),
+    chatId: chatId.trim(),
+    connectedAt: Date.now(),
+  });
+};
+
 export async function connectTelegramDatabase(input: {
   accountId: string;
   botToken: string;
@@ -298,6 +315,101 @@ export async function telegramSaveSnapshot(
   return telegramUpsertEntity(accountId, 'snapshot', snapshotKind, data).then((r) =>
     r.ok ? { ok: true as const } : r
   );
+}
+
+const corsHint = (message: string): string => {
+  if (!Capacitor.isNativePlatform() && /Failed to fetch|NetworkError|CORS/i.test(message)) {
+    return 'Browser blocked Telegram (CORS). Use the Android build, or deploy the telegram-bot Edge Function proxy.';
+  }
+  return message;
+};
+
+/**
+ * Long-term archive: upload a JSON document so we can getFile() later
+ * (Bot API cannot getMessage text by id).
+ */
+export async function telegramSendArchiveDocument(
+  accountId: string,
+  archiveId: string,
+  payload: unknown
+): Promise<{ ok: true; fileId: string; messageId: number } | { ok: false; error: string }> {
+  const config = getTelegramDbConfig(accountId);
+  if (!config) return { ok: false, error: 'Telegram database is not connected.' };
+
+  const row: TelegramDbRow = {
+    v: 1,
+    kind: 'invoice_archive',
+    id: archiveId,
+    user_id: accountId,
+    payload,
+    updated_at: new Date().toISOString(),
+  };
+  const blob = new Blob([JSON.stringify(row)], { type: 'application/json' });
+
+  try {
+    const form = new FormData();
+    form.append('chat_id', config.chatId);
+    form.append('caption', `icalc archive ${archiveId}`.slice(0, 1024));
+    form.append('document', blob, `icalc-archive-${archiveId}.json`);
+
+    const res = await fetch(`${apiBase(config.botToken)}/sendDocument`, {
+      method: 'POST',
+      body: form,
+    });
+    const data = (await res.json()) as {
+      ok?: boolean;
+      description?: string;
+      result?: {
+        message_id?: number;
+        document?: { file_id?: string };
+      };
+    };
+    if (!data.ok || !data.result?.document?.file_id) {
+      return { ok: false, error: data.description || 'Telegram sendDocument failed' };
+    }
+
+    const messageId = data.result.message_id ?? 0;
+    const fileId = data.result.document.file_id;
+    if (messageId) {
+      const index = getIndex(accountId);
+      index[`invoice_archive:${archiveId}`] = messageId;
+      setIndex(accountId, index);
+    }
+    return { ok: true, fileId, messageId };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Network error';
+    return { ok: false, error: corsHint(message) };
+  }
+}
+
+/** Download a previously archived JSON document by file_id. */
+export async function telegramFetchArchiveDocument<T = unknown>(
+  accountId: string,
+  fileId: string
+): Promise<{ ok: true; row: TelegramDbRow<T> } | { ok: false; error: string }> {
+  const config = getTelegramDbConfig(accountId);
+  if (!config) return { ok: false, error: 'Telegram database is not connected.' };
+
+  try {
+    const fileMeta = await telegramCall<{ file_path?: string }>(config.botToken, 'getFile', {
+      file_id: fileId,
+    });
+    if (fileMeta.ok === false) return fileMeta;
+    const path = fileMeta.result.file_path;
+    if (!path) return { ok: false, error: 'Telegram file path missing.' };
+
+    const fileRes = await fetch(`https://api.telegram.org/file/bot${config.botToken.trim()}/${path}`);
+    if (!fileRes.ok) return { ok: false, error: `Download failed (${fileRes.status})` };
+    const text = await fileRes.text();
+    const parsed = JSON.parse(text) as TelegramDbRow<T>;
+    if (!parsed || parsed.v !== 1) {
+      return { ok: false, error: 'Archive file is not a valid iCalc row.' };
+    }
+    return { ok: true, row: parsed };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Network error';
+    return { ok: false, error: corsHint(message) };
+  }
 }
 
 const canvasToPngBlob = (canvas: HTMLCanvasElement): Promise<Blob | null> =>

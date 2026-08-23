@@ -292,11 +292,11 @@ export const fetchInvoiceDataFromSupabase = async (
     isCurrent: !!row.is_current,
   }));
 
-  return {
-    invoiceName: currentInvoice?.name ?? 'Invoice #1',
-    expression: (currentInvoice?.expression as string) ?? '0',
-    savedInvoices,
-    pastLogs: (actionRows ?? []).map((row) => ({
+  // Cloud buffer: only hydrate ~60 days into the app (Telegram holds longer-term).
+  const sixtyDaysAgo = Date.now() - 60 * 24 * 60 * 60 * 1000;
+
+  const pastLogs = (actionRows ?? [])
+    .map((row) => ({
       id: row.id as string,
       message: row.message as string,
       itemName: (row.item_name as string | null) ?? undefined,
@@ -306,14 +306,25 @@ export const fetchInvoiceDataFromSupabase = async (
       timestamp: Date.parse(row.logged_at as string) || Date.now(),
       isUnidentified: !!row.is_unidentified,
       profileName: (row.profile_name as string | null) ?? undefined,
-    })),
-    printLogs: (printRows ?? []).map((row) => ({
+    }))
+    .filter((row) => row.timestamp >= sixtyDaysAgo);
+
+  const printLogs = (printRows ?? [])
+    .map((row) => ({
       id: row.id as string,
       invoiceName: row.invoice_name as string,
       timestamp: Date.parse(row.printed_at as string) || Date.now(),
       total: row.total as string,
       items: (row.items as InvoicePrintLog['items']) ?? [],
-    })),
+    }))
+    .filter((row) => row.timestamp >= sixtyDaysAgo);
+
+  return {
+    invoiceName: currentInvoice?.name ?? 'Invoice #1',
+    expression: (currentInvoice?.expression as string) ?? '0',
+    savedInvoices,
+    pastLogs,
+    printLogs,
   };
 };
 

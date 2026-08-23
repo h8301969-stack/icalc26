@@ -208,6 +208,15 @@ export const useInvoice = (
     }
   }, []);
 
+  /** Replace history arrays only (retention trim / Telegram restore). */
+  const replaceInvoiceHistory = useCallback(
+    (next: { pastLogs: InvoiceActionLog[]; printLogs: InvoicePrintLog[] }) => {
+      setPastLogs(next.pastLogs);
+      setPrintLogs(next.printLogs);
+    },
+    []
+  );
+
   return {
     invoiceName,
     setInvoiceName,
@@ -223,6 +232,7 @@ export const useInvoice = (
     recordPrint,
     resolveUnidentifiedPrice,
     hydrateInvoiceState,
+    replaceInvoiceHistory,
     getInvoiceExpression,
     getSavedInvoices,
   };

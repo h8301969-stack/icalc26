@@ -81,8 +81,6 @@ interface AuthOverlayProps {
   onLogin: (username: string, password: string) => Promise<AuthResult>;
   onAuthComplete: (account: AppAccount) => void;
   onAdminPortal?: () => void;
-  /** Dev lock-screen Admin: open generate-code portal without going through Skip. */
-  onOpenAdminFromLock?: () => Promise<{ adminPortal?: true; error?: string } | null | undefined>;
   onFinalizeAccess?: (accessCode: string, username: string) => Promise<AuthResult>;
   onDevSkip?: () => Promise<{
     account?: AppAccount;
@@ -107,7 +105,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   onLogin,
   onAuthComplete,
   onAdminPortal,
-  onOpenAdminFromLock,
   onFinalizeAccess,
   onDevSkip,
   onQuickUnlock,
@@ -125,8 +122,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEntering, setIsEntering] = useState(false);
   const [pane, setPane] = useState<AuthPane>('idle');
-  /** Allow sign-in form while a Skip/session account exists — for Admin password entry. */
-  const [adminEntryMode, setAdminEntryMode] = useState(false);
   const [settingsSectionIndex, setSettingsSectionIndex] = useState(0);
   const [settingsAnimKey, setSettingsAnimKey] = useState(0);
   const [authCardAnimKey, setAuthCardAnimKey] = useState(0);
@@ -395,7 +390,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     if (isLoading) return;
     setPane('idle');
     setError(null);
-    setAdminEntryMode(false);
   }, [isLoading]);
 
   const initiateCalculator = useCallback(() => {
@@ -476,7 +470,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     await wait(AUTH_ADMIN_PORTAL_LOADING_MS);
     setIsSubmitting(false);
     setLoadingPhase('default');
-    setAdminEntryMode(false);
     if (!hasOwnerTelegramLink()) {
       setPendingOwnerPortalSetup(true);
       setTelegramBotToken('');
@@ -486,46 +479,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     }
     onAdminPortal?.();
   }, [onAdminPortal]);
-
-  const handleAdminFromLock = useCallback(async () => {
-    if (isLoading || isExiting) return;
-
-    // Dev: one-tap Admin → generate codes (does not use Skip / calculator).
-    if (isDev && onOpenAdminFromLock) {
-      flushSync(() => {
-        setIsSubmitting(true);
-        setError(null);
-      });
-      try {
-        const result = await onOpenAdminFromLock();
-        if (result?.error) {
-          setIsSubmitting(false);
-          setError(result.error);
-          return;
-        }
-        if (result?.adminPortal) {
-          await finishAdminPortalEntry();
-          return;
-        }
-        setIsSubmitting(false);
-        setError('Could not open admin portal.');
-      } catch {
-        setIsSubmitting(false);
-        setError('Could not open admin portal.');
-      }
-      return;
-    }
-
-    // Prod (and fallback): show password form even if a shop session already exists.
-    setError(null);
-    setAdminEntryMode(true);
-    setMode('login');
-    setUsername('');
-    setSecret('');
-    setPane('auth');
-    setAuthCardAnimKey((k) => k + 1);
-    if ('vibrate' in navigator) navigator.vibrate(10);
-  }, [isLoading, isExiting, isDev, onOpenAdminFromLock, finishAdminPortalEntry]);
 
   const handleDevSkip = useCallback(async () => {
     if (!isDev || isLoading || isExiting || !onDevSkip) return;
@@ -664,8 +617,10 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       setAdminInfoName(info.businessName);
       setAdminInfoPhone(info.businessPhone);
       setAdminInfoAddress(info.businessAddress);
+      // Admin already saved shop Telegram on approve — prefill so shop never re-pastes.
+      if (info.telegramBotToken) setTelegramBotToken(info.telegramBotToken);
+      if (info.telegramChatId) setTelegramChatId(info.telegramChatId);
       if (result.ok === false) {
-        // Prefill may be empty until admin filled codes — user can type Admin info here.
         setError(null);
       }
       setBusinessInfoLoading(false);
@@ -952,21 +907,15 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     const minLoadingMs = mode === 'signup' ? AUTH_SIGNUP_LOADING_MS : AUTH_MIN_LOADING_MS;
 
     try {
-      // Admin portal: probe admin codes, or any password when opened via Admin · generate codes.
+      // Admin portal: only probe when password looks like the admin code (not every login).
       const secretTrim = secret.trim();
       const looksLikeAdminCode =
-        adminEntryMode ||
         secretTrim.toLowerCase().startsWith('irocky-stack') ||
         (import.meta.env.DEV && secretTrim === '1234');
       if (mode === 'login' && looksLikeAdminCode) {
         const backdoorProbe = await onLogin('', secret);
         if (backdoorProbe.adminPortal) {
           await finishAdminPortalEntry();
-          return;
-        }
-        if (adminEntryMode) {
-          setIsSubmitting(false);
-          setError(backdoorProbe.error ?? 'Admin code rejected.');
           return;
         }
       }
@@ -1201,21 +1150,13 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
           </div>
         )}
 
-        {showAuthForm && (!existingAccount || adminEntryMode) && (
+        {showAuthForm && !existingAccount && (
           <div
             key={authCardAnimKey}
             className={`auth-card-mode relative z-20 w-full rounded-2xl p-6 border shadow-2xl animate-auth-card-enter ${
               cardModePulse ? 'auth-card-mode--pulse' : ''
             } ${panelClass} ${isLoading && !showBusinessSetup ? 'opacity-40 pointer-events-none' : ''}`}
           >
-            {adminEntryMode ? (
-              <div className="mb-5 text-center space-y-1">
-                <p className="text-sm font-black tracking-tight">Admin portal</p>
-                <p className={`app-subtext text-[10px] ${isLight ? 'text-black/50' : 'text-white/50'}`} style={{ letterSpacing: 0 }}>
-                  Enter your admin password
-                </p>
-              </div>
-            ) : (
             <FluidSegmentControl
               fullWidth
               isLight={isLight}
@@ -1229,7 +1170,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 { id: 'login', label: 'Sign in' },
               ]}
             />
-            )}
 
             <div ref={authBodyShellRef} className="auth-mode-shell">
               <div
@@ -1237,7 +1177,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 className={`auth-mode-fields ${modeFieldsOut ? 'auth-mode-fields--out' : ''}`}
               >
                 <form onSubmit={handleSubmit} className="space-y-3">
-                  {!adminEntryMode && (
                   <label className="block">
                     <span className={FORM_FIELD_LABEL}>
                       <MorphCrossfade
@@ -1259,9 +1198,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                       placeholder={mode === 'signup' ? 'Choose a username' : 'Username or email'}
                     />
                   </label>
-                  )}
 
-                  {!adminEntryMode && (
                   <div
                     className={`auth-mode-collapse ${
                       mode === 'signup' ? 'auth-mode-collapse--open' : 'auth-mode-collapse--closed'
@@ -1284,13 +1221,9 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                       </label>
                     </div>
                   </div>
-                  )}
 
                   <label className="block">
                     <span className={FORM_FIELD_LABEL}>
-                      {adminEntryMode ? (
-                        'Admin password'
-                      ) : (
                       <MorphCrossfade
                         active={mode}
                         options={[
@@ -1298,28 +1231,21 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                           { id: 'login', label: 'Password' },
                         ]}
                       />
-                      )}
                     </span>
                     <PasswordField
                       isLight={isLight}
                       value={secret}
                       onChange={(value) =>
-                        setSecret(mode === 'signup' && !adminEntryMode ? value.toUpperCase() : value)
+                        setSecret(mode === 'signup' ? value.toUpperCase() : value)
                       }
                       onKeyDown={(e) => e.stopPropagation()}
-                      autoComplete={mode === 'signup' && !adminEntryMode ? 'one-time-code' : 'current-password'}
+                      autoComplete={mode === 'signup' ? 'one-time-code' : 'current-password'}
                       spellCheck={false}
-                      maxLength={mode === 'signup' && !adminEntryMode ? 7 : 64}
+                      maxLength={mode === 'signup' ? 7 : 64}
                       disabled={isLoading || showSignupInsight}
-                      mono={mode === 'signup' && !adminEntryMode}
-                      inputClassName={`transition-all duration-300 ${mode === 'signup' && !adminEntryMode ? 'tracking-widest' : ''}`}
-                      placeholder={
-                        adminEntryMode
-                          ? 'irocky-stack + time'
-                          : mode === 'signup'
-                            ? '7-character code'
-                            : 'Your password'
-                      }
+                      mono={mode === 'signup'}
+                      inputClassName={`transition-all duration-300 ${mode === 'signup' ? 'tracking-widest' : ''}`}
+                      placeholder={mode === 'signup' ? '7-character code' : 'Your password'}
                     />
                   </label>
 
@@ -1359,9 +1285,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                       isLight ? 'bg-black text-white' : 'bg-white text-black'
                     }`}
                   >
-                    {adminEntryMode ? (
-                      'Open admin'
-                    ) : (
                     <MorphCrossfade
                       center
                       active={mode}
@@ -1370,10 +1293,9 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                         { id: 'login', label: 'Sign in' },
                       ]}
                     />
-                    )}
                   </button>
 
-                  {isDev && onDevSkip && !adminEntryMode && (
+                  {isDev && onDevSkip && (
                     <button
                       type="button"
                       onClick={handleDevSkip}
@@ -1450,42 +1372,23 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
             <div className="w-1 h-1 rounded-full bg-current" />
             <Icons.Trends size={20} />
           </div>
-          {/* stopPropagation so taps don’t also fire lock-screen “continue” */}
-          <div
-            className="mt-5 flex flex-wrap items-center justify-center gap-2 pointer-events-auto"
-            onPointerDown={(e) => e.stopPropagation()}
-            onPointerUp={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-          >
+          {isDev && onDevSkip && (
             <button
               type="button"
-              onClick={() => void handleAdminFromLock()}
+              onClick={handleDevSkip}
               disabled={isLoading || isExiting}
-              className={`shrink-0 px-3.5 py-2 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all active:scale-95 disabled:opacity-40 ${
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
+              className={`app-subtext mt-5 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.25em] border border-dashed transition-all active:scale-95 pointer-events-auto disabled:opacity-40 ${
                 isLight
-                  ? 'border-black/25 text-black/60 bg-white/40 hover:text-black/80'
-                  : 'border-white/25 text-white/60 bg-black/25 hover:text-white/85'
+                  ? 'border-black/20 text-black/45 hover:text-black/65'
+                  : 'border-white/20 text-white/45 hover:text-white/65'
               }`}
-              aria-label="Admin generate codes"
+              aria-label="Skip login for development"
             >
-              Admin
+              Skip login (dev)
             </button>
-            {isDev && onDevSkip && (
-              <button
-                type="button"
-                onClick={handleDevSkip}
-                disabled={isLoading || isExiting}
-                className={`shrink-0 px-3.5 py-2 rounded-full text-[10px] font-black uppercase tracking-wider border border-dashed transition-all active:scale-95 disabled:opacity-40 ${
-                  isLight
-                    ? 'border-black/20 text-black/45 hover:text-black/65'
-                    : 'border-white/20 text-white/45 hover:text-white/65'
-                }`}
-                aria-label="Skip login for development"
-              >
-                Skip (dev)
-              </button>
-            )}
-          </div>
+          )}
           {error && (
             <p className="mt-2 text-[10px] font-bold text-red-500 text-center max-w-[16rem] px-2" role="alert">
               {error}

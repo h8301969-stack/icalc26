@@ -184,6 +184,18 @@ function businessDayRange(dayKey: string): { start: number; end: number } {
   return { start, end };
 }
 
+/** e.g. AUG-23.today · AUG-22.yesterday · AUG-21.friday */
+function formatBusinessDayOptionLabel(dayKey: string, todayKey: string): string {
+  const base = formatBusinessDayLabel(dayKey);
+  if (dayKey === todayKey) return `${base}.today`;
+  const yesterdayKey = getBusinessDayKey(businessDayRange(todayKey).start - 1);
+  if (dayKey === yesterdayKey) return `${base}.yesterday`;
+  const [y, m, d] = dayKey.split('-').map(Number);
+  const date = new Date(y, (m || 1) - 1, d || 1);
+  const weekday = date.toLocaleString([], { weekday: 'long' }).toLowerCase();
+  return `${base}.${weekday}`;
+}
+
 const POSDashboard: React.FC<POSDashboardProps> = ({
   history: _history,
   items,
@@ -236,6 +248,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const wholesaleHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wholesaleHoldFiredRef = useRef(false);
   const wholesaleHoldTargetRef = useRef<string | null>(null);
+  const newItemImageInputRef = useRef<HTMLInputElement | null>(null);
+  const editItemImageInputRef = useRef<HTMLInputElement | null>(null);
   const wholesaleTrackRef = useRef<HTMLDivElement>(null);
   const wholesaleBtnRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [wholesaleThumb, setWholesaleThumb] = useState({ width: 0, left: 0 });
@@ -1083,8 +1097,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       }
       return;
     }
-    // Web fallback — trigger hidden file input (all photo formats)
-    document.getElementById('asset-item-image-input')?.click();
+    newItemImageInputRef.current?.click();
   }, []);
 
   const handleAddItem = () => {
@@ -1115,10 +1128,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       }]
     };
     setItems(prev => [newItem, ...prev]);
+    const hasPhoto = /^data:image\//i.test(newItem.image) || /^blob:/i.test(newItem.image);
     onAccountNotify?.({
       kind: 'item_added',
       title: `Added ${newItem.name}`,
-      body: `Stock ${stock}${grams > 0 ? ` · ${grams}g` : ''} · ${formatCurrency(String(newItem.price))}`,
+      body: `Stock ${stock}${grams > 0 ? ` · ${grams}g` : ''} · ${formatCurrency(String(newItem.price))}${
+        hasPhoto ? ' · photo added' : ''
+      }`,
     });
     closeAssetAction();
   };
@@ -1343,7 +1359,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     (item: InventoryItem, imageDataUrl: string) => {
       if (!imageDataUrl || imageDataUrl === item.image) return;
       const now = Date.now();
-      const action = `${item.name} image updated`;
+      const action = `${item.name} photo updated`;
       setItems((prev) =>
         prev.map((row) => {
           if (row.id !== item.id) return row;
@@ -1364,10 +1380,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           };
         })
       );
+      // Fan-out to other profiles (mini-profiles) on this account
       onAccountNotify?.({
         kind: 'image_updated',
         title: `${item.name} photo changed`,
-        body: 'New photo saved',
+        body: `${activeProfileName} updated the photo`,
       });
     },
     [activeProfileName, onAccountNotify, setItems]
@@ -1403,7 +1420,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         return;
       }
       editImageItemIdRef.current = item.id;
-      document.getElementById('asset-item-edit-image-input')?.click();
+      editItemImageInputRef.current?.click();
     },
     [commitImageUpdate]
   );
@@ -1513,8 +1530,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           <Icons.Search size={18} />
         </button>
       </div>
-      <div className="flex justify-center px-1 -mt-1 mb-2">
-        <label className="relative inline-flex flex-col items-center">
+      <div className="flex items-center justify-between gap-3 px-1">
+        <h3 className={`pos-dashboard-section-title text-4xl min-w-0 ${textColorClass}`}>Action Logs</h3>
+        <label className="relative shrink-0 inline-flex items-center">
           <span className="sr-only">Action log date</span>
           <select
             value={actionLogDayKey}
@@ -1523,26 +1541,25 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               actionLogFollowTodayRef.current = next === currentBusinessDayKey;
               setActionLogDayKey(next);
             }}
-            className={`appearance-none text-center font-black tracking-tight text-xl pl-4 pr-8 py-1.5 rounded-full outline-none cursor-pointer ${
-              isLight ? 'bg-black/5 text-zinc-900' : 'bg-white/10 text-white'
+            className={`appearance-none text-[10px] font-bold pl-2.5 pr-6 py-1 rounded-full outline-none cursor-pointer max-w-[11rem] ${
+              isLight ? 'bg-black/5 text-zinc-800' : 'bg-white/10 text-white/90'
             }`}
+            style={{ letterSpacing: 0 }}
             aria-label="Preferred action log date"
           >
             {actionLogDayOptions.map((key) => (
               <option key={key} value={key}>
-                {formatBusinessDayLabel(key)}
-                {key === currentBusinessDayKey ? ' · today' : ''}
+                {formatBusinessDayOptionLabel(key, currentBusinessDayKey)}
               </option>
             ))}
           </select>
-          <span className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] opacity-50 ${textColorClass}`} aria-hidden>
+          <span className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[9px] opacity-45 ${textColorClass}`} aria-hidden>
             ▾
           </span>
         </label>
       </div>
-      <h3 className={`pos-dashboard-section-title text-4xl px-1 ${textColorClass}`}>Action Logs</h3>
-      <p className={`app-subtext leading-relaxed opacity-45 px-1 -mt-4 ${cardSubtextMutedClass}`}>
-        {formatBusinessDayLabel(actionLogDayKey)} · from 5:00 AM
+      <p className={`app-subtext leading-relaxed opacity-45 px-1 -mt-4 ${cardSubtextMutedClass}`} style={{ letterSpacing: 0 }}>
+        {formatBusinessDayOptionLabel(actionLogDayKey, currentBusinessDayKey)} · from 5:00 AM
       </p>
 
       {showActionLogSearch && (
@@ -1648,7 +1665,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       <div
         role="listitem"
         tabIndex={0}
-        aria-label={`Inventory item ${idx + 1}: ${item.name}, stock ${item.stock} units, price ¢${item.price}`}
+        aria-label={`Inventory item ${idx + 1}: ${item.name}, stock ${item.stock}, price ¢${item.price}`}
         onClick={() => setSelectedItem(item)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -1666,7 +1683,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 item.stock < item.threshold ? 'bg-red-500 text-white' : 'bg-black/60 text-white'
               }`}
             >
-              {item.stock}u
+              {item.stock}
             </div>
             {(item.grams ?? 0) > 0 && (
               <div className="pos-subtext px-2 py-1 rounded-lg text-[8px] font-black backdrop-blur-3xl shadow-xl bg-black/50 text-white">
@@ -1676,12 +1693,17 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           </div>
         </div>
       </div>
-      <p
-        className={`px-0.5 text-[11px] font-black tracking-tight leading-tight truncate ${textColorClass}`}
-        title={item.name}
-      >
-        {item.name}
-      </p>
+      <div className="px-0.5 min-w-0">
+        <p
+          className={`text-[11px] font-black tracking-tight leading-tight truncate ${textColorClass}`}
+          title={item.name}
+        >
+          {item.name}
+        </p>
+        <p className={`text-[10px] font-black tabular-nums ${cardSubtextMutedClass}`}>
+          ¢{item.price}
+        </p>
+      </div>
     </div>
   );
 
@@ -1723,6 +1745,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </button>
             )}
             <input
+              ref={editItemImageInputRef}
               id="asset-item-edit-image-input"
               type="file"
               accept={PHOTO_ACCEPT}
@@ -1744,53 +1767,53 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             </div>
             <div className="grid grid-cols-2 gap-8">
               <div>
-                <p className={`pos-subtext text-[10px] font-black mb-2 ${cardSubtextMutedClass}`}>Inventory</p>
+                <p className={`pos-subtext text-[10px] font-black mb-2 ${cardSubtextMutedClass}`}>Available in stocks</p>
                 {canEditStock ? (
-                  <div className="flex items-baseline gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      value={stockEditValue}
-                      onChange={(e) => setStockEditValue(e.target.value)}
-                      onBlur={() => commitStockUpdate(item, stockEditValue)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.currentTarget.blur();
-                        }
-                      }}
-                      className={`w-full max-w-[8rem] text-3xl font-black bg-transparent border-b-2 outline-none tabular-nums ${
-                        item.stock < item.threshold ? 'text-red-500 border-red-500/40' : `${textColorClass} ${isLight ? 'border-black/15' : 'border-white/20'}`
-                      }`}
-                      aria-label={`Edit stock for ${item.name}`}
-                    />
-                    <span className={`text-xl font-black ${cardSubtextMutedClass}`}>U</span>
-                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={stockEditValue}
+                    onChange={(e) => setStockEditValue(e.target.value)}
+                    onBlur={() => commitStockUpdate(item, stockEditValue)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    className={`w-full max-w-[8rem] text-3xl font-black bg-transparent border-b-2 outline-none tabular-nums ${
+                      item.stock < item.threshold ? 'text-red-500 border-red-500/40' : `${textColorClass} ${isLight ? 'border-black/15' : 'border-white/20'}`
+                    }`}
+                    aria-label={`Edit stock for ${item.name}`}
+                  />
                 ) : (
-                  <p className={`text-3xl font-black ${item.stock < item.threshold ? 'text-red-500' : ''}`}>{item.stock} U</p>
+                  <p className={`text-3xl font-black ${item.stock < item.threshold ? 'text-red-500' : ''}`}>{item.stock}</p>
                 )}
                 {(item.grams ?? 0) > 0 && (
                   <p className={`pos-subtext text-[11px] font-black mt-2 ${cardSubtextMutedClass}`}>{item.grams} g</p>
                 )}
               </div>
               <div>
-                <p className={`pos-subtext text-[10px] font-black mb-2 ${cardSubtextMutedClass}`}>Credit Rate</p>
+                <p className={`pos-subtext text-[10px] font-black mb-2 ${cardSubtextMutedClass}`}>Price</p>
                 {canEditPrice ? (
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={priceEditValue}
-                    onChange={(e) => setPriceEditValue(e.target.value)}
-                    onBlur={() => commitPriceUpdate(item, priceEditValue)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.currentTarget.blur();
-                      }
-                    }}
-                    className={`w-full max-w-[10rem] text-3xl font-black bg-transparent border-b-2 outline-none tabular-nums ${textColorClass} ${isLight ? 'border-black/15' : 'border-white/20'}`}
-                    aria-label={`Edit price for ${item.name}`}
-                  />
+                  <div className="flex items-baseline gap-1.5">
+                    <span className={`text-3xl font-black ${textColorClass}`}>¢</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={priceEditValue}
+                      onChange={(e) => setPriceEditValue(e.target.value)}
+                      onBlur={() => commitPriceUpdate(item, priceEditValue)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      className={`w-full max-w-[10rem] text-3xl font-black bg-transparent border-b-2 outline-none tabular-nums ${textColorClass} ${isLight ? 'border-black/15' : 'border-white/20'}`}
+                      aria-label={`Edit price for ${item.name}`}
+                    />
+                  </div>
                 ) : (
                   <p className="text-3xl font-black">¢{item.price}</p>
                 )}
@@ -1917,50 +1940,48 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 className={`col-span-2 p-10 rounded-2xl ${levitateClass} text-left cursor-pointer active:scale-[0.99] transition-all`}
                 aria-label="Open all action logs"
               >
-                <div
-                  className="flex justify-center mb-4"
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => e.stopPropagation()}
-                >
-                  <label className="relative inline-flex flex-col items-center">
-                    <span className="sr-only">Action log date</span>
-                    <select
-                      value={actionLogDayKey}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        actionLogFollowTodayRef.current = next === currentBusinessDayKey;
-                        setActionLogDayKey(next);
-                      }}
-                      className={`appearance-none text-center font-black tracking-tight text-lg pl-4 pr-8 py-1.5 rounded-full outline-none cursor-pointer ${
-                        isLight
-                          ? 'bg-black/5 text-zinc-900'
-                          : 'bg-white/10 text-white'
-                      }`}
-                      aria-label="Preferred action log date"
-                    >
-                      {actionLogDayOptions.map((key) => (
-                        <option key={key} value={key}>
-                          {formatBusinessDayLabel(key)}
-                          {key === currentBusinessDayKey ? ' · today' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <span
-                      className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] opacity-50 ${textColorClass}`}
-                      aria-hidden
-                    >
-                      ▾
-                    </span>
-                  </label>
-                </div>
-                <div className="flex justify-between items-center mb-6">
-                   <div className="space-y-1">
-                      <h3 className={`pos-dashboard-section-title text-2xl ${textColorClass}`}>Action Logs</h3>
-                      <p className={`app-subtext leading-relaxed opacity-45 ${cardSubtextMutedClass}`}>
+                <div className="flex justify-between items-center gap-2 mb-6">
+                   <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className={`pos-dashboard-section-title text-2xl ${textColorClass}`}>Action Logs</h3>
+                        <label
+                          className="relative inline-flex items-center shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          <span className="sr-only">Action log date</span>
+                          <select
+                            value={actionLogDayKey}
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              actionLogFollowTodayRef.current = next === currentBusinessDayKey;
+                              setActionLogDayKey(next);
+                            }}
+                            className={`appearance-none text-[10px] font-bold pl-2.5 pr-6 py-1 rounded-full outline-none cursor-pointer max-w-[10.5rem] ${
+                              isLight ? 'bg-black/5 text-zinc-800' : 'bg-white/10 text-white/90'
+                            }`}
+                            style={{ letterSpacing: 0 }}
+                            aria-label="Preferred action log date"
+                          >
+                            {actionLogDayOptions.map((key) => (
+                              <option key={key} value={key}>
+                                {formatBusinessDayOptionLabel(key, currentBusinessDayKey)}
+                              </option>
+                            ))}
+                          </select>
+                          <span
+                            className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[9px] opacity-45 ${textColorClass}`}
+                            aria-hidden
+                          >
+                            ▾
+                          </span>
+                        </label>
+                      </div>
+                      <p className={`app-subtext leading-relaxed opacity-45 ${cardSubtextMutedClass}`} style={{ letterSpacing: 0 }}>
                         From 5:00 AM
                       </p>
                    </div>
-                   <div className={`p-3.5 rounded-full bg-blue-500/10 text-blue-500 ${iconLiftLight}`}><Icons.Trends size={24} /></div>
+                   <div className={`p-3.5 rounded-full bg-blue-500/10 text-blue-500 shrink-0 ${iconLiftLight}`}><Icons.Trends size={24} /></div>
                 </div>
                 <div onClick={(e) => e.stopPropagation()}>
                   {systemLogs.length > 0 ? (
@@ -2281,7 +2302,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       </div>
                       <div className="absolute top-2 right-2" aria-hidden="true">
                         <div className={`pos-subtext px-2 py-1 rounded-lg text-[9px] font-black backdrop-blur-3xl shadow-xl ${item.stock < item.threshold ? 'bg-red-500 text-white' : 'bg-black/60 text-white'}`}>
-                          {item.stock}u
+                          {item.stock}
                         </div>
                       </div>
                     </div>
@@ -2401,13 +2422,19 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
               {assetActionMode === 'add' ? (
                 <div className="space-y-3">
-                  <label className="block space-y-1.5">
+                  <div className="space-y-1.5">
                     <span className={fieldLabelClass}>Item image</span>
                     <div className="flex items-center gap-2">
-                      <div className="w-12 h-12 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-800 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => void handleChooseItemPhoto()}
+                        className="w-12 h-12 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-800 shrink-0 active:scale-95"
+                        aria-label="Choose item photo"
+                      >
                         <img src={resolveInventoryImage(newItemImage)} alt="" className="w-full h-full object-cover" />
-                      </div>
+                      </button>
                       <input
+                        ref={newItemImageInputRef}
                         id="asset-item-image-input"
                         type="file"
                         accept={PHOTO_ACCEPT}
@@ -2429,7 +2456,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                         Choose photo
                       </button>
                     </div>
-                  </label>
+                  </div>
                   <label className="block space-y-1.5">
                     <span className={fieldLabelClass}>Item name</span>
                     <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="e.g. Rice 5kg" aria-label="Item name" className={formInputClass(isLight, { size: 'md' })} />
@@ -2493,7 +2520,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                           >
                             <span className="text-xs font-black truncate">{item.name}</span>
                             <span className="text-[9px] font-bold opacity-70 shrink-0">
-                              {item.stock}u{item.grams ? ` · ${item.grams}g` : ''}
+                              {item.stock}{item.grams ? ` · ${item.grams}g` : ''} · ¢{item.price}
                             </span>
                           </button>
                         ))

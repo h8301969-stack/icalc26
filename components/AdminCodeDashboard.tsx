@@ -22,6 +22,8 @@ import { FORM_FIELD_LABEL, FORM_SECTION_TITLE, formInputClass, formTextareaClass
 import ProfileAvatar from './ProfileAvatar';
 import { MorphPresence } from './MorphCrossfade';
 import telegramDbMarkdown from '../telegramdb.md?raw';
+import { getSharedTelegramDbConfig, looksLikeBotToken } from '../utils/telegramDb';
+import PasswordField from './PasswordField';
 
 const renderSimpleMarkdown = (source: string): string => {
   const escape = (s: string) =>
@@ -208,6 +210,8 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const [approveBusinessName, setApproveBusinessName] = useState('');
   const [approveBusinessPhone, setApproveBusinessPhone] = useState('');
   const [approveBusinessAddress, setApproveBusinessAddress] = useState('');
+  const [approveTelegramBotToken, setApproveTelegramBotToken] = useState('');
+  const [approveTelegramChatId, setApproveTelegramChatId] = useState('');
   const [grantTarget, setGrantTarget] = useState<AccessCodeRow | null>(null);
   const [detailRow, setDetailRow] = useState<AccessCodeRow | null>(null);
   const [detailMemo, setDetailMemo] = useState('');
@@ -380,11 +384,20 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     await refreshPendingCount();
   };
 
+  const prefillTelegramFromOwner = () => {
+    const owner = getSharedTelegramDbConfig();
+    if (owner?.botToken) setApproveTelegramBotToken(owner.botToken);
+    if (owner?.chatId) setApproveTelegramChatId(owner.chatId);
+  };
+
   const openGrantModal = (row: AccessCodeRow) => {
     setGrantTarget(row);
     setApproveBusinessName(row.business_name ?? '');
     setApproveBusinessPhone(row.business_phone ?? '');
     setApproveBusinessAddress(row.business_address ?? '');
+    setApproveTelegramBotToken('');
+    setApproveTelegramChatId('');
+    prefillTelegramFromOwner();
     setError(null);
     setSuccessNotice(null);
   };
@@ -393,6 +406,10 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     if (!grantTarget) return;
     if (!approveBusinessName.trim()) {
       setError('Enter the business name.');
+      return;
+    }
+    if (!looksLikeBotToken(approveTelegramBotToken) || !approveTelegramChatId.trim()) {
+      setError('Paste Bot API token and chat ID before granting (shop won’t re-paste on new devices).');
       return;
     }
     setActionCode(grantTarget.code);
@@ -407,6 +424,8 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       businessName: approveBusinessName.trim(),
       businessPhone: approveBusinessPhone.trim(),
       businessAddress: approveBusinessAddress.trim(),
+      telegramBotToken: approveTelegramBotToken.trim(),
+      telegramChatId: approveTelegramChatId.trim(),
     });
     setActionCode(null);
     if (businessResult.ok === false) {
@@ -430,6 +449,9 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     setApproveBusinessName(row.business_name ?? '');
     setApproveBusinessPhone(row.business_phone ?? '');
     setApproveBusinessAddress(row.business_address ?? '');
+    setApproveTelegramBotToken('');
+    setApproveTelegramChatId('');
+    prefillTelegramFromOwner();
     setError(null);
   };
 
@@ -437,6 +459,10 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     if (!approveTarget) return;
     if (!approveBusinessName.trim()) {
       setError('Enter the business name.');
+      return;
+    }
+    if (!looksLikeBotToken(approveTelegramBotToken) || !approveTelegramChatId.trim()) {
+      setError('Paste Bot API token and chat ID before approve (shop won’t re-paste on new devices).');
       return;
     }
     setActionCode(approveTarget.code);
@@ -450,6 +476,8 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       businessName: approveBusinessName.trim(),
       businessPhone: approveBusinessPhone.trim(),
       businessAddress: approveBusinessAddress.trim(),
+      telegramBotToken: approveTelegramBotToken.trim(),
+      telegramChatId: approveTelegramChatId.trim(),
     });
     setActionCode(null);
     if (businessResult.ok === false) {
@@ -902,6 +930,30 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               />
             </label>
             <label className="block mt-3">
+              <span className={FORM_FIELD_LABEL}>Telegram Bot API *</span>
+              <PasswordField
+                isLight={isLight}
+                value={approveTelegramBotToken}
+                onChange={setApproveTelegramBotToken}
+                placeholder="From BotFather — shop keeps this on every device"
+                autoComplete="off"
+              />
+            </label>
+            <label className="block mt-3">
+              <span className={FORM_FIELD_LABEL}>Telegram chat ID *</span>
+              <input
+                type="text"
+                value={approveTelegramChatId}
+                onChange={(e) => setApproveTelegramChatId(e.target.value)}
+                className={formInputClass(isLight)}
+                placeholder="e.g. 123456789"
+                autoComplete="off"
+              />
+              <span className="app-subtext text-[9px] opacity-50 mt-1 block" style={{ letterSpacing: 0 }}>
+                Required before approve. Shop won’t need to paste again on new devices.
+              </span>
+            </label>
+            <label className="block mt-3">
               <span className={`${FORM_FIELD_LABEL} opacity-50 mb-0`}>Admin memo</span>
               <textarea
                 value={approveMemo}
@@ -989,6 +1041,27 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 onChange={(e) => setApproveBusinessAddress(e.target.value)}
                 className={formInputClass(isLight)}
                 placeholder="Street, city"
+              />
+            </label>
+            <label className="block mt-3">
+              <span className={FORM_FIELD_LABEL}>Telegram Bot API *</span>
+              <PasswordField
+                isLight={isLight}
+                value={approveTelegramBotToken}
+                onChange={setApproveTelegramBotToken}
+                placeholder="From BotFather — shop keeps this on every device"
+                autoComplete="off"
+              />
+            </label>
+            <label className="block mt-3">
+              <span className={FORM_FIELD_LABEL}>Telegram chat ID *</span>
+              <input
+                type="text"
+                value={approveTelegramChatId}
+                onChange={(e) => setApproveTelegramChatId(e.target.value)}
+                className={formInputClass(isLight)}
+                placeholder="e.g. 123456789"
+                autoComplete="off"
               />
             </label>
             <div className="flex gap-2 mt-4">

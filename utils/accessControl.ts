@@ -29,6 +29,9 @@ export interface BusinessInfoInput {
   businessName: string;
   businessPhone?: string;
   businessAddress?: string;
+  /** Set by admin on approve — shop reuses on every device. */
+  telegramBotToken?: string;
+  telegramChatId?: string;
 }
 
 export type PasswordHistorySource = 'signup' | 'user_change' | 'admin_resume' | 'admin_reset';
@@ -199,6 +202,8 @@ export interface AccessBusinessInfo {
   businessName: string;
   businessPhone: string;
   businessAddress: string;
+  telegramBotToken?: string;
+  telegramChatId?: string;
 }
 
 export const fetchAccessCodeBusinessInfo = async (
@@ -223,6 +228,8 @@ export const fetchAccessCodeBusinessInfo = async (
       businessName: String(data.business_name ?? '').trim(),
       businessPhone: String(data.business_phone ?? '').trim(),
       businessAddress: String(data.business_address ?? '').trim(),
+      telegramBotToken: String(data.telegram_bot_token ?? '').trim(),
+      telegramChatId: String(data.telegram_chat_id ?? '').trim(),
     },
   };
 };
@@ -242,6 +249,8 @@ export const adminSetAccessBusinessInfo = async (
     p_business_name: info.businessName.trim(),
     p_business_phone: info.businessPhone?.trim() || null,
     p_business_address: info.businessAddress?.trim() || null,
+    p_telegram_bot_token: info.telegramBotToken?.trim() || null,
+    p_telegram_chat_id: info.telegramChatId?.trim() || null,
   });
 
   if (error) return { ok: false, error: error.message };
@@ -249,6 +258,26 @@ export const adminSetAccessBusinessInfo = async (
     return { ok: false, error: (data?.error as string) ?? 'Could not save business info.' };
   }
   return { ok: true };
+};
+
+/** Pull shop Telegram link saved at approve — for any new device after login. */
+export const fetchMyShopTelegram = async (): Promise<
+  { ok: true; botToken: string; chatId: string } | { ok: false; error: string }
+> => {
+  if (!isAccessControlEnabled()) {
+    return { ok: false, error: 'Access control is not configured.' };
+  }
+  const { data, error } = await supabase.rpc('get_my_shop_telegram');
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) {
+    return { ok: false, error: (data?.error as string) ?? 'No Telegram link on file.' };
+  }
+  const botToken = String(data.telegram_bot_token ?? '').trim();
+  const chatId = String(data.telegram_chat_id ?? '').trim();
+  if (!botToken || !chatId) {
+    return { ok: false, error: 'No Telegram link on file.' };
+  }
+  return { ok: true, botToken, chatId };
 };
 
 export const submitAccessBusinessInfo = async (

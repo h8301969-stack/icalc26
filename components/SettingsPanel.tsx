@@ -40,6 +40,7 @@ import {
   looksLikeBotToken,
 } from '../utils/telegramDb';
 import { heartbeatProfilePresence, touchProfilePresence } from '../utils/profilePresence';
+import type { DataMemorySyncApi } from '../hooks/useDataMemorySync';
 
 
 interface SettingsSlice {
@@ -109,6 +110,8 @@ interface SettingsPanelProps {
   notifications?: AccountNotification[];
   notificationsUnreadCount?: number;
   onMarkNotificationsRead?: (ids: string[]) => void;
+  /** 30d local / Telegram long-term memory controls */
+  dataMemory?: DataMemorySyncApi | null;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ 
@@ -131,6 +134,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   notifications = [],
   notificationsUnreadCount = 0,
   onMarkNotificationsRead,
+  dataMemory = null,
 }) => {
   // Draft settings — edits stay local until Save
   const [draft, setDraft] = useState<SettingsSlice>(() => cloneSettings(settings));
@@ -673,6 +677,56 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 {tgSaving ? 'Saving…' : linkedOwnerTg ? 'Update Telegram' : 'Save Telegram'}
               </button>
             </div>
+
+            {dataMemory && (
+              <div className={`mt-5 pt-4 border-t space-y-3 ${isLight ? 'border-zinc-200/80' : 'border-white/10'}`}>
+                <h4 className="settings-card-title text-base">Shop memory</h4>
+                <p
+                  className={`app-subtext text-[10px] ${isLight ? 'text-black/50' : 'text-white/50'}`}
+                  style={{ letterSpacing: 0 }}
+                >
+                  Device: ~30 days of invoice history. Telegram: long-term shop backup. Login, passwords, and access codes stay on Supabase forever — never auto-cleared.
+                </p>
+                <button
+                  type="button"
+                  disabled={dataMemory.busy}
+                  onClick={() => void dataMemory.archiveNow()}
+                  className={`w-full py-3 rounded-xl text-sm font-black active:scale-[0.98] disabled:opacity-50 ${
+                    isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+                  }`}
+                >
+                  {dataMemory.busy ? 'Working…' : 'Archive older than 30 days'}
+                </button>
+                {dataMemory.listArchives().length > 0 && (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar">
+                    <p className={`text-[10px] font-bold ${isLight ? 'text-black/45' : 'text-white/45'}`}>
+                      Restore from Telegram
+                    </p>
+                    {dataMemory.listArchives().slice(0, 12).map((pack) => (
+                      <button
+                        key={pack.id}
+                        type="button"
+                        disabled={dataMemory.busy}
+                        onClick={() => void dataMemory.restoreArchive(pack.id)}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-[11px] font-semibold active:scale-[0.99] disabled:opacity-50 border ${
+                          isLight ? 'border-zinc-200 bg-zinc-50' : 'border-white/10 bg-white/5'
+                        }`}
+                      >
+                        <span className="font-black">{pack.id}</span>
+                        <span className={`block opacity-60 ${isLight ? 'text-black' : 'text-white'}`}>
+                          {pack.logCount} logs · {pack.printCount} prints
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {dataMemory.status && (
+                  <p className={`text-[11px] font-bold ${isLight ? 'text-zinc-600' : 'text-white/65'}`}>
+                    {dataMemory.status}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
