@@ -1161,7 +1161,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         </div>
       </div>
 
-      <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full max-w-sm gap-6 pt-16 overflow-y-auto custom-scrollbar">
+      <div className={`flex flex-col items-center justify-center flex-1 w-full max-w-sm gap-6 pt-16 ${showAuthForm ? 'pb-24' : 'pb-10'}`}>
         {!showSettings && (
           <div className={`text-center select-none pointer-events-none transition-opacity duration-300 ${isLoading ? 'opacity-40' : 'opacity-100'}`}>
             <p className="font-num-light text-5xl tracking-tighter tabular-nums opacity-80" style={{ color: textColor }}>
@@ -1204,7 +1204,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         {showAuthForm && (!existingAccount || adminEntryMode) && (
           <div
             key={authCardAnimKey}
-            className={`auth-card-mode relative w-full rounded-2xl p-6 border shadow-2xl animate-auth-card-enter ${
+            className={`auth-card-mode relative z-20 w-full rounded-2xl p-6 border shadow-2xl animate-auth-card-enter ${
               cardModePulse ? 'auth-card-mode--pulse' : ''
             } ${panelClass} ${isLoading && !showBusinessSetup ? 'opacity-40 pointer-events-none' : ''}`}
           >
@@ -1435,73 +1435,77 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         )}
       </div>
 
-      <div className="relative z-10 shrink-0 w-full max-w-sm flex flex-col items-center gap-3 pb-[max(0.25rem,env(safe-area-inset-bottom))]">
-        {isIdle && (
-          <div className="flex flex-col items-center w-full select-none">
-            <p
-              className="app-subtext text-[10px] animate-swipe-hint-pulse opacity-45 text-center pointer-events-none"
-              style={{ color: textColor }}
+      {isIdle && (
+        <div className="relative z-10 shrink-0 flex flex-col items-center w-full max-w-xs select-none mb-2">
+          <p
+            className="app-subtext text-[10px] animate-swipe-hint-pulse opacity-45 text-center pointer-events-none"
+            style={{ color: textColor }}
+          >
+            Click or swipe to continue
+          </p>
+          <div className="flex items-center gap-3 opacity-30 mt-4 pointer-events-none" style={{ color: textColor }}>
+            <Icons.History size={20} />
+            <div className="w-1 h-1 rounded-full bg-current" />
+            <Icons.Scientific size={20} />
+            <div className="w-1 h-1 rounded-full bg-current" />
+            <Icons.Trends size={20} />
+          </div>
+          {/* stopPropagation so taps don’t also fire lock-screen “continue” */}
+          <div
+            className="mt-5 flex flex-wrap items-center justify-center gap-2 pointer-events-auto"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => void handleAdminFromLock()}
+              disabled={isLoading || isExiting}
+              className={`shrink-0 px-3.5 py-2 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all active:scale-95 disabled:opacity-40 ${
+                isLight
+                  ? 'border-black/25 text-black/60 bg-white/40 hover:text-black/80'
+                  : 'border-white/25 text-white/60 bg-black/25 hover:text-white/85'
+              }`}
+              aria-label="Admin generate codes"
             >
-              Click or swipe to continue
-            </p>
-            <div className="flex items-center gap-3 opacity-30 mt-3 pointer-events-none" style={{ color: textColor }}>
-              <Icons.History size={20} />
-              <div className="w-1 h-1 rounded-full bg-current" />
-              <Icons.Scientific size={20} />
-              <div className="w-1 h-1 rounded-full bg-current" />
-              <Icons.Trends size={20} />
-            </div>
-            {/* stopPropagation so taps don’t also fire lock-screen “continue” */}
-            <div
-              className="mt-4 flex flex-wrap items-center justify-center gap-2 pointer-events-auto"
-              onPointerDown={(e) => e.stopPropagation()}
-              onPointerUp={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-            >
+              Admin
+            </button>
+            {isDev && onDevSkip && (
               <button
                 type="button"
-                onClick={() => void handleAdminFromLock()}
+                onClick={handleDevSkip}
                 disabled={isLoading || isExiting}
-                className={`shrink-0 px-3.5 py-2 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all active:scale-95 disabled:opacity-40 ${
+                className={`shrink-0 px-3.5 py-2 rounded-full text-[10px] font-black uppercase tracking-wider border border-dashed transition-all active:scale-95 disabled:opacity-40 ${
                   isLight
-                    ? 'border-black/25 text-black/60 bg-white/40 hover:text-black/80'
-                    : 'border-white/25 text-white/60 bg-black/25 hover:text-white/85'
+                    ? 'border-black/20 text-black/45 hover:text-black/65'
+                    : 'border-white/20 text-white/45 hover:text-white/65'
                 }`}
-                aria-label="Admin generate codes"
+                aria-label="Skip login for development"
               >
-                Admin
+                Skip (dev)
               </button>
-              {isDev && onDevSkip && (
-                <button
-                  type="button"
-                  onClick={handleDevSkip}
-                  disabled={isLoading || isExiting}
-                  className={`shrink-0 px-3.5 py-2 rounded-full text-[10px] font-black uppercase tracking-wider border border-dashed transition-all active:scale-95 disabled:opacity-40 ${
-                    isLight
-                      ? 'border-black/20 text-black/45 hover:text-black/65'
-                      : 'border-white/20 text-white/45 hover:text-white/65'
-                  }`}
-                  aria-label="Skip login for development"
-                >
-                  Skip (dev)
-                </button>
-              )}
-            </div>
-            {error && (
-              <p className="mt-2 text-[10px] font-bold text-red-500 text-center max-w-[16rem] px-2" role="alert">
-                {error}
-              </p>
             )}
           </div>
-        )}
+          {error && (
+            <p className="mt-2 text-[10px] font-bold text-red-500 text-center max-w-[16rem] px-2" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
 
-        <p
-          className={`app-subtext text-[10px] opacity-45 text-center transition-opacity duration-300 normal-case pointer-events-none ${isLoading ? 'opacity-20' : ''}`}
-          style={{ color: textColor }}
-        >
-          © 2026 iCalc
-        </p>
-      </div>
+      {/* Anchored low so it never sits on the auth card (0.0.10-style clearance) */}
+      <p
+        className={`absolute left-0 right-0 z-0 app-subtext text-[10px] opacity-45 text-center normal-case pointer-events-none transition-opacity duration-300 ${
+          isLoading ? 'opacity-20' : ''
+        }`}
+        style={{
+          color: textColor,
+          bottom: 'max(1.75rem, calc(env(safe-area-inset-bottom) + 1.25rem))',
+        }}
+      >
+        © 2026 iCalc
+      </p>
 
       {isLoading && (
         <div
@@ -1559,7 +1563,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
           aria-labelledby="business-setup-title"
         >
           <div
-            className={`w-full max-w-[min(360px,94vw)] max-h-[88vh] overflow-y-auto custom-scrollbar rounded-2xl border shadow-2xl animate-insight-pop ${
+            className={`w-full max-w-[min(360px,94vw)] overflow-hidden rounded-2xl border shadow-2xl animate-insight-pop ${
               isLight
                 ? 'bg-white border-black/10 text-black'
                 : 'bg-zinc-900 border-white/12 text-white'
