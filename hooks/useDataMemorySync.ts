@@ -353,6 +353,18 @@ export const useDataMemorySync = ({
     };
   }, [authReady, accountId, pastLogs, printLogs, runArchivePass]);
 
+  // Automatic periodic archive (every 6 hours while app is open)
+  useEffect(() => {
+    if (!authReady || !accountId || !isTelegramDbConnected(accountId)) return;
+    const HOUR = 60 * 60 * 1000;
+    const id = window.setInterval(() => {
+      void runArchivePass().catch((e) =>
+        console.warn('[iCalc memory] scheduled archive failed', e)
+      );
+    }, 6 * HOUR);
+    return () => window.clearInterval(id);
+  }, [authReady, accountId, runArchivePass]);
+
   // On open: trim only local invoice HISTORY older than 30d (after Telegram archive ack).
   // Never touches Supabase auth, access codes, or sessions.
   useEffect(() => {

@@ -34,11 +34,6 @@ import {
   formatReleaseElapsed,
   type AppReleaseInfo,
 } from '../utils/appRelease';
-import {
-  connectOwnerTelegramLink,
-  getSharedTelegramDbConfig,
-  looksLikeBotToken,
-} from '../utils/telegramDb';
 import { heartbeatProfilePresence, touchProfilePresence } from '../utils/profilePresence';
 import type { DataMemorySyncApi } from '../hooks/useDataMemorySync';
 
@@ -190,11 +185,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showNotificationsInbox, setShowNotificationsInbox] = useState(false);
   const wasOpenRef = useRef(false);
-  const [tgBotToken, setTgBotToken] = useState('');
-  const [tgChatId, setTgChatId] = useState('');
-  const [tgSaveError, setTgSaveError] = useState<string | null>(null);
-  const [tgSaveOk, setTgSaveOk] = useState(false);
-  const [tgSaving, setTgSaving] = useState(false);
   const [phoneRelease, setPhoneRelease] = useState<AppReleaseInfo | null>(null);
   const [phoneReleaseLoading, setPhoneReleaseLoading] = useState(false);
   const [phoneReleaseNow, setPhoneReleaseNow] = useState(() => Date.now());
@@ -570,31 +560,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     </div>
   );
 
-  const linkedOwnerTg = getSharedTelegramDbConfig();
-
-  const handleSaveOwnerTelegram = async () => {
-    setTgSaveError(null);
-    setTgSaveOk(false);
-    if (!looksLikeBotToken(tgBotToken) || !tgChatId.trim()) {
-      setTgSaveError('Need both the bot token and chat ID.');
-      return;
-    }
-    setTgSaving(true);
-    const result = await connectOwnerTelegramLink({
-      botToken: tgBotToken.trim(),
-      chatId: tgChatId.trim(),
-    });
-    setTgSaving(false);
-    if (result.ok === false) {
-      setTgSaveError(result.error);
-      return;
-    }
-    setTgSaveOk(true);
-    setTgBotToken('');
-    setTgChatId('');
-    window.setTimeout(() => setTgSaveOk(false), 2500);
-  };
-
   const renderSecuritySection = () => {
     if (!accountUsername || !onChangePassword || !onLogout) return null;
     return (
@@ -633,99 +598,52 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </button>
         </div>
 
-        {isAdminProfile(activeProfile) && (
-          <div className={`mt-6 pt-5 border-t ${isLight ? 'border-zinc-200/80' : 'border-white/10'}`}>
-            <h4 className="settings-card-title text-base mb-1">Owner Telegram</h4>
-            <p className={`app-subtext text-[10px] mb-3 ${isLight ? 'text-black/50' : 'text-white/50'}`} style={{ letterSpacing: 0 }}>
-              Your shop bot. Only @admin can change this.
+        {isAdminProfile(activeProfile) && dataMemory && (
+          <div className={`mt-6 pt-5 border-t space-y-3 ${isLight ? 'border-zinc-200/80' : 'border-white/10'}`}>
+            <h4 className="settings-card-title text-base">Shop memory</h4>
+            <p
+              className={`app-subtext text-[10px] ${isLight ? 'text-black/50' : 'text-white/50'}`}
+              style={{ letterSpacing: 0 }}
+            >
+              Auto: ~30 days stay on this device (offline). Older packs archive to Telegram (~60 days cloud buffer). Telegram Bot API is set only in the admin portal when approving users — not here.
             </p>
-            {linkedOwnerTg ? (
-              <p className={`app-subtext text-[11px] mb-3 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} style={{ letterSpacing: 0 }}>
-                Linked {linkedOwnerTg.botUsername || 'bot'} · chat {linkedOwnerTg.chatId}
-              </p>
-            ) : (
-              <p className={`app-subtext text-[11px] mb-3 text-amber-500`} style={{ letterSpacing: 0 }}>
-                Not linked yet — paste once below.
-              </p>
-            )}
-            <div className="space-y-2">
-              <PasswordField
-                isLight={isLight}
-                value={tgBotToken}
-                onChange={setTgBotToken}
-                placeholder="Bot token from BotFather"
-                autoComplete="off"
-              />
-              <input
-                type="text"
-                value={tgChatId}
-                onChange={(e) => setTgChatId(e.target.value)}
-                className={formInputClass(isLight)}
-                placeholder="Chat ID"
-                autoComplete="off"
-              />
-              {tgSaveError && <p className="text-xs font-bold text-red-500">{tgSaveError}</p>}
-              {tgSaveOk && <p className="text-xs font-bold text-emerald-500">Saved — we’ll use this for Admin and Skip.</p>}
-              <button
-                type="button"
-                disabled={tgSaving}
-                onClick={() => void handleSaveOwnerTelegram()}
-                className={`w-full py-3 rounded-xl text-sm font-black active:scale-[0.98] disabled:opacity-50 ${
-                  isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
-                }`}
-              >
-                {tgSaving ? 'Saving…' : linkedOwnerTg ? 'Update Telegram' : 'Save Telegram'}
-              </button>
-            </div>
-
-            {dataMemory && (
-              <div className={`mt-5 pt-4 border-t space-y-3 ${isLight ? 'border-zinc-200/80' : 'border-white/10'}`}>
-                <h4 className="settings-card-title text-base">Shop memory</h4>
-                <p
-                  className={`app-subtext text-[10px] ${isLight ? 'text-black/50' : 'text-white/50'}`}
-                  style={{ letterSpacing: 0 }}
-                >
-                  Device: ~30 days of invoice history. Telegram: long-term shop backup. Login, passwords, and access codes stay on Supabase forever — never auto-cleared.
+            <button
+              type="button"
+              disabled={dataMemory.busy}
+              onClick={() => void dataMemory.archiveNow()}
+              className={`w-full py-3 rounded-xl text-sm font-black active:scale-[0.98] disabled:opacity-50 ${
+                isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
+              }`}
+            >
+              {dataMemory.busy ? 'Working…' : 'Archive now (optional)'}
+            </button>
+            {dataMemory.listArchives().length > 0 && (
+              <div className="space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar">
+                <p className={`text-[10px] font-bold ${isLight ? 'text-black/45' : 'text-white/45'}`}>
+                  Restore older history (needs internet)
                 </p>
-                <button
-                  type="button"
-                  disabled={dataMemory.busy}
-                  onClick={() => void dataMemory.archiveNow()}
-                  className={`w-full py-3 rounded-xl text-sm font-black active:scale-[0.98] disabled:opacity-50 ${
-                    isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
-                  }`}
-                >
-                  {dataMemory.busy ? 'Working…' : 'Archive older than 30 days'}
-                </button>
-                {dataMemory.listArchives().length > 0 && (
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar">
-                    <p className={`text-[10px] font-bold ${isLight ? 'text-black/45' : 'text-white/45'}`}>
-                      Restore from Telegram
-                    </p>
-                    {dataMemory.listArchives().slice(0, 12).map((pack) => (
-                      <button
-                        key={pack.id}
-                        type="button"
-                        disabled={dataMemory.busy}
-                        onClick={() => void dataMemory.restoreArchive(pack.id)}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-[11px] font-semibold active:scale-[0.99] disabled:opacity-50 border ${
-                          isLight ? 'border-zinc-200 bg-zinc-50' : 'border-white/10 bg-white/5'
-                        }`}
-                      >
-                        <span className="font-black">{pack.id}</span>
-                        <span className={`block opacity-60 ${isLight ? 'text-black' : 'text-white'}`}>
-                          {pack.logCount} logs · {pack.printCount} prints
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {dataMemory.status && (
-                  <p className={`text-[11px] font-bold ${isLight ? 'text-zinc-600' : 'text-white/65'}`}>
-                    {dataMemory.status}
-                  </p>
-                )}
+                {dataMemory.listArchives().slice(0, 12).map((pack) => (
+                  <button
+                    key={pack.id}
+                    type="button"
+                    disabled={dataMemory.busy}
+                    onClick={() => void dataMemory.restoreArchive(pack.id)}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-[11px] font-semibold active:scale-[0.99] disabled:opacity-50 border ${
+                      isLight ? 'border-zinc-200 bg-zinc-50' : 'border-white/10 bg-white/5'
+                    }`}
+                  >
+                    <span className="font-black">{pack.id}</span>
+                    <span className={`block opacity-60 ${isLight ? 'text-black' : 'text-white'}`}>
+                      {pack.logCount} logs · {pack.printCount} prints
+                    </span>
+                  </button>
+                ))}
               </div>
+            )}
+            {dataMemory.status && (
+              <p className={`text-[11px] font-bold ${isLight ? 'text-zinc-600' : 'text-white/65'}`}>
+                {dataMemory.status}
+              </p>
             )}
           </div>
         )}

@@ -419,6 +419,25 @@ const canvasToPngBlob = (canvas: HTMLCanvasElement): Promise<Blob | null> =>
  * Send an invoice image to the linked Telegram bot chat (sendPhoto).
  * Uses account config, or the shared Skip/dev testing bot.
  */
+/** Plain text notify to the linked shop Telegram chat. */
+export async function sendTelegramTextNotify(input: {
+  accountId?: string | null;
+  text: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const config =
+    (input.accountId ? getTelegramDbConfig(input.accountId) : null) ?? getSharedTelegramDbConfig();
+  if (!config) {
+    return { ok: false, error: 'Telegram bot not linked. Set Bot API in the admin portal.' };
+  }
+  const sent = await telegramCall(config.botToken, 'sendMessage', {
+    chat_id: config.chatId,
+    text: input.text.slice(0, 4000),
+    disable_web_page_preview: true,
+  });
+  if (sent.ok === false) return sent;
+  return { ok: true };
+}
+
 export async function sendInvoiceImageToTelegram(input: {
   accountId?: string | null;
   canvas: HTMLCanvasElement;
@@ -427,7 +446,7 @@ export async function sendInvoiceImageToTelegram(input: {
   const config =
     (input.accountId ? getTelegramDbConfig(input.accountId) : null) ?? getSharedTelegramDbConfig();
   if (!config) {
-    return { ok: false, error: 'Telegram bot not linked. Connect Bot API once on Skip (dev).' };
+    return { ok: false, error: 'Telegram bot not linked. Set Bot API in the admin portal.' };
   }
 
   const blob = await canvasToPngBlob(input.canvas);

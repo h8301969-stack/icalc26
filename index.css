@@ -730,7 +730,7 @@
 
 /* Blinking caret for movable expression cursor */
 .animate-blink {
-  animation: blink 1s step-end infinite;
+  animation: blink 1.05s step-end infinite;
 }
 
 .calc-unidentified-price {
@@ -2339,6 +2339,23 @@ select.app-input--dark {
   background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 52%, #60a5fa 100%);
   color: #fff;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+/* Past / unpaid idle invoices — grey→white (only fresh current keeps blue) */
+.invoice-switcher-card__header--stale {
+  background: linear-gradient(135deg, #6b7280 0%, #9ca3af 48%, #f3f4f6 100%);
+  color: #111;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+.invoice-switcher-card__header--stale .invoice-switcher-card__badge {
+  background: rgba(0, 0, 0, 0.08);
+  color: #111;
+}
+.invoice-switcher-card__header--stale .invoice-switcher-card__title,
+.invoice-switcher-card__header--stale input.invoice-switcher-card__title {
+  color: #111;
+}
+.invoice-switcher-card__header--stale input.invoice-switcher-card__title::placeholder {
+  color: rgba(0, 0, 0, 0.35);
 }
 .invoice-switcher-printable .invoice-switcher-card__header,
 .invoice-switcher-printable .invoice-switcher-card__body {

@@ -189,9 +189,10 @@ export const sendInvoiceImageToLinkedTelegram = async (
 ): Promise<{ ok: boolean; error?: string }> => {
   try {
     const canvas = renderInvoiceShareImage(payload, shareSettings);
-    const caption = `🧾 ${payload.invoiceName}\nTotal: ${formatShareTotal(payload.total, payload.currency)}${
-      payload.attendantName?.trim() ? `\nServed by: ${payload.attendantName.trim()}` : ''
-    }`;
+    const profile = payload.attendantName?.trim() || 'Staff';
+    const totalLabel = formatShareTotal(payload.total, payload.currency);
+    // e.g. "Ryan added 4750 ghs of invoice #1 to dashboard"
+    const caption = `${profile} added ${totalLabel} of invoice ${payload.invoiceName} to dashboard`;
     const result = await sendInvoiceImageToTelegram({
       accountId,
       canvas,

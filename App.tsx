@@ -1443,6 +1443,7 @@ const AppContent: React.FC = () => {
                     >
                       {expression === '0' ? (
                         <span
+                          key={`caret-empty-${expressionCursorPos}`}
                           data-expression-cursor
                           className="inline-block align-middle animate-blink bg-current cursor-grab active:cursor-grabbing touch-none"
                           style={{
@@ -1488,6 +1489,7 @@ const AppContent: React.FC = () => {
                             )}
                             {slice.showCursorAfter && (
                               <span
+                                key={`caret-${expressionCursorPos}-${idx}`}
                                 data-expression-cursor
                                 className="inline-block align-middle animate-blink bg-current cursor-grab active:cursor-grabbing touch-none"
                                 style={{

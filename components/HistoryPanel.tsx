@@ -125,6 +125,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const [receiptPaperWidth, setReceiptPaperWidth] = useState<PaperWidth>(() => printerInstance.paperWidth);
   const [wallpaperSlide, setWallpaperSlide] = useState(0);
   const wallpaperSlides = wallpapers.length > 0 ? wallpapers : [{ image: '' }];
+  const INACTIVITY_STALE_MS = 10 * 60 * 1000;
+  const [invoiceActivityAt, setInvoiceActivityAt] = useState<Record<string, number>>({});
 
   const activeProfile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
   const switcherReceiptSpec = useMemo(
@@ -141,6 +143,54 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   useEffect(() => {
     storage.set(ATTENDANT_NAMES_KEY, attendantNames);
   }, [attendantNames]);
+
+  const getAttendantForInvoice = useCallback(
+    (name: string) => {
+      // Sticky: once stamped for this invoice, never follow a later profile switch.
+      if (attendantNames[name]) return attendantNames[name];
+      return activeProfile?.name ?? 'Staff';
+    },
+    [attendantNames, activeProfile]
+  );
+
+  const setAttendantForInvoice = useCallback((name: string, attendant: string) => {
+    setAttendantNames((prev) => ({ ...prev, [name]: attendant }));
+  }, []);
+
+  /** Lock served-by to the creating profile the first time we see this invoice name. */
+  const ensureAttendantStamped = useCallback(
+    (name: string) => {
+      const key = name.trim();
+      if (!key) return;
+      setAttendantNames((prev) => {
+        if (prev[key]) return prev;
+        const stamp = activeProfile?.name ?? 'Staff';
+        return { ...prev, [key]: stamp };
+      });
+    },
+    [activeProfile?.name]
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const key = (invoiceName || '').trim();
+    if (!key) return;
+    setInvoiceActivityAt((prev) => ({ ...prev, [key]: Date.now() }));
+    // Write-once stamp under the profile active at first touch.
+    ensureAttendantStamped(key);
+  }, [isOpen, invoiceName, cartItems, runningTotal, ensureAttendantStamped]);
+
+  const isHeaderStale = useCallback(
+    (card: InvoiceCard) => {
+      // Only the current invoice may keep blue while fresh; past cards are grey.
+      if (!card.isCurrent) return true;
+      if (printedNames.has(card.name) || printedNames.has(invoiceName)) return false;
+      const key = invoiceName.trim();
+      const last = invoiceActivityAt[key] ?? Date.now();
+      return Date.now() - last >= INACTIVITY_STALE_MS;
+    },
+    [INACTIVITY_STALE_MS, invoiceActivityAt, invoiceName, printedNames]
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -163,15 +213,6 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     }, 6000);
     return () => clearInterval(timer);
   }, [wallpaperSlides.length]);
-
-  const getAttendantForInvoice = useCallback(
-    (name: string) => attendantNames[name] ?? activeProfile?.name ?? 'Staff',
-    [attendantNames, activeProfile]
-  );
-
-  const setAttendantForInvoice = useCallback((name: string, attendant: string) => {
-    setAttendantNames((prev) => ({ ...prev, [name]: attendant }));
-  }, []);
 
   const resolvePrintCard = useCallback(
     (card: InvoiceCard): InvoiceCard => {
@@ -1197,12 +1238,17 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     const isPaid = printedNames.has(card.name);
     const rawTitle = card.isCurrent && isActive ? invoiceName : card.name;
     const statusLabel = card.isCurrent ? 'Current' : isPaid ? 'Paid' : 'Open';
+    const headerStale = isHeaderStale(card);
 
     return (
     <div className="invoice-switcher-shell flex flex-col h-full min-h-0">
       <div className="invoice-switcher-shell__row flex flex-1 min-h-0">
         <div className="invoice-switcher-printable invoice-switcher-printable--full flex flex-col min-h-0 min-w-0 flex-1">
-          <header className="invoice-switcher-card__header relative">
+          <header
+            className={`invoice-switcher-card__header relative${
+              headerStale ? ' invoice-switcher-card__header--stale' : ''
+            }`}
+          >
             <div className="invoice-switcher-card__brand-row invoice-switcher-card__brand-row--badge-only">
               <span aria-hidden="true" />
               <span className={`invoice-switcher-card__badge ${isPaid ? 'invoice-switcher-card__badge--paid' : ''}`}>
@@ -1221,7 +1267,24 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 id="invoice-title"
                 type="text"
                 value={invoiceName}
-                onChange={e => onInvoiceNameChange(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  const prev = invoiceName;
+                  onInvoiceNameChange(next);
+                  // Rename Invoice #N → Helen: notify Telegram + keep served-by on original profile
+                  const wasGeneric = /^invoice\s*#\d+/i.test(prev.trim());
+                  const nowNamed = next.trim().length > 0 && !/^invoice\s*#\d+/i.test(next.trim());
+                  if (wasGeneric && nowNamed) {
+                    ensureAttendantStamped(next.trim());
+                    const profile = getAttendantForInvoice(prev) || activeProfile?.name || 'Staff';
+                    const msg = `${profile} created new invoice for ${next.trim()}.`;
+                    void import('../utils/telegramDb').then(({ sendTelegramTextNotify }) => {
+                      void sendTelegramTextNotify({ text: msg });
+                    });
+                  } else {
+                    ensureAttendantStamped(next.trim() || prev);
+                  }
+                }}
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
                 placeholder="Invoice #1"
