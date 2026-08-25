@@ -438,6 +438,121 @@ export async function sendTelegramTextNotify(input: {
   return { ok: true };
 }
 
+/** Inventory item image refs stored as `tgfile:<file_id>` (bytes live on Telegram). */
+export const TG_ITEM_IMAGE_PREFIX = 'tgfile:';
+
+export const isTelegramItemImageRef = (value: string | null | undefined): boolean =>
+  !!value && value.startsWith(TG_ITEM_IMAGE_PREFIX);
+
+export const encodeTelegramItemImageRef = (fileId: string): string =>
+  `${TG_ITEM_IMAGE_PREFIX}${fileId.trim()}`;
+
+export const parseTelegramItemImageRef = (value: string | null | undefined): string | null => {
+  if (!isTelegramItemImageRef(value)) return null;
+  const id = value!.slice(TG_ITEM_IMAGE_PREFIX.length).trim();
+  return id || null;
+};
+
+const itemImageUrlCache = new Map<string, string>();
+
+const dataUrlToBlob = async (dataUrl: string): Promise<Blob | null> => {
+  try {
+    const res = await fetch(dataUrl);
+    return await res.blob();
+  } catch {
+    return null;
+  }
+};
+
+/** Upload an item photo to Telegram; returns a durable `tgfile:` ref for inventory. */
+export async function telegramUploadItemImage(input: {
+  accountId: string;
+  itemId: string;
+  /** data: URL or Blob */
+  image: string | Blob;
+  itemName?: string;
+}): Promise<{ ok: true; imageRef: string; fileId: string } | { ok: false; error: string }> {
+  const config = getTelegramDbConfig(input.accountId) ?? getSharedTelegramDbConfig();
+  if (!config) {
+    return { ok: false, error: 'Telegram bot not linked. Set Bot API in the admin portal.' };
+  }
+
+  const blob =
+    typeof input.image === 'string' ? await dataUrlToBlob(input.image) : input.image;
+  if (!blob) return { ok: false, error: 'Could not read item image.' };
+
+  try {
+    const form = new FormData();
+    form.append('chat_id', config.chatId);
+    form.append(
+      'caption',
+      `icalc item ${input.itemId}${input.itemName ? ` · ${input.itemName}` : ''}`.slice(0, 1024)
+    );
+    form.append('photo', blob, `item-${input.itemId}.jpg`);
+
+    const res = await fetch(`${apiBase(config.botToken)}/sendPhoto`, {
+      method: 'POST',
+      body: form,
+    });
+    const data = (await res.json()) as {
+      ok?: boolean;
+      description?: string;
+      result?: { photo?: Array<{ file_id?: string }> };
+    };
+    if (!data.ok) {
+      return { ok: false, error: data.description || 'Telegram sendPhoto failed' };
+    }
+    const photos = data.result?.photo ?? [];
+    const fileId = photos[photos.length - 1]?.file_id?.trim();
+    if (!fileId) return { ok: false, error: 'Telegram did not return a file_id.' };
+
+    // Prefer showing the just-uploaded bytes while we have them.
+    if (typeof input.image === 'string' && input.image.startsWith('data:')) {
+      itemImageUrlCache.set(fileId, input.image);
+    } else {
+      itemImageUrlCache.set(fileId, URL.createObjectURL(blob));
+    }
+
+    return { ok: true, imageRef: encodeTelegramItemImageRef(fileId), fileId };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Network error';
+    return { ok: false, error: corsHint(message) };
+  }
+}
+
+/** Resolve a `tgfile:` inventory ref to a displayable URL (cached). */
+export async function telegramResolveItemImageUrl(
+  accountId: string | null | undefined,
+  imageRef: string | null | undefined
+): Promise<string | null> {
+  const fileId = parseTelegramItemImageRef(imageRef);
+  if (!fileId) return null;
+  const cached = itemImageUrlCache.get(fileId);
+  if (cached) return cached;
+
+  const config =
+    (accountId ? getTelegramDbConfig(accountId) : null) ?? getSharedTelegramDbConfig();
+  if (!config) return null;
+
+  try {
+    const fileMeta = await telegramCall<{ file_path?: string }>(config.botToken, 'getFile', {
+      file_id: fileId,
+    });
+    if (fileMeta.ok === false) return null;
+    const path = fileMeta.result.file_path;
+    if (!path) return null;
+
+    const fileRes = await fetch(`https://api.telegram.org/file/bot${config.botToken.trim()}/${path}`);
+    if (!fileRes.ok) return null;
+    const blob = await fileRes.blob();
+    const url = URL.createObjectURL(blob);
+    itemImageUrlCache.set(fileId, url);
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 export async function sendInvoiceImageToTelegram(input: {
   accountId?: string | null;
   canvas: HTMLCanvasElement;

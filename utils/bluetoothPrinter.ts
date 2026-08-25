@@ -1297,11 +1297,12 @@ export class BLEPrinter {
 
   async printInvoice(
     invoiceName: string,
-    items: CartItem[],
+    items: { name?: string; price: number; quantity: number; id?: string }[],
     runningTotal: number,
     currency: string = '¢',
     attendantName?: string,
-    layoutMode: ReceiptLayoutMode = 'full'
+    layoutMode: ReceiptLayoutMode = 'full',
+    business?: { name?: string; phone?: string; address?: string }
   ): Promise<boolean> {
     const receiptItems: ReceiptLineItem[] = items.map((item) => ({
       name: item.name,
@@ -1349,18 +1350,33 @@ export class BLEPrinter {
     const encoder = new TextEncoder();
     const commands: number[] = [];
     const rule = '-'.repeat(spec.maxCols);
+    const pushText = (text: string) => {
+      commands.push(...Array.from(encoder.encode(text)));
+    };
 
+    // ESC/POS text receipt (not raster image) — printers receive plain text + control codes.
     commands.push(0x1B, 0x40);
     commands.push(0x1B, 0x61, 0x01);
-    commands.push(0x1B, 0x45, 0x01);
-    const title = `${truncateReceiptText(invoiceName.toUpperCase(), spec.maxInvoiceTitleChars)}\n`;
-    commands.push(...Array.from(encoder.encode(title)));
 
+    const bizName = business?.name?.trim();
+    if (bizName) {
+      commands.push(0x1B, 0x45, 0x01);
+      pushText(`${truncateReceiptText(bizName, spec.maxCols)}\n`);
+      commands.push(0x1B, 0x45, 0x00);
+      const phone = business?.phone?.trim();
+      const address = business?.address?.trim();
+      if (phone) pushText(`${truncateReceiptText(phone, spec.maxCols)}\n`);
+      if (address) pushText(`${truncateReceiptText(address, spec.maxCols)}\n`);
+      pushText(`${rule}\n`);
+    }
+
+    commands.push(0x1B, 0x45, 0x01);
+    pushText(`${truncateReceiptText(invoiceName.toUpperCase(), spec.maxInvoiceTitleChars)}\n`);
     commands.push(0x1B, 0x45, 0x00);
     if (attendantName) {
-      commands.push(...Array.from(encoder.encode(`${formatServedByLine(attendantName, spec)}\n`)));
+      pushText(`${formatServedByLine(attendantName, spec)}\n`);
     }
-    commands.push(...Array.from(encoder.encode(`${rule}\n`)));
+    pushText(`${rule}\n`);
 
     commands.push(0x1B, 0x61, 0x00);
 
@@ -1373,19 +1389,18 @@ export class BLEPrinter {
           currency,
           spec
         );
-        commands.push(...Array.from(encoder.encode(`${line}\n`)));
+        pushText(`${line}\n`);
       });
     }
 
-    commands.push(...Array.from(encoder.encode(`${rule}\n`)));
+    pushText(`${rule}\n`);
 
     commands.push(0x1B, 0x45, 0x01);
-    const totalText = `TOTAL: ${currency}${runningTotal.toFixed(2)}`;
-    commands.push(...Array.from(encoder.encode(totalText + '\n')));
+    pushText(`TOTAL: ${currency}${runningTotal.toFixed(2)}\n`);
     commands.push(0x1B, 0x45, 0x00);
 
     commands.push(0x1B, 0x61, 0x01);
-    commands.push(...Array.from(encoder.encode('\nThank you for your purchase!\n\n\n')));
+    pushText('\nThank you for your purchase!\n\n\n');
 
     commands.push(0x1D, 0x56, 0x42, 0x00);
 
@@ -1542,94 +1557,75 @@ export class BLEPrinter {
     return ok;
   }
 
+  /** ESC/POS text notepad slip (preferred). Kept name alias for call sites. */
   async printNotepadImage(title: string, body: string, attendantName?: string): Promise<boolean> {
+    return this.printNotepad(title, body, attendantName);
+  }
+
+  async printNotepad(title: string, body: string, attendantName?: string): Promise<boolean> {
     const spec = getReceiptSpec(this.paperWidth);
-    const width = spec.widthPx;
-    const lines = body.split('\n').map((l) => l.trimEnd()).filter((l, i, arr) => l.length > 0 || i < arr.length);
-    const lineHeight = 20;
-    const headerHeight = attendantName ? 88 : 72;
-    const height = Math.min(spec.maxHeightPx, headerHeight + lines.length * lineHeight + 48);
+    const lines = body.split('\n').map((l) => l.trimEnd());
 
     logReceiptPrint('start', {
-      mode: 'notepad_raster',
+      mode: 'escpos_text_notepad',
       invoiceName: title,
       paperWidth: this.paperWidth,
       lineCount: lines.length,
     });
 
     const result = await this.withBluetoothLock(async () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Could not create 2D canvas context');
+      const encoder = new TextEncoder();
+      const commands: number[] = [];
+      const rule = '-'.repeat(spec.maxCols);
+      const pushText = (text: string) => {
+        commands.push(...Array.from(encoder.encode(text)));
+      };
 
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = '#000000';
-      ctx.textBaseline = 'top';
-
-      ctx.font = '700 18px Montserrat, Candara';
-      ctx.textAlign = 'center';
-      ctx.fillText(truncateReceiptText(title.toUpperCase(), spec.maxInvoiceTitleChars), width / 2, 10);
-
-      ctx.font = '300 11px Montserrat, Candara';
+      commands.push(0x1B, 0x40);
+      commands.push(0x1B, 0x61, 0x01);
+      commands.push(0x1B, 0x45, 0x01);
+      pushText(`${truncateReceiptText(title.toUpperCase(), spec.maxInvoiceTitleChars)}\n`);
+      commands.push(0x1B, 0x45, 0x00);
       if (attendantName) {
-        ctx.fillText(formatServedByLine(attendantName, spec), width / 2, 34);
+        pushText(`${formatServedByLine(attendantName, spec)}\n`);
       }
+      pushText(`${rule}\n`);
+      commands.push(0x1B, 0x61, 0x00);
 
-      const rule = '-'.repeat(Math.floor(spec.maxCols * 0.95));
-      ctx.font = '300 13px Montserrat, Candara';
-      ctx.fillText(rule, width / 2, attendantName ? 54 : 40);
-
-      let y = attendantName ? 72 : 58;
-      ctx.textAlign = 'left';
-      ctx.font = '500 13px Montserrat, Candara';
       for (const line of lines) {
-        if (y + lineHeight > height - 24) break;
         const chunks = wrapReceiptLine(line, spec.maxCols);
+        if (chunks.length === 0) {
+          pushText('\n');
+          continue;
+        }
         for (const chunk of chunks) {
-          ctx.fillText(chunk, 8, y);
-          y += lineHeight;
+          pushText(`${chunk}\n`);
         }
       }
 
-      const imgData = ctx.getImageData(0, 0, width, height);
-      const data = imgData.data;
-      const bytesWidth = width / 8;
-      const commands: number[] = [0x1B, 0x40];
-      const xL = bytesWidth % 256;
-      const xH = Math.floor(bytesWidth / 256);
-      const yL = height % 256;
-      const yH = Math.floor(height / 256);
-      commands.push(0x1D, 0x76, 0x30, 0, xL, xH, yL, yH);
-
-      for (let row = 0; row < height; row++) {
-        for (let b = 0; b < bytesWidth; b++) {
-          let byteVal = 0;
-          for (let bit = 0; bit < 8; bit++) {
-            const pixelX = b * 8 + bit;
-            const pixelIdx = (row * width + pixelX) * 4;
-            const gray = 0.299 * data[pixelIdx] + 0.587 * data[pixelIdx + 1] + 0.114 * data[pixelIdx + 2];
-            const isBlack = data[pixelIdx + 3] > 50 && gray < 128 ? 1 : 0;
-            byteVal = (byteVal << 1) | isBlack;
-          }
-          commands.push(byteVal);
-        }
-      }
-
+      pushText('\n\n');
       commands.push(0x1D, 0x56, 0x42, 0x00);
       await this.writeEscPosData(new Uint8Array(commands));
     });
 
+    // Keep success/failure logging shape used by the old raster path.
     const ok = result !== null;
-    logReceiptPrint(ok ? 'success' : 'failure', {
-      mode: 'notepad_raster',
-      invoiceName: title,
-      paperWidth: this.paperWidth,
-    });
+    if (ok) {
+      logReceiptPrint('success', {
+        mode: 'escpos_text_notepad',
+        invoiceName: title,
+        paperWidth: this.paperWidth,
+      });
+    } else {
+      logReceiptPrint('failure', {
+        mode: 'escpos_text_notepad',
+        reason: 'busy_or_aborted',
+        invoiceName: title,
+      });
+    }
     return ok;
   }
+
 }
 
 function wrapReceiptLine(text: string, maxCols: number): string[] {

@@ -280,6 +280,48 @@ export const fetchMyShopTelegram = async (): Promise<
   return { ok: true, botToken, chatId };
 };
 
+/** Persist admin Bot API defaults so other admin devices can prefill without re-paste. */
+export const adminSetTelegramDefaults = async (
+  token: string,
+  botToken: string,
+  chatId: string
+): Promise<{ ok: true } | { ok: false; error: string }> => {
+  if (!isAccessControlEnabled()) {
+    return { ok: false, error: 'Access control is not configured.' };
+  }
+  const { data, error } = await supabase.rpc('admin_set_telegram_defaults', {
+    p_token: token,
+    p_telegram_bot_token: botToken.trim(),
+    p_telegram_chat_id: chatId.trim(),
+  });
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) {
+    return { ok: false, error: (data?.error as string) ?? 'Could not save Telegram defaults.' };
+  }
+  return { ok: true };
+};
+
+export const adminGetTelegramDefaults = async (
+  token: string
+): Promise<{ ok: true; botToken: string; chatId: string } | { ok: false; error: string }> => {
+  if (!isAccessControlEnabled()) {
+    return { ok: false, error: 'Access control is not configured.' };
+  }
+  const { data, error } = await supabase.rpc('admin_get_telegram_defaults', {
+    p_token: token,
+  });
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) {
+    return { ok: false, error: (data?.error as string) ?? 'No Telegram defaults on file.' };
+  }
+  const botToken = String(data.telegram_bot_token ?? '').trim();
+  const chatId = String(data.telegram_chat_id ?? '').trim();
+  if (!botToken || !chatId) {
+    return { ok: false, error: 'No Telegram defaults on file.' };
+  }
+  return { ok: true, botToken, chatId };
+};
+
 export const submitAccessBusinessInfo = async (
   code: string,
   info: BusinessInfoInput

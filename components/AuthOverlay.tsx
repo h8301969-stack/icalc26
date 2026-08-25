@@ -7,6 +7,7 @@ import { AppAccount } from '../utils/auth';
 import {
   checkAccessCodeStatus,
   fetchAccessCodeBusinessInfo,
+  fetchMyShopTelegram,
   subscribeAccessStatus,
   type AccessBusinessInfo,
 } from '../utils/accessControl';
@@ -17,13 +18,39 @@ import PasswordField from './PasswordField';
 import { supabase } from '../utils/supabase';
 import { FORM_FIELD_LABEL, formInputClass } from '../utils/formFields';
 import {
+  applyShopTelegramLocally,
   bindAccountToOwnerTelegram,
-  connectOwnerTelegramLink,
-  connectTelegramDatabase,
   hasOwnerTelegramLink,
   isTelegramDbConnected,
-  looksLikeBotToken,
 } from '../utils/telegramDb';
+
+/** Silently apply shop Telegram saved by admin on approve — shops never paste Bot API. */
+async function ensureShopTelegramLinked(
+  accountId: string,
+  fromApprove?: { botToken?: string; chatId?: string } | null
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!accountId) return { ok: false, error: 'Not signed in.' };
+  if (isTelegramDbConnected(accountId)) return { ok: true };
+  if (hasOwnerTelegramLink()) {
+    bindAccountToOwnerTelegram(accountId);
+    return { ok: true };
+  }
+  const token = fromApprove?.botToken?.trim() ?? '';
+  const chatId = fromApprove?.chatId?.trim() ?? '';
+  if (token && chatId) {
+    applyShopTelegramLocally(accountId, token, chatId);
+    return { ok: true };
+  }
+  const remote = await fetchMyShopTelegram();
+  if (remote.ok) {
+    applyShopTelegramLocally(accountId, remote.botToken, remote.chatId);
+    return { ok: true };
+  }
+  return {
+    ok: false,
+    error: 'Telegram not linked yet. Admin must set Bot API + chat ID when approving.',
+  };
+}
 
 type AuthMode = 'signup' | 'login';
 type AuthPane = 'idle' | 'auth' | 'settings';
@@ -89,9 +116,6 @@ interface AuthOverlayProps {
   } | null | undefined>;
   onQuickUnlock?: () => void;
   onExitComplete?: () => void;
-  /** Admin portal → Calc (or other gates): show Bot API paste for this account. */
-  telegramGateAccount?: AppAccount | null;
-  onTelegramGateConsumed?: () => void;
 }
 
 const AuthOverlay: React.FC<AuthOverlayProps> = ({
@@ -109,8 +133,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   onDevSkip,
   onQuickUnlock,
   onExitComplete,
-  telegramGateAccount = null,
-  onTelegramGateConsumed,
 }) => {
   const isDev = import.meta.env.DEV;
   const [mode, setMode] = useState<AuthMode>(initialMode);
@@ -133,12 +155,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [adminInfoName, setAdminInfoName] = useState('');
   const [adminInfoPhone, setAdminInfoPhone] = useState('');
   const [adminInfoAddress, setAdminInfoAddress] = useState('');
-  const [telegramBotToken, setTelegramBotToken] = useState('');
-  const [telegramChatId, setTelegramChatId] = useState('');
-  /** Logged-in account that still needs a Telegram bot linked. */
-  const [pendingTelegramAccount, setPendingTelegramAccount] = useState<AppAccount | null>(null);
-  /** Admin portal opened but owner Bot API + chat ID not saved yet (prod + local). */
-  const [pendingOwnerPortalSetup, setPendingOwnerPortalSetup] = useState(false);
   const [loadingPhase, setLoadingPhase] = useState<AuthLoadingPhase>('default');
   const pendingPollRef = useRef<number | null>(null);
   const pendingUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -154,8 +170,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
   const isLoading = isSubmitting || isEntering;
   const showSignupInsight = signupConfirmation !== null;
-  const showOwnerTelegramSetup = pendingTelegramAccount !== null || pendingOwnerPortalSetup;
-  const showBusinessSetup = businessSetup !== null || showOwnerTelegramSetup;
+  const showBusinessSetup = businessSetup !== null;
   const isIdle = pane === 'idle' && !isLoading && !showBusinessSetup;
   const showAuthForm = pane === 'auth' && !showBusinessSetup;
   const showSettings = pane === 'settings' && !showBusinessSetup;
@@ -463,26 +478,19 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     pointerStart.current = null;
   };
 
-  /** After admin session is opened: ask for owner Telegram once, then show generate-code page. */
+  /** After admin session is opened: go straight to generate-code page (Bot API is set on approve only). */
   const finishAdminPortalEntry = useCallback(async () => {
     setLoadingPhase('admin_breached');
     if ('vibrate' in navigator) navigator.vibrate([20, 40, 20]);
     await wait(AUTH_ADMIN_PORTAL_LOADING_MS);
     setIsSubmitting(false);
     setLoadingPhase('default');
-    if (!hasOwnerTelegramLink()) {
-      setPendingOwnerPortalSetup(true);
-      setTelegramBotToken('');
-      setTelegramChatId('');
-      setPane('idle');
-      return;
-    }
     onAdminPortal?.();
-  }, [onAdminPortal]);
+  }, [onAdminPortal, wait]);
 
   const handleDevSkip = useCallback(async () => {
     if (!isDev || isLoading || isExiting || !onDevSkip) return;
-    // Skip → calculator only (never the generate-code page).
+    // Skip → calculator only (never Bot API paste, never generate-code page).
 
     flushSync(() => {
       setIsSubmitting(true);
@@ -497,27 +505,18 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         return;
       }
       if (result?.account) {
-        if (hasOwnerTelegramLink() || isTelegramDbConnected(result.account.id)) {
+        if (hasOwnerTelegramLink()) {
           bindAccountToOwnerTelegram(result.account.id);
-          flushSync(() => setIsEntering(true));
-          if ('vibrate' in navigator) navigator.vibrate([10, 30]);
-          await wait(AUTH_SUCCESS_HOLD_MS);
-          flushSync(() => {
-            setIsEntering(false);
-            setIsSubmitting(false);
-            setIsExiting(true);
-          });
-          onAuthComplete(result.account);
-          return;
         }
-        setIsSubmitting(false);
-        setLoadingPhase('default');
-        setIsEntering(false);
-        setIsExiting(false);
-        setPendingTelegramAccount(result.account);
-        setTelegramBotToken('');
-        setTelegramChatId('');
-        setPane('idle');
+        flushSync(() => setIsEntering(true));
+        if ('vibrate' in navigator) navigator.vibrate([10, 30]);
+        await wait(AUTH_SUCCESS_HOLD_MS);
+        flushSync(() => {
+          setIsEntering(false);
+          setIsSubmitting(false);
+          setIsExiting(true);
+        });
+        onAuthComplete(result.account);
         return;
       }
       setIsSubmitting(false);
@@ -527,23 +526,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       setError('Could not skip auth in dev.');
     }
   }, [isDev, isLoading, isExiting, onDevSkip, onAuthComplete, wait]);
-
-  // Admin portal → Calc: reuse one-time owner link, or ask once.
-  useEffect(() => {
-    if (!telegramGateAccount) return;
-    if (hasOwnerTelegramLink() || isTelegramDbConnected(telegramGateAccount.id)) {
-      bindAccountToOwnerTelegram(telegramGateAccount.id);
-      const acc = telegramGateAccount;
-      onTelegramGateConsumed?.();
-      onAuthComplete(acc);
-      return;
-    }
-    setPendingTelegramAccount(telegramGateAccount);
-    setTelegramBotToken('');
-    setTelegramChatId('');
-    setPane('idle');
-    onTelegramGateConsumed?.();
-  }, [telegramGateAccount, onTelegramGateConsumed, onAuthComplete]);
 
   const dismissSignupConfirmation = useCallback(() => {
     const confirmedEmail = signupConfirmation?.email ?? '';
@@ -598,8 +580,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       setAdminInfoName('');
       setAdminInfoPhone('');
       setAdminInfoAddress('');
-      setTelegramBotToken('');
-      setTelegramChatId('');
       return;
     }
 
@@ -617,9 +597,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       setAdminInfoName(info.businessName);
       setAdminInfoPhone(info.businessPhone);
       setAdminInfoAddress(info.businessAddress);
-      // Admin already saved shop Telegram on approve — prefill so shop never re-pastes.
-      if (info.telegramBotToken) setTelegramBotToken(info.telegramBotToken);
-      if (info.telegramChatId) setTelegramChatId(info.telegramChatId);
       if (result.ok === false) {
         setError(null);
       }
@@ -631,86 +608,21 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
     };
   }, [businessSetup]);
 
-  /** Owner one-time link: Bot API + chat ID only (Skip/dev + admin portal). */
-  const finishOwnerTelegramLink = useCallback(async () => {
-    const token = telegramBotToken.trim();
-    const chatId = telegramChatId.trim();
-    if (!looksLikeBotToken(token)) {
-      setError('Paste the bot token from BotFather.');
-      return;
-    }
-    if (!chatId) {
-      setError('Paste your chat ID too.');
-      return;
-    }
-
-    setError(null);
-    setIsSubmitting(true);
-
-    const linked = await connectOwnerTelegramLink({ botToken: token, chatId });
-    if (linked.ok === false) {
-      setIsSubmitting(false);
-      setError(linked.error);
-      return;
-    }
-
-    const openPortal = pendingOwnerPortalSetup;
-    const account = pendingTelegramAccount;
-
-    flushSync(() => {
-      setPendingOwnerPortalSetup(false);
-      setPendingTelegramAccount(null);
-      setIsSubmitting(false);
-      setLoadingPhase('default');
-    });
-
-    if (openPortal) {
-      onAdminPortal?.();
-      return;
-    }
-
-    if (account) {
-      bindAccountToOwnerTelegram(account.id);
-      flushSync(() => setIsEntering(true));
-      if ('vibrate' in navigator) navigator.vibrate([10, 30]);
-      await wait(AUTH_SUCCESS_HOLD_MS);
-      flushSync(() => {
-        setIsEntering(false);
-        setIsExiting(true);
-      });
-      onAuthComplete(account);
-    }
-  }, [
-    telegramBotToken,
-    telegramChatId,
-    pendingOwnerPortalSetup,
-    pendingTelegramAccount,
-    onAdminPortal,
-    onAuthComplete,
-  ]);
-
-  const finishWithTelegramAccount = useCallback(
+  /** After approve: save business details + silently apply Telegram admin already set. */
+  const finishWithBusinessAccount = useCallback(
     async (account: AppAccount) => {
       const name = adminInfoName.trim();
-      const token = telegramBotToken.trim();
       if (!name) {
         setError('Business name is required.');
-        return;
-      }
-      if (!looksLikeBotToken(token)) {
-        setError('Paste the bot token from BotFather.');
         return;
       }
 
       setError(null);
       setIsSubmitting(true);
 
-      // Shop accounts: per-account only (does not overwrite owner link).
-      const linked = await connectTelegramDatabase({
-        accountId: account.id,
-        botToken: token,
-        chatId: telegramChatId.trim() || undefined,
-        asOwnerLink: false,
+      const linked = await ensureShopTelegramLinked(account.id, {
+        botToken: receivedBusinessInfo?.telegramBotToken,
+        chatId: receivedBusinessInfo?.telegramChatId,
       });
       if (linked.ok === false) {
         setIsSubmitting(false);
@@ -749,7 +661,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         setIsSubmitting(false);
         setIsExiting(true);
         setBusinessSetup(null);
-        setPendingTelegramAccount(null);
       });
       onAuthComplete(account);
     },
@@ -757,23 +668,15 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       adminInfoName,
       adminInfoPhone,
       adminInfoAddress,
-      telegramBotToken,
-      telegramChatId,
+      receivedBusinessInfo,
       updateSettings,
       onAuthComplete,
       settings?.accountPlan,
+      wait,
     ]
   );
 
   const handleBusinessReceiveContinue = useCallback(async () => {
-    if (pendingOwnerPortalSetup || (pendingTelegramAccount && !businessSetup)) {
-      await finishOwnerTelegramLink();
-      return;
-    }
-    if (pendingTelegramAccount) {
-      await finishWithTelegramAccount(pendingTelegramAccount);
-      return;
-    }
     if (!businessSetup) return;
 
     setError(null);
@@ -791,15 +694,8 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       return;
     }
 
-    await finishWithTelegramAccount(finalized.account);
-  }, [
-    pendingOwnerPortalSetup,
-    pendingTelegramAccount,
-    businessSetup,
-    onFinalizeAccess,
-    finishOwnerTelegramLink,
-    finishWithTelegramAccount,
-  ]);
+    await finishWithBusinessAccount(finalized.account);
+  }, [businessSetup, onFinalizeAccess, finishWithBusinessAccount]);
 
   const handleAccessStatus = useCallback(
     async (accessCode: string, pendingUsername: string, status: string) => {
@@ -836,12 +732,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
           stopPausedWatch();
           stopPendingWatch();
           setLoadingPhase('default');
-          if (!isTelegramDbConnected(result.account.id)) {
-            setIsSubmitting(false);
-            setPendingTelegramAccount(result.account);
-            setPane('auth');
-            return;
-          }
+          await ensureShopTelegramLinked(result.account.id);
           flushSync(() => setIsEntering(true));
           if ('vibrate' in navigator) navigator.vibrate([10, 30]);
           await wait(AUTH_SUCCESS_HOLD_MS);
@@ -968,20 +859,8 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         return;
       }
 
-      // Returning login: require Telegram DB link if this account has none yet.
-      if (!isTelegramDbConnected(result.account.id)) {
-        setIsSubmitting(false);
-        setLoadingPhase('default');
-        setPendingTelegramAccount(result.account);
-        setAdminInfoName(typeof settings?.businessName === 'string' ? settings.businessName : '');
-        setAdminInfoPhone(typeof settings?.businessPhone === 'string' ? settings.businessPhone : '');
-        setAdminInfoAddress(typeof settings?.businessAddress === 'string' ? settings.businessAddress : '');
-        setTelegramBotToken('');
-        setTelegramChatId('');
-        setPane('auth');
-        setAuthCardAnimKey((k) => k + 1);
-        return;
-      }
+      // Returning login: silently pull Telegram admin saved on approve (never paste).
+      await ensureShopTelegramLinked(result.account.id);
 
       flushSync(() => {
         setIsEntering(true);
@@ -1457,8 +1336,8 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         </div>
       )}
 
-      {/* Top-level so it still shows after Skip (dev) sets existingAccount */}
-      {showBusinessSetup && (businessSetup || pendingTelegramAccount) && (
+      {/* After admin approves: shop confirms business details only — never Bot API. */}
+      {showBusinessSetup && businessSetup && (
         <div
           className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
           role="dialog"
@@ -1476,69 +1355,21 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
               <div className="flex items-center justify-center gap-2 mb-2">
                 <Icons.Trends size={20} className="text-emerald-500" />
                 <h4 id="business-setup-title" className="app-subtext text-sm font-black">
-                  {businessSetup
-                    ? 'You’re in — shop details'
-                    : 'Connect Telegram'}
+                  You’re in — shop details
                 </h4>
               </div>
               <p
                 className={`app-subtext text-[10px] leading-relaxed opacity-55 ${isLight ? 'text-black' : 'text-white'}`}
                 style={{ letterSpacing: 0 }}
               >
-                {businessSetup
-                  ? 'Your code was approved. Connect a Telegram bot for this shop.'
-                  : 'Paste your bot token and chat ID once. We’ll reuse it on this device.'}
-              </p>            </div>
+                Your code was approved. Confirm shop details to continue.
+              </p>
+            </div>
 
-            {businessInfoLoading && businessSetup ? (
+            {businessInfoLoading ? (
               <div className="px-5 pb-6 flex flex-col items-center gap-3">
                 <span className="auth-spinner" aria-hidden="true" />
                 <p className="app-subtext text-[10px] opacity-45">One moment…</p>
-              </div>
-            ) : showOwnerTelegramSetup && !businessSetup ? (
-              <div className="px-5 pb-5 pt-2 space-y-3">
-                <label className="block">
-                  <span className={FORM_FIELD_LABEL}>Bot token *</span>
-                  <PasswordField
-                    isLight={isLight}
-                    value={telegramBotToken}
-                    onChange={setTelegramBotToken}
-                    placeholder="From BotFather"
-                    autoComplete="off"
-                    autoFocus
-                  />
-                </label>
-                <label className="block">
-                  <span className={FORM_FIELD_LABEL}>Chat ID *</span>
-                  <input
-                    type="text"
-                    value={telegramChatId}
-                    onChange={(e) => setTelegramChatId(e.target.value)}
-                    className={formInputClass(isLight)}
-                    placeholder="e.g. 123456789"
-                    autoComplete="off"
-                  />
-                  <span className={`app-subtext text-[9px] mt-1 block opacity-50 ${isLight ? 'text-black' : 'text-white'}`}>
-                    Saved on this device. Change later in Settings as @admin.
-                  </span>
-                </label>
-                {error && (
-                  <p className="text-xs font-bold text-red-500 text-center" role="alert">
-                    {error}
-                  </p>
-                )}
-                <button
-                  type="button"
-                  disabled={
-                    isSubmitting ||
-                    !looksLikeBotToken(telegramBotToken) ||
-                    !telegramChatId.trim()
-                  }
-                  onClick={() => void handleBusinessReceiveContinue()}
-                  className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.25em] transition-all active:scale-[0.98] min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
-                >
-                  {isSubmitting ? 'Saving…' : 'Save & continue'}
-                </button>
               </div>
             ) : (
               <div className="px-5 pb-5 pt-2 space-y-3">
@@ -1562,6 +1393,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                     className={formInputClass(isLight)}
                     placeholder="Shop / business name"
                     autoComplete="organization"
+                    autoFocus
                   />
                 </label>
                 <label className="block">
@@ -1586,28 +1418,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                     autoComplete="street-address"
                   />
                 </label>
-                <label className="block">
-                  <span className={FORM_FIELD_LABEL}>Bot token *</span>
-                  <PasswordField
-                    isLight={isLight}
-                    value={telegramBotToken}
-                    onChange={setTelegramBotToken}
-                    placeholder="From BotFather"
-                    autoComplete="off"
-                    autoFocus
-                  />
-                </label>
-                <label className="block">
-                  <span className={FORM_FIELD_LABEL}>Chat ID</span>
-                  <input
-                    type="text"
-                    value={telegramChatId}
-                    onChange={(e) => setTelegramChatId(e.target.value)}
-                    className={formInputClass(isLight)}
-                    placeholder="Optional if you already messaged the bot"
-                    autoComplete="off"
-                  />
-                </label>
 
                 {error && (
                   <p className="text-xs font-bold text-red-500 text-center" role="alert">
@@ -1616,13 +1426,11 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 )}
                 <button
                   type="button"
-                  disabled={
-                    isSubmitting || !adminInfoName.trim() || !looksLikeBotToken(telegramBotToken)
-                  }
+                  disabled={isSubmitting || !adminInfoName.trim()}
                   onClick={() => void handleBusinessReceiveContinue()}
                   className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.25em] transition-all active:scale-[0.98] min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
                 >
-                  {isSubmitting ? 'Connecting database…' : 'Connect & continue'}
+                  {isSubmitting ? 'Opening…' : 'Continue'}
                 </button>
               </div>
             )}

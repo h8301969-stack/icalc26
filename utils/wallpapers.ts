@@ -48,6 +48,8 @@ export const DEFAULT_INVENTORY_IMAGE = pos3;
 
 export const resolveInventoryImage = (image: string | null | undefined): string => {
   if (!image) return DEFAULT_INVENTORY_IMAGE;
+  // Telegram-backed item photos need async resolve — use InventoryItemImage / default here.
+  if (image.startsWith('tgfile:')) return DEFAULT_INVENTORY_IMAGE;
   // User-picked photos (gallery / file input) and remote URLs
   if (
     /^data:image\//i.test(image) ||

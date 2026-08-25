@@ -286,7 +286,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         });
       }
 
-      const ok = await printerInstance.printInvoiceImage(
+      const ok = await printerInstance.printInvoice(
         printCard.name,
         items,
         numericTotal,

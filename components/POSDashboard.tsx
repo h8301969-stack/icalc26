@@ -27,8 +27,10 @@ import { DEFAULT_INVENTORY_IMAGE, resolveInventoryImage, WALLPAPER_IMAGE_URLS } 
 import { formInputClass } from '../utils/formFields';
 import { MorphPresence } from './MorphCrossfade';
 import FluidSegmentControl from './FluidSegmentControl';
+import InventoryItemImage from './InventoryItemImage';
 import { Capacitor } from '@capacitor/core';
 import { pickPhotoFromGallery } from '../utils/nativeCamera';
+import { isTelegramDbConnected, telegramUploadItemImage } from '../utils/telegramDb';
 
 interface POSDashboardProps {
   history: HistoryItem[];
@@ -78,6 +80,8 @@ interface POSDashboardProps {
   onResolveUnidentifiedPrice?: (price: number, itemName: string) => void;
   canViewTransactions?: boolean;
   accountUsername?: string;
+  /** Signed-in shop account — used to store/retrieve item photos on Telegram. */
+  accountId?: string | null;
   onChangePassword?: (current: string, newPassword: string) => Promise<{ error?: string; ok?: boolean }>;
   onLogout?: () => void;
   onVerifyAdminPassword?: (password: string) => Promise<{ error?: string; ok?: boolean }>;
@@ -232,6 +236,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   onResolveUnidentifiedPrice,
   canViewTransactions = false,
   accountUsername,
+  accountId = null,
   onChangePassword,
   onLogout,
   onVerifyAdminPassword,
@@ -1129,6 +1134,22 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     };
     setItems(prev => [newItem, ...prev]);
     const hasPhoto = /^data:image\//i.test(newItem.image) || /^blob:/i.test(newItem.image);
+    if (hasPhoto && accountId && isTelegramDbConnected(accountId)) {
+      void telegramUploadItemImage({
+        accountId,
+        itemId: newItem.id,
+        image: newItem.image,
+        itemName: newItem.name,
+      }).then((uploaded) => {
+        if (uploaded.ok === false) {
+          console.warn('[iCalc] new item image Telegram upload failed', uploaded.error);
+          return;
+        }
+        setItems((prev) =>
+          prev.map((row) => (row.id === newItem.id ? { ...row, image: uploaded.imageRef } : row))
+        );
+      });
+    }
     onAccountNotify?.({
       kind: 'item_added',
       title: `Added ${newItem.name}`,
@@ -1360,6 +1381,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       if (!imageDataUrl || imageDataUrl === item.image) return;
       const now = Date.now();
       const action = `${item.name} photo updated`;
+      // Optimistic local preview; replace with tgfile: after Telegram upload when linked.
       setItems((prev) =>
         prev.map((row) => {
           if (row.id !== item.id) return row;
@@ -1380,14 +1402,32 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           };
         })
       );
-      // Fan-out to other profiles (mini-profiles) on this account
       onAccountNotify?.({
         kind: 'image_updated',
         title: `${item.name} photo changed`,
         body: `${activeProfileName} updated the photo`,
       });
+
+      if (accountId && isTelegramDbConnected(accountId)) {
+        void telegramUploadItemImage({
+          accountId,
+          itemId: item.id,
+          image: imageDataUrl,
+          itemName: item.name,
+        }).then((uploaded) => {
+          if (uploaded.ok === false) {
+            console.warn('[iCalc] item image Telegram upload failed', uploaded.error);
+            return;
+          }
+          setItems((prev) =>
+            prev.map((row) =>
+              row.id === item.id ? { ...row, image: uploaded.imageRef } : row
+            )
+          );
+        });
+      }
     },
-    [activeProfileName, onAccountNotify, setItems]
+    [accountId, activeProfileName, onAccountNotify, setItems]
   );
 
   const editImageItemIdRef = useRef<string | null>(null);
@@ -1676,7 +1716,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         className={`group rounded-xl overflow-hidden cursor-pointer ${levitateClass} relative focus:outline-none focus:ring-2 focus:ring-white/40`}
       >
         <div className="relative aspect-square overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-          <img src={resolveInventoryImage(item.image)} alt={item.name} className="w-full h-full object-cover" />
+          <InventoryItemImage image={item.image} alt={item.name} accountId={accountId} className="w-full h-full object-cover" />
           <div className="absolute top-2 right-2 flex flex-col items-end gap-1" aria-hidden="true">
             <div
               className={`pos-subtext px-2 py-1 rounded-lg text-[9px] font-black backdrop-blur-3xl shadow-xl ${
@@ -1731,7 +1771,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
         <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
           <div className="relative h-56 sm:h-72">
-            <img src={resolveInventoryImage(item.image)} alt={item.name} className="w-full h-full object-cover" />
+            <InventoryItemImage image={item.image} alt={item.name} accountId={accountId} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent" aria-hidden="true" />
             {(canEditStock || canEditPrice) && (
               <button
@@ -2287,7 +2327,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     className={`group rounded-xl overflow-hidden cursor-pointer ${levitateClass} relative focus:outline-none focus:ring-2 focus:ring-white/40`}
                   >
                     <div className="relative aspect-square overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-                      <img src={resolveInventoryImage(item.image)} alt={item.name} className="w-full h-full object-cover" />
+                      <InventoryItemImage image={item.image} alt={item.name} accountId={accountId} className="w-full h-full object-cover" />
                       <div className="absolute inset-x-0 bottom-0 h-[42%] bg-linear-to-t from-black/95 via-black/40 to-transparent pointer-events-none" aria-hidden="true" />
                       <div className="absolute bottom-3 left-3 right-3 flex flex-col pointer-events-none" aria-hidden="true">
                          <div className="flex flex-col items-start gap-0.5">

@@ -161,7 +161,8 @@ const AppContent: React.FC = () => {
     getSavedInvoices,
   } = useInvoice(expression, items, settings.currency, activeProfileName);
 
-  const dataMemory = useDataMemorySync({
+  // Auto 30d local / Telegram archive — no Settings UI; runs in background when linked.
+  useDataMemorySync({
     accountId: account?.id ?? null,
     authReady,
     pastLogs,
@@ -233,7 +234,7 @@ const AppContent: React.FC = () => {
   const isAdminPortalRef = useRef(false);
   const accountIdRef = useRef<string | null>(null);
   /** After admin portal / Calc — force Bot API paste before calculator. */
-  const [telegramGateAccount, setTelegramGateAccount] = useState<AppAccount | null>(null);
+
 
   useEffect(() => {
     accountIdRef.current = account?.id ?? null;
@@ -277,30 +278,20 @@ const AppContent: React.FC = () => {
     setSettingsSectionIndex(0);
   }, []);
 
-  /** Hold lock screen until owner Bot API+chat is saved (once), then reuse forever on device. */
-  const holdForTelegramLink = useCallback((acc: AppAccount | null | undefined): boolean => {
-    if (!acc?.id || isAdminPortalRef.current) return false;
+  /** Bind owner/shared Telegram if present; shops never paste — admin sets it on approve. */
+  const ensureLocalTelegramBinding = useCallback((acc: AppAccount | null | undefined): void => {
+    if (!acc?.id) return;
     if (hasOwnerTelegramLink()) {
       bindAccountToOwnerTelegram(acc.id);
-      return false;
+      return;
     }
-    if (isTelegramDbConnected(acc.id)) return false;
-    setTelegramGateAccount(acc);
-    setIsUnlocked(false);
-    setAuthOverlayMounted(true);
-    return true;
+    if (isTelegramDbConnected(acc.id)) return;
   }, []);
 
   /** Logged-in path: land on calculator (close POS/settings/history overlays). */
   const openCalculatorHome = useCallback(
     (opts?: { animate?: boolean }) => {
       if (isAdminPortalRef.current) return;
-      const accId = accountIdRef.current;
-      if (accId && !isTelegramDbConnected(accId)) {
-        setIsUnlocked(false);
-        setAuthOverlayMounted(true);
-        return;
-      }
       closeAllPanels();
       setAuthOverlayMounted(false);
       if (opts?.animate) setIsCalculatorEntering(true);
@@ -312,12 +303,6 @@ const AppContent: React.FC = () => {
   /** Foreground resume: keep whatever screen the user left (do not close panels). */
   const resumeWhereLeftOff = useCallback(() => {
     if (isAdminPortalRef.current) return;
-    const accId = accountIdRef.current;
-    if (accId && !isTelegramDbConnected(accId)) {
-      setIsUnlocked(false);
-      setAuthOverlayMounted(true);
-      return;
-    }
     setAuthOverlayMounted(false);
     setIsUnlocked(true);
   }, []);
@@ -356,15 +341,12 @@ const AppContent: React.FC = () => {
   }, [isAdminPortal]);
 
   // Cold start only: signed-in users skip auth once. Later account hydrates must not reset UI.
-  // Never unlock while Telegram DB is still unlinked (Skip/dev must show Bot API popup).
+  // Telegram Bot API is admin-only (approve); shops auto-pull — never blocked on a paste UI.
   useEffect(() => {
     if (!authReady) return;
 
     if (account) {
-      if (!isAdminPortal && holdForTelegramLink(account)) {
-        sessionBootstrappedRef.current = true;
-        return;
-      }
+      ensureLocalTelegramBinding(account);
       if (!isAdminPortal && !sessionBootstrappedRef.current) {
         openCalculatorHome({ animate: true });
       } else if (!isAdminPortal && !isUnlocked) {
@@ -378,7 +360,7 @@ const AppContent: React.FC = () => {
     setIsUnlocked(false);
     setAuthOverlayMounted(true);
     sessionBootstrappedRef.current = true;
-  }, [authReady, account, isAdminPortal, isUnlocked, openCalculatorHome, resumeWhereLeftOff, holdForTelegramLink]);
+  }, [authReady, account, isAdminPortal, isUnlocked, openCalculatorHome, resumeWhereLeftOff, ensureLocalTelegramBinding]);
 
   // Admin portal always runs as the @admin profile.
   useEffect(() => {
@@ -479,13 +461,14 @@ const AppContent: React.FC = () => {
     triggerHaptic(2);
 
     const unlock = () => {
-      setTelegramGateAccount(null);
       setIsCalculatorEntering(true);
       setIsUnlocked(true);
       setAuthOverlayMounted(false);
     };
 
-    // Prefer Telegram already on device; else pull shop bot saved at admin approve.
+    // Prefer Telegram already on device; else silently pull shop bot saved at admin approve.
+    // Shops never paste Bot API — if missing, unlock anyway (archive stays idle until linked).
+    ensureLocalTelegramBinding(acc);
     if (isTelegramDbConnected(acc.id)) {
       unlock();
       return;
@@ -494,25 +477,21 @@ const AppContent: React.FC = () => {
     void fetchMyShopTelegram().then((remote) => {
       if (remote.ok) {
         applyShopTelegramLocally(acc.id, remote.botToken, remote.chatId);
-        unlock();
-        return;
       }
-      setTelegramGateAccount(acc);
-      setIsUnlocked(false);
-      setAuthOverlayMounted(true);
+      unlock();
     });
-  }, [updateSettings, triggerHaptic, settings.profiles, settings.activeProfileId]);
+  }, [updateSettings, triggerHaptic, settings.profiles, settings.activeProfileId, ensureLocalTelegramBinding]);
 
-  /** Local guest login for `npm run dev` — AuthOverlay still asks for Bot API before unlock. */
+  /** Local guest login for `npm run dev` — no Bot API paste. */
   const handleDevSkip = useCallback(async () => {
     const guest = skipDevAuthAsAdmin();
     if (!guest) {
       return { error: 'Dev skip only works during npm run dev.' };
     }
     updateSettings({ accountPlan: 'premium' });
-    // Do not unlock here — AuthOverlay shows Telegram Bot API paste for testing.
+    ensureLocalTelegramBinding(guest);
     return { account: guest };
-  }, [skipDevAuthAsAdmin, updateSettings]);
+  }, [skipDevAuthAsAdmin, updateSettings, ensureLocalTelegramBinding]);
 
   const handleAdminReturnToCalc = useCallback(() => {
     hideAdminPortal();
@@ -524,14 +503,7 @@ const AppContent: React.FC = () => {
       if (acc) updateSettings({ accountPlan: 'premium' });
     }
 
-    // Admin → Calc: reuse shared testing bot, or ask once for Bot API.
-    if (acc && !isTelegramDbConnected(acc.id)) {
-      setTelegramGateAccount(acc);
-      setIsUnlocked(false);
-      setAuthOverlayMounted(true);
-      triggerHaptic(2);
-      return;
-    }
+    if (acc) ensureLocalTelegramBinding(acc);
 
     setAuthOverlayMounted(false);
     setIsCalculatorEntering(true);
@@ -544,6 +516,7 @@ const AppContent: React.FC = () => {
     account,
     skipDevAuthAsAdmin,
     updateSettings,
+    ensureLocalTelegramBinding,
   ]);
 
   const handleSignup = useCallback(async (username: string, email: string, inviteCode: string) => {
@@ -599,7 +572,6 @@ const AppContent: React.FC = () => {
     });
     triggerHaptic(2);
     setIsUnlocked(false);
-    setTelegramGateAccount(null);
     setAuthOverlayMounted(false);
   }, [settings.profiles, updateSettings, triggerHaptic]);
 
@@ -1117,8 +1089,7 @@ const AppContent: React.FC = () => {
          onKeyDown={handleKeyDown}
          role="main">
       <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} />
-      {(authOverlayMounted && !(account && isUnlocked)) ||
-      (account && !isUnlocked && !isTelegramDbConnected(account.id)) ? (
+      {authOverlayMounted && !(account && isUnlocked) ? (
         <AuthOverlay
           isLight={isLight}
           mode={authMode}
@@ -1134,12 +1105,8 @@ const AppContent: React.FC = () => {
           onAdminPortal={handleAdminPortal}
           onFinalizeAccess={handleFinalizeAccess}
           onDevSkip={import.meta.env.DEV ? handleDevSkip : undefined}
-          onQuickUnlock={
-            account && isTelegramDbConnected(account.id) ? handleQuickUnlock : undefined
-          }
+          onQuickUnlock={account ? handleQuickUnlock : undefined}
           onExitComplete={() => setAuthOverlayMounted(false)}
-          telegramGateAccount={telegramGateAccount}
-          onTelegramGateConsumed={() => setTelegramGateAccount(null)}
         />
       ) : null}
       {isUnlocked && (
@@ -1598,7 +1565,6 @@ const AppContent: React.FC = () => {
         notifications={accountNotifications.items}
         notificationsUnreadCount={accountNotifications.unreadCount}
         onMarkNotificationsRead={accountNotifications.markRead}
-        dataMemory={dataMemory}
       />
 
       <HistoryPanel
@@ -1670,6 +1636,7 @@ const AppContent: React.FC = () => {
         onResolveUnidentifiedPrice={resolveUnidentifiedPrice}
         canViewTransactions={canViewTransactions}
         accountUsername={account?.username}
+        accountId={account?.id ?? null}
         onChangePassword={handleChangePassword}
         onLogout={handleLogout}
         onVerifyAdminPassword={handleVerifyAdminPassword}

@@ -9,6 +9,8 @@ import {
   adminGrantAccess,
   adminIssueAccessCode,
   adminSetAccessBusinessInfo,
+  adminSetTelegramDefaults,
+  adminGetTelegramDefaults,
   adminListCodes,
   adminListPasswordHistory,
   adminRevokeAccess,
@@ -22,7 +24,11 @@ import { FORM_FIELD_LABEL, FORM_SECTION_TITLE, formInputClass, formTextareaClass
 import ProfileAvatar from './ProfileAvatar';
 import { MorphPresence } from './MorphCrossfade';
 import telegramDbMarkdown from '../telegramdb.md?raw';
-import { getSharedTelegramDbConfig, looksLikeBotToken } from '../utils/telegramDb';
+import {
+  getSharedTelegramDbConfig,
+  looksLikeBotToken,
+  setSharedTelegramDbConfig,
+} from '../utils/telegramDb';
 import PasswordField from './PasswordField';
 
 const renderSimpleMarkdown = (source: string): string => {
@@ -384,10 +390,32 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     await refreshPendingCount();
   };
 
+  const persistTelegramDefaults = async (botToken: string, chatId: string) => {
+    setSharedTelegramDbConfig({
+      botToken: botToken.trim(),
+      chatId: chatId.trim(),
+      connectedAt: Date.now(),
+    });
+    // Cross-device: other admin sessions can prefill without re-pasting.
+    await adminSetTelegramDefaults(adminToken, botToken, chatId);
+  };
+
   const prefillTelegramFromOwner = () => {
     const owner = getSharedTelegramDbConfig();
     if (owner?.botToken) setApproveTelegramBotToken(owner.botToken);
     if (owner?.chatId) setApproveTelegramChatId(owner.chatId);
+    // If this device has no local link yet, pull defaults saved on Supabase.
+    if (owner?.botToken && owner?.chatId) return;
+    void adminGetTelegramDefaults(adminToken).then((remote) => {
+      if (remote.ok === false) return;
+      setApproveTelegramBotToken((prev) => prev || remote.botToken);
+      setApproveTelegramChatId((prev) => prev || remote.chatId);
+      setSharedTelegramDbConfig({
+        botToken: remote.botToken,
+        chatId: remote.chatId,
+        connectedAt: Date.now(),
+      });
+    });
   };
 
   const openGrantModal = (row: AccessCodeRow) => {
@@ -409,7 +437,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       return;
     }
     if (!looksLikeBotToken(approveTelegramBotToken) || !approveTelegramChatId.trim()) {
-      setError('Paste Bot API token and chat ID before granting (shop won’t re-paste on new devices).');
+      setError('Paste Bot API token and chat ID before granting. Shops never enter these — only you do while they wait.');
       return;
     }
     setActionCode(grantTarget.code);
@@ -432,6 +460,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       setError(businessResult.error ?? 'Access granted but business info could not be saved.');
       return;
     }
+    await persistTelegramDefaults(approveTelegramBotToken, approveTelegramChatId);
     const grantedCode = grantTarget.code;
     setGrantTarget(null);
     setSuccessNotice(result.hint);
@@ -462,7 +491,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       return;
     }
     if (!looksLikeBotToken(approveTelegramBotToken) || !approveTelegramChatId.trim()) {
-      setError('Paste Bot API token and chat ID before approve (shop won’t re-paste on new devices).');
+      setError('Paste Bot API token and chat ID before approve. Shops never enter these — only you do while they wait.');
       return;
     }
     setActionCode(approveTarget.code);
@@ -484,6 +513,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
       setError(businessResult.error ?? 'Approved but business info could not be saved.');
       return;
     }
+    await persistTelegramDefaults(approveTelegramBotToken, approveTelegramChatId);
     setApproveTarget(null);
     setApproveMemo('');
     await loadCodes();
@@ -935,7 +965,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 isLight={isLight}
                 value={approveTelegramBotToken}
                 onChange={setApproveTelegramBotToken}
-                placeholder="From BotFather — shop keeps this on every device"
+                placeholder="From BotFather — you set this for the shop"
                 autoComplete="off"
               />
             </label>
@@ -950,7 +980,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 autoComplete="off"
               />
               <span className="app-subtext text-[9px] opacity-50 mt-1 block" style={{ letterSpacing: 0 }}>
-                Required before approve. Shop won’t need to paste again on new devices.
+                You enter Bot API + chat ID here while they wait. The shop never pastes these.
               </span>
             </label>
             <label className="block mt-3">
@@ -1049,7 +1079,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 isLight={isLight}
                 value={approveTelegramBotToken}
                 onChange={setApproveTelegramBotToken}
-                placeholder="From BotFather — shop keeps this on every device"
+                placeholder="From BotFather — you set this for the shop"
                 autoComplete="off"
               />
             </label>
@@ -1063,6 +1093,9 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 placeholder="e.g. 123456789"
                 autoComplete="off"
               />
+              <span className="app-subtext text-[9px] opacity-50 mt-1 block" style={{ letterSpacing: 0 }}>
+                You enter Bot API + chat ID here while they wait. The shop never pastes these.
+              </span>
             </label>
             <div className="flex gap-2 mt-4">
               <button

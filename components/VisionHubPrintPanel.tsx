@@ -210,7 +210,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
         quantity: item.quantity,
       }));
       const total = parseFloat(invoice.total) || 0;
-      return printerInstance.printInvoiceImage(
+      return printerInstance.printInvoice(
         invoice.name,
         items,
         total,

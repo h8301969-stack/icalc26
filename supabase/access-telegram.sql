@@ -189,3 +189,81 @@ $$;
 grant execute on function public.admin_set_access_business_info(uuid, text, text, text, text, text, text) to anon, authenticated;
 grant execute on function public.get_access_business_info(text) to authenticated;
 grant execute on function public.get_my_shop_telegram() to authenticated;
+
+-- Admin Bot API defaults (single row) so paste once → reuse on every admin device.
+create table if not exists public.admin_telegram_defaults (
+  id int primary key default 1 check (id = 1),
+  telegram_bot_token text not null,
+  telegram_chat_id text not null,
+  updated_at timestamptz not null default now()
+);
+
+create or replace function public.admin_set_telegram_defaults(
+  p_token uuid,
+  p_telegram_bot_token text,
+  p_telegram_chat_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_token text;
+  v_chat text;
+begin
+  if not public.is_valid_admin_session(p_token) then
+    return jsonb_build_object('ok', false, 'error', 'unauthorized');
+  end if;
+
+  v_token := nullif(trim(coalesce(p_telegram_bot_token, '')), '');
+  v_chat := nullif(trim(coalesce(p_telegram_chat_id, '')), '');
+  if v_token is null or v_chat is null then
+    return jsonb_build_object('ok', false, 'error', 'Bot API token and chat ID are required.');
+  end if;
+
+  insert into public.admin_telegram_defaults (id, telegram_bot_token, telegram_chat_id, updated_at)
+  values (1, v_token, v_chat, now())
+  on conflict (id) do update
+  set
+    telegram_bot_token = excluded.telegram_bot_token,
+    telegram_chat_id = excluded.telegram_chat_id,
+    updated_at = now();
+
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+create or replace function public.admin_get_telegram_defaults(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_token text;
+  v_chat text;
+begin
+  if not public.is_valid_admin_session(p_token) then
+    return jsonb_build_object('ok', false, 'error', 'unauthorized');
+  end if;
+
+  select d.telegram_bot_token, d.telegram_chat_id
+  into v_token, v_chat
+  from public.admin_telegram_defaults d
+  where d.id = 1;
+
+  if v_token is null or v_chat is null or length(trim(v_token)) = 0 or length(trim(v_chat)) = 0 then
+    return jsonb_build_object('ok', false, 'error', 'No Telegram defaults on file.');
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'telegram_bot_token', trim(v_token),
+    'telegram_chat_id', trim(v_chat)
+  );
+end;
+$$;
+
+grant execute on function public.admin_set_telegram_defaults(uuid, text, text) to anon, authenticated;
+grant execute on function public.admin_get_telegram_defaults(uuid) to anon, authenticated;
