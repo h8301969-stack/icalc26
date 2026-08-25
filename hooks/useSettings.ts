@@ -25,6 +25,8 @@ export const DEFAULT_SETTINGS = {
   customWallpapers: WALLPAPER_SLIDES,
   uiScale: 1,
   disableCalculatorCard: false as boolean,
+  /** classic = framed UI; white/black = flat Android-style calc (no top bar / card). */
+  calculatorSkin: 'classic' as 'classic' | 'white' | 'black',
   layoutMode: 'portrait' as 'portrait' | 'landscape',
   layoutModeAuto: true,
   invoiceSwitcherMode: 'horizontal' as 'horizontal' | 'list',

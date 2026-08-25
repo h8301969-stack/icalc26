@@ -93,7 +93,11 @@ const AppContent: React.FC = () => {
     userId: account?.id ?? null,
     authReady,
   });
-  const disableCard = !!settings.disableCalculatorCard;
+  const calculatorSkin = settings.calculatorSkin ?? 'classic';
+  const isFlatCalcSkin = calculatorSkin === 'white' || calculatorSkin === 'black';
+  const disableCard = isFlatCalcSkin || !!settings.disableCalculatorCard;
+  /** Flat white/black skins force their own keypad contrast regardless of theme. */
+  const calcIsLight = calculatorSkin === 'white' ? true : calculatorSkin === 'black' ? false : isLight;
   const isLandscape = settings.layoutMode === 'landscape';
   const { history, setHistory, saveResult } = useHistory();
   const {
@@ -1142,18 +1146,24 @@ const AppContent: React.FC = () => {
                 ? 'w-[97%] h-[98%] sm:w-[95vw] sm:h-[96vh]'
                 : 'w-[94%] h-[96%] sm:w-[90vw] sm:h-[90vh] max-w-[430px] max-h-[932px] rounded-[26px]'
           } ${
-            disableCard
-              ? `bg-transparent ${isLight ? 'text-black' : 'text-white'}`
-              : `${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px)`
+            isFlatCalcSkin
+              ? calculatorSkin === 'white'
+                ? 'bg-white text-black'
+                : 'bg-black text-white'
+              : disableCard
+                ? `bg-transparent ${isLight ? 'text-black' : 'text-white'}`
+                : `${isLight ? 'bg-white/40 shadow-2xl text-black' : 'bg-white/10 shadow-2xl text-white'} backdrop-blur-(--glass-blur,24px)`
           }`}
           style={{
-            paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+            paddingTop: isFlatCalcSkin
+              ? 'max(0.35rem, env(safe-area-inset-top))'
+              : 'max(0.75rem, env(safe-area-inset-top))',
             paddingRight: 'max(0.625rem, env(safe-area-inset-right))',
             paddingBottom: 'max(1rem, calc(1rem + env(safe-area-inset-bottom)))',
             paddingLeft: 'max(0.625rem, env(safe-area-inset-left))'
           }}
         >
-          {isSearchOpen && (
+          {isSearchOpen && !isFlatCalcSkin && (
             <div
               className={`absolute inset-x-0 bottom-0 z-40 transition-all duration-300 pointer-events-none ${isLight ? 'bg-[#f2f2f7]' : 'bg-[#0a0a0c]'}`}
               style={{ top: '3.25rem' }}
@@ -1161,6 +1171,8 @@ const AppContent: React.FC = () => {
             />
           )}
 
+          {/* Classic only: top search / new-invoice / settings bar. Flat white/black skins omit it. */}
+          {!isFlatCalcSkin && (
           <div
             className="flex items-center z-50 relative pointer-events-none shrink-0"
             style={{
@@ -1256,6 +1268,7 @@ const AppContent: React.FC = () => {
               </button>
             </div>
           </div>
+          )}
 
           <div
             className={`relative z-40 flex justify-center items-center shrink-0 pointer-events-none select-none overflow-hidden pb-0.5 pt-0 transition-opacity duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${showLiveResult ? '' : 'opacity-0'}`}
@@ -1311,7 +1324,8 @@ const AppContent: React.FC = () => {
                     variant={btn.variant}
                     wide={btn.wide}
                     accentColor={settings.accentColor}
-                    isLight={isLight}
+                    isLight={calcIsLight}
+                    flat={isFlatCalcSkin}
                     ariaLabel={btn.ariaLabel}
                     large={disableCard}
                   />
@@ -1322,7 +1336,7 @@ const AppContent: React.FC = () => {
             <div ref={expressionColumnRef} className={`flex flex-col min-h-0 min-w-0 ${isLandscape ? 'flex-1 gap-0' : 'flex-1 gap-3'}`}>
               {/* Display area */}
               <div
-                className={`flex-1 flex flex-col items-center overflow-hidden min-h-0 transition-all duration-300 ${isLight ? 'text-black' : 'text-white'} ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+                className={`flex-1 flex flex-col items-center overflow-hidden min-h-0 transition-all duration-300 ${calcIsLight ? 'text-black' : 'text-white'} ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
                 style={{
                   paddingTop: isLandscape ? '0' : '0.35rem',
                   paddingBottom: isLandscape ? '0' : '0.15rem',
@@ -1524,7 +1538,8 @@ const AppContent: React.FC = () => {
                     variant={btn.variant}
                     wide={btn.wide}
                     accentColor={settings.accentColor}
-                    isLight={isLight}
+                    isLight={calcIsLight}
+                    flat={isFlatCalcSkin}
                     ariaLabel={btn.ariaLabel}
                     large={disableCard}
                   />

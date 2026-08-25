@@ -1242,7 +1242,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   };
 
   const openUnidentifiedPage = useCallback((log: DashboardLogEntry) => {
-    if (!log.isUnidentified || log.price === undefined) return;
+    const isUnidentifiedRow =
+      !!log.isUnidentified || log.type === 'invoice-unidentified';
+    if (!isUnidentifiedRow || log.price === undefined) return;
+    setSelectedItem(null);
+    setInventoryExpanded(false);
+    setActionLogsExpanded(false);
     setNamingUnidentified({ price: log.price, quantity: log.quantity ?? 1 });
     setNewItemName('');
     setNewItemPrice(String(log.price));
@@ -1545,8 +1550,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   };
 
   const handleLogRowClick = useCallback((log: DashboardLogEntry) => {
-    // Unidentified (red) and “Added item …” both open the same sheet as orange +
-    if (log.isUnidentified || log.type === 'invoice-unidentified' || log.action.startsWith('Added item')) {
+    // Unidentified (red) price — open name sheet with that price prefilled (e.g. 70).
+    if (log.isUnidentified || log.type === 'invoice-unidentified') {
+      openUnidentifiedPage(log);
+      return;
+    }
+    if (log.action.startsWith('Added item')) {
       setInventoryExpanded(true);
       setSelectedItem(null);
       setActionLogsExpanded(false);
@@ -1554,7 +1563,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       return;
     }
     setActionLogsExpanded(true);
-  }, [openAssetAction]);
+  }, [openAssetAction, openUnidentifiedPage]);
 
   const renderActivityLogRows = (logs: DashboardLogEntry[], limit?: number, clickable = false) => {
     const slice = limit ? logs.slice(0, limit) : logs;
@@ -1580,9 +1589,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   className={`app-subtext leading-relaxed truncate whitespace-nowrap ${
                     log.isUnidentified || log.type === 'invoice-unidentified'
                       ? 'text-red-500'
-                      : isUpdateLog
-                        ? 'text-blue-500'
-                        : textColorClass
+                      : log.type === 'invoice-add' &&
+                          typeof log.action === 'string' &&
+                          log.action.includes('has been added')
+                        ? 'text-emerald-500'
+                        : isUpdateLog
+                          ? 'text-blue-500'
+                          : textColorClass
                   }`}
                 >
                   {lineText}

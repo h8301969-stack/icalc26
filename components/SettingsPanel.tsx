@@ -40,6 +40,7 @@ import { heartbeatProfilePresence, touchProfilePresence } from '../utils/profile
 interface SettingsSlice {
   themeMode: 'light' | 'dark' | 'system';
   disableCalculatorCard?: boolean;
+  calculatorSkin?: 'classic' | 'white' | 'black';
   layoutMode?: 'portrait' | 'landscape';
   layoutModeAuto?: boolean;
   invoiceSwitcherMode?: 'horizontal' | 'list';
@@ -66,6 +67,7 @@ const settingsFingerprint = (s: SettingsSlice): string =>
   JSON.stringify({
     themeMode: s.themeMode,
     disableCalculatorCard: !!s.disableCalculatorCard,
+    calculatorSkin: s.calculatorSkin ?? 'classic',
     layoutMode: s.layoutMode ?? 'portrait',
     layoutModeAuto: s.layoutModeAuto !== false,
     invoiceSwitcherMode: s.invoiceSwitcherMode ?? 'horizontal',
@@ -1022,20 +1024,49 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
               <div className="flex flex-col min-w-0">
-                <span className="text-sm font-black">Calculator on background</span>
+                <span className="text-sm font-black">Calculator UI</span>
                 <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                  Remove card for more space and larger buttons
+                  Classic framed, or flat white / black (no top bar or card)
                 </span>
               </div>
-              <FluidToggle
+              <FluidSegmentControl
                 isLight={isLight}
-                checked={!!draft.disableCalculatorCard}
-                onChange={(disableCalculatorCard) => patchDraft({ disableCalculatorCard })}
-                ariaLabel="Calculator on background"
-                offLabel="Card"
-                onLabel="Background"
+                size="sm"
+                ariaLabel="Calculator UI skin"
+                value={draft.calculatorSkin ?? 'classic'}
+                onChange={(calculatorSkin) =>
+                  patchDraft({
+                    calculatorSkin: calculatorSkin as 'classic' | 'white' | 'black',
+                    // Flat skins always sit on the background (no card).
+                    ...(calculatorSkin !== 'classic' ? { disableCalculatorCard: true } : {}),
+                  })
+                }
+                options={[
+                  { id: 'classic', label: 'Classic' },
+                  { id: 'white', label: 'White' },
+                  { id: 'black', label: 'Black' },
+                ]}
               />
             </div>
+
+            {(draft.calculatorSkin ?? 'classic') === 'classic' && (
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+                <div className="flex flex-col min-w-0">
+                  <span className="text-sm font-black">Calculator on background</span>
+                  <span className={`app-subtext text-[10px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                    Remove card for more space and larger buttons
+                  </span>
+                </div>
+                <FluidToggle
+                  isLight={isLight}
+                  checked={!!draft.disableCalculatorCard}
+                  onChange={(disableCalculatorCard) => patchDraft({ disableCalculatorCard })}
+                  ariaLabel="Calculator on background"
+                  offLabel="Card"
+                  onLabel="Background"
+                />
+              </div>
+            )}
 
           </div>
         </div>
