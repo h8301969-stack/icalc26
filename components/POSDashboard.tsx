@@ -151,9 +151,19 @@ function formatRequestElapsed(timestamp: number, now: Date): string {
   const hrs = Math.floor(mins / 60);
   const days = Math.floor(hrs / 24);
   if (secs < 60) return `${secs}s`;
-  if (mins < 60) return `${mins}m ${secs % 60}s`;
-  if (hrs < 24) return `${hrs}h ${mins % 60}m ${secs % 60}s`;
-  return `${days}d ${hrs % 24}h ${mins % 60}m`;
+  if (mins < 60) return `${mins}m`;
+  if (hrs < 24) return `${hrs}h ${mins % 60}m`;
+  return `${days}d ${hrs % 24}h`;
+}
+
+/** Real calendar stamp for action-log rows, e.g. Aug-23 · 2:45 PM */
+function formatActionLogStamp(timestamp: number): string {
+  const d = new Date(timestamp);
+  if (Number.isNaN(d.getTime())) return '—';
+  const mon = d.toLocaleString([], { month: 'short' });
+  const day = String(d.getDate()).padStart(2, '0');
+  const time = d.toLocaleString([], { hour: 'numeric', minute: '2-digit' });
+  return `${mon}-${day} · ${time}`;
 }
 
 /** Business day rolls at 05:00 local — logs are hidden for prior days, never deleted. */
@@ -269,9 +279,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   const canEditStock = isAdminProfile(activeProfile) || activeProfile?.sellerType === 'wholesaler';
   const canEditPrice = isAdminProfile(activeProfile) || activeProfile?.sellerType === 'retailer';
+  const canEditName = canEditStock;
 
   const [stockEditValue, setStockEditValue] = useState('');
   const [priceEditValue, setPriceEditValue] = useState('');
+  const [nameEditValue, setNameEditValue] = useState('');
   const [inventoryExpanded, setInventoryExpanded] = useState(false);
   /** Dark-mode Asset Hub: brief white flash key (remounts animation). */
   const [assetHubFlashKey, setAssetHubFlashKey] = useState(0);
@@ -298,6 +310,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [visionHubFocus, setVisionHubFocus] = useState(false);
   
   const [sortOption, setSortOption] = useState<SortOption>('a-z');
+  const [inventoryLayout, setInventoryLayout] = useState<'grid' | 'list'>('grid');
 
   const [searchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -307,6 +320,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     const item = items.find((i) => i.id === selectedItem.id) ?? selectedItem;
     setStockEditValue(String(item.stock));
     setPriceEditValue(String(item.price));
+    setNameEditValue(item.name);
   }, [selectedItem?.id, items]);
   
   const [newItemName, setNewItemName] = useState('');
@@ -707,7 +721,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const filteredActionLogs = useMemo(() => {
     const now = Date.now();
     const oneDay = 86400000;
-    let result = [...systemLogs];
+    // Time-span filters look across all stored days; type filters stay on the selected day.
+    const timeSpan =
+      actionLogFilter === '24h' || actionLogFilter === '48h' || actionLogFilter === '7d';
+    let result = [...(timeSpan ? allSystemLogs : systemLogs)];
 
     if (actionLogFilter === 'restock') {
       result = result.filter((log) => log.type === 'restock');
@@ -743,7 +760,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     }
 
     return result;
-  }, [systemLogs, actionLogFilter, actionLogSearchQuery]);
+  }, [allSystemLogs, systemLogs, actionLogFilter, actionLogSearchQuery]);
 
   const fallbackWholesaleId = defaultWholesaleId(wholesales);
 
@@ -1335,6 +1352,61 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     [activeProfileName, onAccountNotify, setItems]
   );
 
+  const commitNameUpdate = useCallback(
+    (item: InventoryItem, rawValue: string) => {
+      const next = rawValue.trim();
+      if (!next) {
+        setNameEditValue(item.name);
+        return;
+      }
+      if (next === item.name) {
+        setNameEditValue(item.name);
+        return;
+      }
+      const duplicate = items.some(
+        (row) =>
+          row.id !== item.id &&
+          (row.wholesaleId || fallbackWholesaleId) === (item.wholesaleId || fallbackWholesaleId) &&
+          row.name.trim().toLowerCase() === next.toLowerCase()
+      );
+      if (duplicate) {
+        setNameEditValue(item.name);
+        alert('Another item already uses that name in this wholesale list.');
+        return;
+      }
+      const now = Date.now();
+      const action = `${item.name} renamed to ${next}`;
+      setItems((prev) =>
+        prev.map((row) => {
+          if (row.id !== item.id) return row;
+          return {
+            ...row,
+            name: next,
+            activities: [
+              {
+                id: crypto.randomUUID(),
+                type: 'stock-update' as const,
+                action,
+                time: formatActionLogStamp(now),
+                timestamp: now,
+                profileName: activeProfileName,
+              },
+              ...row.activities,
+            ],
+          };
+        })
+      );
+      setNameEditValue(next);
+      setSelectedItem((prev) => (prev?.id === item.id ? { ...prev, name: next } : prev));
+      onAccountNotify?.({
+        kind: 'stock_updated',
+        title: `${item.name} renamed`,
+        body: `${item.name} → ${next}`,
+      });
+    },
+    [activeProfileName, fallbackWholesaleId, items, onAccountNotify, setItems]
+  );
+
   const commitPriceUpdate = useCallback(
     (item: InventoryItem, rawValue: string) => {
       const parsed = Number.parseFloat(rawValue);
@@ -1517,8 +1589,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 </span>
                 <span
                   className={`app-subtext leading-relaxed text-[10px] tabular-nums opacity-45 ${cardSubtextMutedClass}`}
+                  style={{ letterSpacing: 0 }}
                 >
-                  {actorName} · {formatRequestElapsed(log.timestamp, currentTime)} ago
+                  {actorName} · {formatActionLogStamp(log.timestamp)} ·{' '}
+                  {formatRequestElapsed(log.timestamp, currentTime)} ago
                 </span>
               </div>
             </div>
@@ -1599,7 +1673,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         </label>
       </div>
       <p className={`app-subtext leading-relaxed opacity-45 px-1 -mt-4 ${cardSubtextMutedClass}`} style={{ letterSpacing: 0 }}>
-        {formatBusinessDayOptionLabel(actionLogDayKey, currentBusinessDayKey)} · from 5:00 AM
+        {formatBusinessDayOptionLabel(actionLogDayKey, currentBusinessDayKey)} · day starts 5:00 AM
       </p>
 
       {showActionLogSearch && (
@@ -1700,17 +1774,51 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     </div>
   );
 
+  const openInventoryItem = useCallback((item: InventoryItem) => {
+    setSelectedItem(item);
+  }, []);
+
+  const renderInventoryListRow = (item: InventoryItem, idx: number) => (
+    <button
+      key={item.id}
+      type="button"
+      role="listitem"
+      aria-label={`Inventory item ${idx + 1}: ${item.name}, stock ${item.stock}, price ¢${item.price}`}
+      onClick={() => openInventoryItem(item)}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left active:scale-[0.99] transition-all pos-dashboard-glass-btn ${
+        isLight ? 'pos-dashboard-glass-btn--light' : 'pos-dashboard-glass-btn--dark'
+      }`}
+    >
+      <div className="h-12 w-12 shrink-0 rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+        <InventoryItemImage
+          image={item.image}
+          alt={item.name}
+          accountId={accountId}
+          className="w-full h-full object-cover"
+        />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className={`text-[12px] font-black tracking-tight truncate ${textColorClass}`}>{item.name}</p>
+        <p className={`app-subtext text-[10px] opacity-55 ${cardSubtextMutedClass}`} style={{ letterSpacing: 0 }}>
+          Stock {item.stock}
+          {(item.grams ?? 0) > 0 ? ` · ${item.grams}g` : ''}
+        </p>
+      </div>
+      <p className={`text-[12px] font-black tabular-nums shrink-0 ${textColorClass}`}>¢{item.price}</p>
+    </button>
+  );
+
   const renderInventoryProductTile = (item: InventoryItem, idx: number) => (
     <div key={item.id} className="flex flex-col gap-1.5 min-w-0">
       <div
         role="listitem"
         tabIndex={0}
         aria-label={`Inventory item ${idx + 1}: ${item.name}, stock ${item.stock}, price ¢${item.price}`}
-        onClick={() => setSelectedItem(item)}
+        onClick={() => openInventoryItem(item)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            setSelectedItem(item);
+            openInventoryItem(item);
           }
         }}
         className={`group rounded-xl overflow-hidden cursor-pointer ${levitateClass} relative focus:outline-none focus:ring-2 focus:ring-white/40`}
@@ -1800,7 +1908,27 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           </div>
           <div className={`p-8 space-y-8 ${textColorClass}`}>
             <div className="flex justify-between items-start gap-4">
-              <h3 className="pos-dashboard-section-title text-4xl tracking-tighter leading-tight">{item.name}</h3>
+              {canEditName ? (
+                <input
+                  type="text"
+                  value={nameEditValue}
+                  onChange={(e) => setNameEditValue(e.target.value)}
+                  onBlur={() => commitNameUpdate(item, nameEditValue)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                    if (e.key === 'Escape') {
+                      setNameEditValue(item.name);
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  className={`pos-dashboard-section-title text-4xl tracking-tighter leading-tight w-full min-w-0 bg-transparent border-b-2 outline-none ${textColorClass} ${
+                    isLight ? 'border-black/15' : 'border-white/20'
+                  }`}
+                  aria-label={`Edit name for ${item.name}`}
+                />
+              ) : (
+                <h3 className="pos-dashboard-section-title text-4xl tracking-tighter leading-tight">{item.name}</h3>
+              )}
               {item.category ? (
                 <span className={`px-5 py-2 rounded-2xl pos-subtext text-[10px] font-black shrink-0 ${cardSubtextClass} ${isLight ? 'bg-zinc-100' : 'bg-white/10'}`}>{item.category}</span>
               ) : null}
@@ -1919,7 +2047,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   <div
                     key={idx}
                     onClick={canViewTransactions ? card.onClick : undefined}
-                    className={`p-7 rounded-xl ${levitateClass} ${canViewTransactions ? 'cursor-pointer active:scale-[0.98]' : 'opacity-75'}`}
+                    className={`p-7 rounded-xl ${levitateClass} pos-dashboard-glass-btn ${
+                      isLight ? 'pos-dashboard-glass-btn--light' : 'pos-dashboard-glass-btn--dark'
+                    } ${canViewTransactions ? 'cursor-pointer active:scale-[0.98]' : 'opacity-75'}`}
                     role={canViewTransactions ? 'button' : undefined}
                     tabIndex={canViewTransactions ? 0 : undefined}
                     onKeyDown={canViewTransactions ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.onClick!(); } } : undefined}
@@ -1977,7 +2107,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 tabIndex={0}
                 onClick={() => setActionLogsExpanded(true)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActionLogsExpanded(true); } }}
-                className={`col-span-2 p-10 rounded-2xl ${levitateClass} text-left cursor-pointer active:scale-[0.99] transition-all`}
+                className={`col-span-2 p-7 rounded-2xl text-left cursor-pointer active:scale-[0.99] transition-all pos-dashboard-glass-btn ${
+                  isLight ? 'pos-dashboard-glass-btn--light' : 'pos-dashboard-glass-btn--dark'
+                } ${levitateClass}`}
                 aria-label="Open all action logs"
               >
                 <div className="flex justify-between items-center gap-2 mb-6">
@@ -2038,11 +2170,15 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
             </div>
           ) : namingUnidentified ? (
-            renderNamingUnidentifiedPage()
+            <div key="naming-unidentified" className="pos-dashboard-panel-enter">
+              {renderNamingUnidentifiedPage()}
+            </div>
           ) : actionLogsExpanded ? (
-            renderActionLogsPage()
+            <div key="action-logs" className="pos-dashboard-panel-enter">
+              {renderActionLogsPage()}
+            </div>
           ) : canViewTransactions && monthlyRevExpanded ? (
-            <div className={`morph-panel-content morph-panel-content--in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Monthly revenue">
+            <div key="monthly-rev" className={`pos-dashboard-panel-enter morph-panel-content morph-panel-content--in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Monthly revenue">
               <button
                 onClick={() => setMonthlyRevExpanded(false)}
                 aria-label="Back to Vision Hub"
@@ -2094,7 +2230,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
             </div>
           ) : canViewTransactions && dailySalesExpanded ? (
-            <div className={`morph-panel-content morph-panel-content--in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Daily sales">
+            <div key="daily-sales" className={`pos-dashboard-panel-enter morph-panel-content morph-panel-content--in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Daily sales">
               <button
                 onClick={() => setDailySalesExpanded(false)}
                 aria-label="Back to Vision Hub"
@@ -2146,7 +2282,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
             </div>
           ) : canViewTransactions && avgCustomerExpanded ? (
-            <div className={`morph-panel-content morph-panel-content--in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Customer print history">
+            <div key="avg-customer" className={`pos-dashboard-panel-enter morph-panel-content morph-panel-content--in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Customer print history">
               <button
                 onClick={() => setAvgCustomerExpanded(false)}
                 aria-label="Back to Vision Hub"
@@ -2181,7 +2317,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
             </div>
           ) : canViewTransactions && invoicesTodayExpanded ? (
-            <div className={`morph-panel-content morph-panel-content--in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Invoices today">
+            <div key="invoices-today" className={`pos-dashboard-panel-enter morph-panel-content morph-panel-content--in space-y-8 ${textColorClass}`} role="tabpanel" aria-label="Invoices today">
               <button
                 onClick={() => setInvoicesTodayExpanded(false)}
                 aria-label="Back to Vision Hub"
@@ -2236,8 +2372,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               </div>
             </div>
           ) : inventoryExpanded ? (
-            selectedItem ? renderInventoryItemPage() : (
-            <div className="relative morph-panel-content morph-panel-content--in space-y-6" role="tabpanel" aria-label="Assets Hub inventory">
+            selectedItem ? (
+              <div key={`item-${selectedItem.id}`} className="pos-dashboard-panel-enter">
+                {renderInventoryItemPage()}
+              </div>
+            ) : (
+            <div key="assets-hub" className="relative pos-dashboard-panel-enter morph-panel-content morph-panel-content--in space-y-6" role="tabpanel" aria-label="Assets Hub inventory">
               {!isLight && assetHubFlashKey > 0 && (
                 <div
                   key={assetHubFlashKey}
@@ -2275,7 +2415,19 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
                 {renderWholesaleToggleBar()}
 
-                <div className="mt-3 flex justify-center">
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                  <FluidSegmentControl
+                    isLight={isLight}
+                    size="sm"
+                    variant="slide"
+                    ariaLabel="Inventory layout"
+                    value={inventoryLayout}
+                    onChange={(id) => setInventoryLayout(id as 'grid' | 'list')}
+                    options={[
+                      { id: 'grid', label: 'Grid' },
+                      { id: 'list', label: 'List' },
+                    ]}
+                  />
                   <FluidSegmentControl
                     isLight={isLight}
                     size="sm"
@@ -2291,17 +2443,27 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3 pb-20" role="list" aria-label={`Inventory items — ${activeWholesaleName}`}>
-                {filteredInventory.length > 0 ? (
-                  filteredInventory.map((item, idx) => renderInventoryProductTile(item, idx))
-                ) : (
-                  <div className={`col-span-full p-12 text-center rounded-2xl ${isLight ? 'bg-white/70' : 'bg-white/5'}`}>
-                    <p className={`pos-subtext text-[10px] font-black ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                      Nothing in {activeWholesaleName} yet. Tap + to add something.
-                    </p>
+              {filteredInventory.length > 0 ? (
+                inventoryLayout === 'list' ? (
+                  <div className="flex flex-col gap-2.5 pb-20" role="list" aria-label={`Inventory list — ${activeWholesaleName}`}>
+                    {filteredInventory.map((item, idx) => renderInventoryListRow(item, idx))}
                   </div>
-                )}
-              </div>
+                ) : (
+                  <div
+                    className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3 pb-20"
+                    role="list"
+                    aria-label={`Inventory items — ${activeWholesaleName}`}
+                  >
+                    {filteredInventory.map((item, idx) => renderInventoryProductTile(item, idx))}
+                  </div>
+                )
+              ) : (
+                <div className={`p-12 text-center rounded-2xl ${isLight ? 'bg-white/70' : 'bg-white/5'}`}>
+                  <p className={`pos-subtext text-[10px] font-black ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                    Nothing in {activeWholesaleName} yet. Tap + to add something.
+                  </p>
+                </div>
+              )}
             </div>
             )
           ) : canViewTransactions && purchasesExpanded ? (

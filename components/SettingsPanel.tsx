@@ -847,6 +847,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           isLight={isLight}
           notifications={notifications}
           activeProfileId={draft.activeProfileId ?? activeProfile?.id ?? ''}
+          isAdmin={isAdminProfile(activeProfile)}
           onMarkRead={onMarkNotificationsRead}
         />
 

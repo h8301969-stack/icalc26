@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Icons } from '../constants';
 import { MorphPresence } from './MorphCrossfade';
 import FluidSegmentControl from './FluidSegmentControl';
@@ -40,6 +40,8 @@ interface SettingsNotificationsInboxProps {
   isLight: boolean;
   notifications: AccountNotification[];
   activeProfileId: string;
+  /** Admin sees every profile’s notifications by default. */
+  isAdmin?: boolean;
   onMarkRead?: (ids: string[]) => void;
 }
 
@@ -49,10 +51,15 @@ const SettingsNotificationsInbox: React.FC<SettingsNotificationsInboxProps> = ({
   isLight,
   notifications,
   activeProfileId,
+  isAdmin = false,
   onMarkRead,
 }) => {
   const [dateFilter, setDateFilter] = useState<DateFilter>('7d');
-  const [scope, setScope] = useState<'me' | 'all'>('me');
+  const [scope, setScope] = useState<'me' | 'all'>(isAdmin ? 'all' : 'me');
+
+  useEffect(() => {
+    if (isOpen && isAdmin) setScope('all');
+  }, [isOpen, isAdmin]);
 
   const filtered = useMemo(() => {
     const base =

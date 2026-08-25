@@ -33,7 +33,7 @@ const AccountToastHost: React.FC<AccountToastHostProps> = ({ isLight, api }) => 
       <MorphPresence show={showPill}>
         {(visible) => (
           <div
-            className={`account-toast-pill morph-panel fixed left-1/2 z-[500] -translate-x-1/2 px-4 py-2.5 max-w-[min(28rem,calc(100vw-1.5rem))] w-[min(28rem,calc(100vw-1.5rem))] ${
+            className={`account-toast-pill morph-panel fixed left-1/2 z-[500] -translate-x-1/2 ${
               visible ? 'morph-panel--in' : 'morph-panel--out'
             } ${isLight ? 'account-toast-pill--light' : 'account-toast-pill--dark'}`}
             style={{ top: 'max(0.75rem, env(safe-area-inset-top))' }}
@@ -44,16 +44,19 @@ const AccountToastHost: React.FC<AccountToastHostProps> = ({ isLight, api }) => 
             role="status"
             aria-live="polite"
           >
-            <div className="flex items-start gap-2 min-w-0">
-              <span className="account-toast-pill__dot shrink-0 mt-1.5" aria-hidden />
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="account-toast-pill__dot shrink-0" aria-hidden />
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-black tracking-tight truncate">{activeToast?.title}</p>
-                <p className="text-[10px] font-semibold opacity-70 truncate">{activeToast?.body}</p>
+                <p className="account-toast-pill__title text-[10px] font-black tracking-tight leading-tight truncate">
+                  {activeToast?.title}
+                </p>
+                {activeToast?.body ? (
+                  <p className="account-toast-pill__body text-[9px] font-semibold opacity-70 leading-tight truncate mt-0.5">
+                    {activeToast.body}
+                  </p>
+                ) : null}
               </div>
             </div>
-            <p className="mt-1 text-[8px] font-bold uppercase tracking-wider opacity-40 text-center">
-              Hold for details
-            </p>
           </div>
         )}
       </MorphPresence>

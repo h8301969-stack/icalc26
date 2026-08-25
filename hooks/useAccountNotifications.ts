@@ -166,7 +166,19 @@ export const useAccountNotifications = ({
   const emit = useCallback(
     (input: EmitAccountNotificationInput) => {
       if (!accountId || !enabled) return;
-      const targets = profiles.filter((p) => p.id && p.id !== input.actorProfileId);
+      // Fan-out to every other profile, and always CC @admin so they see profile activity.
+      const byId = new Map<string, (typeof profiles)[number]>();
+      for (const p of profiles) {
+        if (!p.id || p.id === input.actorProfileId) continue;
+        byId.set(p.id, p);
+      }
+      const admin = profiles.find(
+        (p) => p.isSystem || p.name === '@admin' || p.name?.toLowerCase() === 'admin'
+      );
+      if (admin?.id && admin.id !== input.actorProfileId) {
+        byId.set(admin.id, admin);
+      }
+      const targets = [...byId.values()];
       if (targets.length === 0) return;
 
       const stamped = Date.now();
@@ -352,20 +364,31 @@ export const useAccountNotifications = ({
     []
   );
 
-  const unreadCount = useMemo(
-    () => items.filter((n) => n.targetProfileId === activeProfileId && !n.readAt).length,
-    [items, activeProfileId]
-  );
+  const unreadCount = useMemo(() => {
+    const active = profiles.find((p) => p.id === activeProfileId);
+    const isAdmin =
+      !!active &&
+      (active.isSystem || active.name === '@admin' || active.name?.toLowerCase() === 'admin');
+    // Admin sees unread for every profile; others only see their own.
+    if (isAdmin) return items.filter((n) => !n.readAt).length;
+    return items.filter((n) => n.targetProfileId === activeProfileId && !n.readAt).length;
+  }, [items, activeProfileId, profiles]);
 
   const openInbox = useCallback(
     (profileId?: string) => {
       const pid = profileId || activeProfileIdRef.current;
-      const source = items
-        .filter((n) => n.targetProfileId === pid)
-        .sort((a, b) => b.createdAt - a.createdAt);
-      openList(source.length > 0 ? source : items.sort((a, b) => b.createdAt - a.createdAt));
+      const active = profiles.find((p) => p.id === pid);
+      const isAdmin =
+        !!active &&
+        (active.isSystem || active.name === '@admin' || active.name?.toLowerCase() === 'admin');
+      const source = (
+        isAdmin
+          ? [...items]
+          : items.filter((n) => n.targetProfileId === pid)
+      ).sort((a, b) => b.createdAt - a.createdAt);
+      openList(source.length > 0 ? source : [...items].sort((a, b) => b.createdAt - a.createdAt));
     },
-    [items, openList]
+    [items, openList, profiles]
   );
 
   return {
