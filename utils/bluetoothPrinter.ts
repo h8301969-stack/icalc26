@@ -1239,6 +1239,50 @@ export class BLEPrinter {
     }
   }
 
+  /**
+   * Cheap ESC/POS heads expect single-byte text (CP437/ASCII), not UTF-8.
+   * Multi-byte chars (e.g. ¢) often advance paper via cut/feed but burn nothing.
+   */
+  private encodeEscPosText(text: string): number[] {
+    const replacements: Record<string, string> = {
+      '¢': 'c',
+      '₵': 'c',
+      '€': 'EUR',
+      '£': 'GBP',
+      '¥': 'Y',
+      '—': '-',
+      '–': '-',
+      '‘': "'",
+      '’': "'",
+      '“': '"',
+      '”': '"',
+      '…': '...',
+      '×': 'x',
+      '·': '.',
+    };
+    let s = String(text ?? '');
+    for (const [from, to] of Object.entries(replacements)) {
+      if (s.includes(from)) s = s.split(from).join(to);
+    }
+    try {
+      s = s.normalize('NFD').replace(/\p{M}/gu, '');
+    } catch {
+      // Older engines without Unicode property escapes — keep as-is.
+    }
+    const out: number[] = [];
+    for (let i = 0; i < s.length; i++) {
+      const code = s.charCodeAt(i);
+      if (code === 0x0a || code === 0x0d) {
+        out.push(code);
+      } else if (code >= 0x20 && code <= 0x7e) {
+        out.push(code);
+      } else {
+        out.push(0x3f); // ?
+      }
+    }
+    return out;
+  }
+
   private async writeEscPosData(data: Uint8Array): Promise<void> {
     try {
       if (!this.isConnected) {
@@ -1347,16 +1391,18 @@ export class BLEPrinter {
     });
 
     const result = await this.withBluetoothLock(async () => {
-    const encoder = new TextEncoder();
     const commands: number[] = [];
     const rule = '-'.repeat(spec.maxCols);
+    const currencyAscii = currency === '¢' || currency === '₵' ? 'c' : currency;
     const pushText = (text: string) => {
-      commands.push(...Array.from(encoder.encode(text)));
+      commands.push(...this.encodeEscPosText(text));
     };
 
-    // ESC/POS text receipt (not raster image) — printers receive plain text + control codes.
-    commands.push(0x1B, 0x40);
-    commands.push(0x1B, 0x61, 0x01);
+    // ESC/POS text receipt — ASCII bytes + standard control codes (no UTF-8).
+    commands.push(0x1B, 0x40); // init
+    commands.push(0x1B, 0x74, 0x00); // code page PC437
+    commands.push(0x1B, 0x21, 0x00); // Font A
+    commands.push(0x1B, 0x61, 0x01); // center
 
     const bizName = business?.name?.trim();
     if (bizName) {
@@ -1378,7 +1424,7 @@ export class BLEPrinter {
     }
     pushText(`${rule}\n`);
 
-    commands.push(0x1B, 0x61, 0x00);
+    commands.push(0x1B, 0x61, 0x00); // left
 
     if (layoutMode === 'full') {
       items.forEach((item, idx) => {
@@ -1386,7 +1432,7 @@ export class BLEPrinter {
           item.name || `Item ${idx + 1}`,
           item.quantity,
           item.price,
-          currency,
+          currencyAscii,
           spec
         );
         pushText(`${line}\n`);
@@ -1396,15 +1442,22 @@ export class BLEPrinter {
     pushText(`${rule}\n`);
 
     commands.push(0x1B, 0x45, 0x01);
-    pushText(`TOTAL: ${currency}${runningTotal.toFixed(2)}\n`);
+    pushText(`TOTAL: ${currencyAscii}${runningTotal.toFixed(2)}\n`);
     commands.push(0x1B, 0x45, 0x00);
 
     commands.push(0x1B, 0x61, 0x01);
-    pushText('\nThank you for your purchase!\n\n\n');
+    pushText('\nThank you for your purchase!\n\n\n\n');
 
+    // Partial cut (also feeds) — after text so paper isn't blank.
     commands.push(0x1D, 0x56, 0x42, 0x00);
 
     const data = new Uint8Array(commands);
+    logReceiptPrint('start', {
+      mode: 'escpos_text',
+      phase: 'write',
+      bytes: data.length,
+      preview: Array.from(data.slice(0, 48)),
+    });
     await this.writeEscPosData(data);
     });
 
@@ -1574,14 +1627,15 @@ export class BLEPrinter {
     });
 
     const result = await this.withBluetoothLock(async () => {
-      const encoder = new TextEncoder();
       const commands: number[] = [];
       const rule = '-'.repeat(spec.maxCols);
       const pushText = (text: string) => {
-        commands.push(...Array.from(encoder.encode(text)));
+        commands.push(...this.encodeEscPosText(text));
       };
 
       commands.push(0x1B, 0x40);
+      commands.push(0x1B, 0x74, 0x00);
+      commands.push(0x1B, 0x21, 0x00);
       commands.push(0x1B, 0x61, 0x01);
       commands.push(0x1B, 0x45, 0x01);
       pushText(`${truncateReceiptText(title.toUpperCase(), spec.maxInvoiceTitleChars)}\n`);
@@ -1603,7 +1657,7 @@ export class BLEPrinter {
         }
       }
 
-      pushText('\n\n');
+      pushText('\n\n\n');
       commands.push(0x1D, 0x56, 0x42, 0x00);
       await this.writeEscPosData(new Uint8Array(commands));
     });
