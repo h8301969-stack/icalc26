@@ -269,33 +269,71 @@ export const nativeConnectAndDiscover = async (
   await ensureNativeBleInitialized();
   await nativeEnsureBluetoothOn();
 
-  // Disconnect stale session if any
+  /**
+   * Do NOT disconnect before connect.
+   * Many mini thermal printers power off when the phone drops GATT right after pairing.
+   * Reuse an existing link when possible; only reconnect if discovery fails.
+   */
+  let alreadyLinked = false;
   try {
-    await BleClient.disconnect(deviceId);
-    await delay(120);
+    const existing = await BleClient.getServices(deviceId);
+    alreadyLinked = existing.some((s) => (s.characteristics?.length ?? 0) > 0);
   } catch {
-    // not connected
+    alreadyLinked = false;
   }
 
-  await BleClient.connect(
-    deviceId,
-    (id) => {
-      onDisconnect?.(id);
-    },
-    { timeout: 25_000 }
-  );
+  if (!alreadyLinked) {
+    try {
+      await BleClient.connect(
+        deviceId,
+        (id) => {
+          onDisconnect?.(id);
+        },
+        { timeout: 25_000 }
+      );
+    } catch (connectErr) {
+      // Stale half-open session: one careful reconnect (still avoid a hard power-cycle loop)
+      try {
+        await BleClient.disconnect(deviceId);
+      } catch {
+        // ignore
+      }
+      await delay(400);
+      await BleClient.connect(
+        deviceId,
+        (id) => {
+          onDisconnect?.(id);
+        },
+        { timeout: 25_000 }
+      );
+      void connectErr;
+    }
+  } else {
+    // Refresh disconnect callback for an already-open session
+    try {
+      await BleClient.connect(
+        deviceId,
+        (id) => {
+          onDisconnect?.(id);
+        },
+        { timeout: 8_000 }
+      );
+    } catch {
+      // Already connected — fine
+    }
+  }
 
-  // High priority helps bulk ESC/POS image dumps on mini printers (Android)
+  // Balanced priority — HIGH can brown-out / shut down weak mini-printer radios
   try {
     await BleClient.requestConnectionPriority(
       deviceId,
-      ConnectionPriority.CONNECTION_PRIORITY_HIGH
+      ConnectionPriority.CONNECTION_PRIORITY_BALANCED
     );
   } catch {
     // iOS / unsupported — ignore
   }
 
-  await delay(200);
+  await delay(350);
 
   // Force a full service discovery (important on Android after cold connect)
   try {
@@ -305,14 +343,14 @@ export const nativeConnectAndDiscover = async (
   }
 
   let services: BleService[] = [];
-  for (let attempt = 1; attempt <= 5; attempt++) {
+  for (let attempt = 1; attempt <= 6; attempt++) {
     try {
       services = await BleClient.getServices(deviceId);
       if (services.some((s) => s.characteristics?.length)) break;
     } catch {
       // retry
     }
-    await delay(180 * attempt);
+    await delay(220 * attempt);
     try {
       await BleClient.discoverServices(deviceId);
     } catch {
@@ -321,13 +359,9 @@ export const nativeConnectAndDiscover = async (
   }
 
   if (services.length === 0) {
-    try {
-      await BleClient.disconnect(deviceId);
-    } catch {
-      // ignore
-    }
+    // Keep the link up — disconnecting here often powers the printer off permanently for the session.
     throw new Error(
-      'Printer connected but no BLE services were found. Use a BLE (not Classic-only) mini printer, keep it awake, and try again.'
+      'Printer connected but no BLE print channel was found. Keep it awake and tap Connect again (do not power-cycle yet).'
     );
   }
 

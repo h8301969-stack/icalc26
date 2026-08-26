@@ -7,6 +7,7 @@ import {
   type NetworkPrinterConfig,
 } from './networkPrinter';
 import { drawThermalReceiptCanvas } from './receiptCanvas';
+import { renderInvoiceShareImage } from './invoiceShareImage';
 import {
   detectPaperWidthFromDeviceName,
   formatReceiptItemLine,
@@ -216,6 +217,14 @@ export class BLEPrinter {
   private autoConnectTimer: ReturnType<typeof setInterval> | null = null;
   private autoConnectRunning = false;
   private autoConnectStarted = false;
+  /** Soft BLE keep-alive — many mini printers power off seconds after the link goes idle. */
+  private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly KEEP_ALIVE_MS = 18_000;
+  /**
+   * Print loop: 0 = thermal raster receipt, 1 = share-style image raster, then repeats.
+   * Cheap BLE heads often ignore ESC/POS text and only burn GS v 0 bitmaps.
+   */
+  private invoicePrintPass = 0;
 
   public paperWidth: PaperWidth = storage.get<PaperWidth>(DEFAULT_PAPER_WIDTH_KEY, '58mm');
   public transport: PrinterTransport = storage.get<PrinterTransport>(PRINTER_TRANSPORT_KEY, 'ble');
@@ -308,7 +317,40 @@ export class BLEPrinter {
     this.notifyConnectionChange();
   }
 
+  private stopKeepAlive() {
+    if (this.keepAliveTimer) {
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
+    }
+  }
+
+  private startKeepAlive() {
+    this.stopKeepAlive();
+    if (this.transport !== 'ble') return;
+    this.keepAliveTimer = setInterval(() => {
+      void this.sendBleKeepAlive();
+    }, BLEPrinter.KEEP_ALIVE_MS);
+  }
+
+  /** Tiny no-print init tick so the printer stays awake while the app holds GATT. */
+  private async sendBleKeepAlive(): Promise<void> {
+    if (this.transport !== 'ble' || this.isBluetoothBusy || !this.bleConnected) return;
+    try {
+      const tick = new Uint8Array([0x1b, 0x40]); // ESC @ soft wake
+      if (this.usesNativeBle) {
+        if (!this.nativeChannel) return;
+        await nativeWriteChunks(this.nativeChannel, tick);
+        return;
+      }
+      if (!this.device?.gatt?.connected || !this.characteristic) return;
+      await this.writeDataInChunks(this.characteristic, tick);
+    } catch {
+      // Ignore — next print/ensureConnected will recover
+    }
+  }
+
   private disconnectBleOnly() {
+    this.stopKeepAlive();
     if (this.usesNativeBle && this.nativeChannel) {
       void nativeDisconnect(this.nativeChannel.deviceId);
     }
@@ -365,8 +407,10 @@ export class BLEPrinter {
     await ensureNativeBleInitialized();
     await nativeEnsureBluetoothOn();
 
-    // Tear down previous native session if switching printers
+    // Tear down previous native session only when switching to a different printer.
+    // Never bounce the same device — disconnect powers many mini printers off.
     if (this.nativeChannel && this.nativeChannel.deviceId !== deviceId) {
+      this.stopKeepAlive();
       await nativeDisconnect(this.nativeChannel.deviceId);
       this.nativeChannel = null;
       this.bleConnected = false;
@@ -377,6 +421,7 @@ export class BLEPrinter {
 
     this.nativeChannel = await nativeConnectAndDiscover(deviceId, name, (id) => {
       if (this.nativeChannel?.deviceId === id) {
+        this.stopKeepAlive();
         this.nativeChannel = null;
         this.nativeDeviceName = null;
         this.bleConnected = false;
@@ -388,6 +433,13 @@ export class BLEPrinter {
     this.charUUID = this.nativeChannel.characteristicUuid;
     this.bleConnected = true;
     this.savePairedDeviceById(deviceId, this.nativeDeviceName);
+    this.startKeepAlive();
+    // Claim the link gently so the head stays awake after pairing
+    try {
+      await this.writeEscPosData(new Uint8Array([0x1b, 0x40]));
+    } catch {
+      // Some heads reject wake before first real print — connection can still be fine
+    }
     this.notifyConnectionChange();
     return this.nativeDeviceName;
   }
@@ -625,6 +677,7 @@ export class BLEPrinter {
     this.characteristic = await this.rediscoverServices(device);
     this.bleConnected = true;
     this.savePairedDevice(device);
+    this.startKeepAlive();
     this.notifyConnectionChange();
 
     return device.name || 'Thermal Printer';
@@ -1339,6 +1392,12 @@ export class BLEPrinter {
     }
   }
 
+  /**
+   * Invoice print loop (visible on cheap BLE heads):
+   * 1st press → thermal raster receipt (GS v 0)
+   * 2nd press → share-style image raster (GS v 0)
+   * then repeats.
+   */
   async printInvoice(
     invoiceName: string,
     items: { name?: string; price: number; quantity: number; id?: string }[],
@@ -1346,136 +1405,116 @@ export class BLEPrinter {
     currency: string = '¢',
     attendantName?: string,
     layoutMode: ReceiptLayoutMode = 'full',
-    business?: { name?: string; phone?: string; address?: string }
+    _business?: { name?: string; phone?: string; address?: string }
   ): Promise<boolean> {
-    const receiptItems: ReceiptLineItem[] = items.map((item) => ({
-      name: item.name,
-      price: item.price,
-      quantity: item.quantity,
-    }));
-    const validation = validateReceiptPrint(
+    const pass = this.invoicePrintPass % 2;
+    this.invoicePrintPass += 1;
+
+    logReceiptPrint('start', {
+      mode: pass === 0 ? 'raster_receipt' : 'raster_share_image',
       invoiceName,
-      receiptItems,
-      this.paperWidth,
-      !!attendantName,
+      printPass: pass,
+      paperWidth: this.paperWidth,
+    });
+
+    if (pass === 0) {
+      return this.printInvoiceImage(
+        invoiceName,
+        items,
+        runningTotal,
+        currency,
+        attendantName,
+        layoutMode
+      );
+    }
+
+    return this.printInvoiceShareImageRaster(
+      invoiceName,
+      items,
+      runningTotal,
       currency,
+      attendantName,
       layoutMode
     );
-    logReceiptPrint('validate', {
-      mode: 'escpos_text',
-      invoiceName,
-      paperWidth: this.paperWidth,
-      itemCount: items.length,
-      ok: validation.ok,
-      errors: validation.errors,
-      warnings: validation.warnings,
-      estimatedHeightPx: validation.estimatedHeightPx,
-    });
-    if (!validation.ok) {
-      logReceiptPrint('failure', {
-        mode: 'escpos_text',
-        reason: 'validation_failed',
-        errors: validation.errors,
-      });
-      return false;
-    }
+  }
 
+  /** Scale any canvas to paper width (multiple of 8) and burn via GS v 0. */
+  private async sendCanvasAsGsV0(source: HTMLCanvasElement): Promise<void> {
     const spec = getReceiptSpec(this.paperWidth);
-    logReceiptPrint('start', {
-      mode: 'escpos_text',
+    const targetWidth = spec.widthPx; // already multiple of 8 in RECEIPT_SPECS
+    const scale = targetWidth / Math.max(1, source.width);
+    const targetHeight = Math.max(8, Math.floor(source.height * scale));
+    const heightAligned = targetHeight + ((8 - (targetHeight % 8)) % 8);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = heightAligned;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not create 2D canvas context');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, targetWidth, heightAligned);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(source, 0, 0, targetWidth, targetHeight);
+
+    const imgData = ctx.getImageData(0, 0, targetWidth, heightAligned);
+    const data = imgData.data;
+    const bytesWidth = targetWidth / 8;
+    const commands: number[] = [0x1b, 0x40];
+    const xL = bytesWidth % 256;
+    const xH = Math.floor(bytesWidth / 256);
+    const yL = heightAligned % 256;
+    const yH = Math.floor(heightAligned / 256);
+    commands.push(0x1d, 0x76, 0x30, 0, xL, xH, yL, yH);
+
+    for (let y = 0; y < heightAligned; y++) {
+      for (let b = 0; b < bytesWidth; b++) {
+        let byteVal = 0;
+        for (let bit = 0; bit < 8; bit++) {
+          const pixelX = b * 8 + bit;
+          const pixelIdx = (y * targetWidth + pixelX) * 4;
+          const gray =
+            0.299 * data[pixelIdx] + 0.587 * data[pixelIdx + 1] + 0.114 * data[pixelIdx + 2];
+          const isBlack = data[pixelIdx + 3] > 50 && gray < 128 ? 1 : 0;
+          byteVal = (byteVal << 1) | isBlack;
+        }
+        commands.push(byteVal);
+      }
+    }
+    commands.push(0x1d, 0x56, 0x42, 0x00);
+    await this.writeEscPosData(new Uint8Array(commands));
+  }
+
+  private async printInvoiceShareImageRaster(
+    invoiceName: string,
+    items: { name?: string; price: number; quantity: number }[],
+    runningTotal: number,
+    currency: string,
+    attendantName?: string,
+    layoutMode: ReceiptLayoutMode = 'full'
+  ): Promise<boolean> {
+    const result = await this.withBluetoothLock(async () => {
+      const shareCanvas = renderInvoiceShareImage(
+        {
+          invoiceName,
+          total: runningTotal.toFixed(2),
+          currency,
+          attendantName: attendantName ?? '',
+          items: items.map((item, i) => ({
+            name: item.name || `Item ${i + 1}`,
+            price: item.price,
+            quantity: item.quantity,
+          })),
+        },
+        { layoutMode }
+      );
+      await this.sendCanvasAsGsV0(shareCanvas);
+    });
+    const ok = result !== null;
+    logReceiptPrint(ok ? 'success' : 'failure', {
+      mode: 'raster_share_image',
       invoiceName,
       paperWidth: this.paperWidth,
-      maxCols: spec.maxCols,
-      itemCount: items.length,
-      total: runningTotal,
     });
-
-    const result = await this.withBluetoothLock(async () => {
-    const commands: number[] = [];
-    const rule = '-'.repeat(spec.maxCols);
-    const currencyAscii = currency === '¢' || currency === '₵' ? 'c' : currency;
-    const pushText = (text: string) => {
-      commands.push(...this.encodeEscPosText(text));
-    };
-
-    // ESC/POS text receipt — ASCII bytes + standard control codes (no UTF-8).
-    commands.push(0x1B, 0x40); // init
-    commands.push(0x1B, 0x74, 0x00); // code page PC437
-    commands.push(0x1B, 0x21, 0x00); // Font A
-    commands.push(0x1B, 0x61, 0x01); // center
-
-    const bizName = business?.name?.trim();
-    if (bizName) {
-      commands.push(0x1B, 0x45, 0x01);
-      pushText(`${truncateReceiptText(bizName, spec.maxCols)}\n`);
-      commands.push(0x1B, 0x45, 0x00);
-      const phone = business?.phone?.trim();
-      const address = business?.address?.trim();
-      if (phone) pushText(`${truncateReceiptText(phone, spec.maxCols)}\n`);
-      if (address) pushText(`${truncateReceiptText(address, spec.maxCols)}\n`);
-      pushText(`${rule}\n`);
-    }
-
-    commands.push(0x1B, 0x45, 0x01);
-    pushText(`${truncateReceiptText(invoiceName.toUpperCase(), spec.maxInvoiceTitleChars)}\n`);
-    commands.push(0x1B, 0x45, 0x00);
-    if (attendantName) {
-      pushText(`${formatServedByLine(attendantName, spec)}\n`);
-    }
-    pushText(`${rule}\n`);
-
-    commands.push(0x1B, 0x61, 0x00); // left
-
-    if (layoutMode === 'full') {
-      items.forEach((item, idx) => {
-        const { line } = formatReceiptItemLine(
-          item.name || `Item ${idx + 1}`,
-          item.quantity,
-          item.price,
-          currencyAscii,
-          spec
-        );
-        pushText(`${line}\n`);
-      });
-    }
-
-    pushText(`${rule}\n`);
-
-    commands.push(0x1B, 0x45, 0x01);
-    pushText(`TOTAL: ${currencyAscii}${runningTotal.toFixed(2)}\n`);
-    commands.push(0x1B, 0x45, 0x00);
-
-    commands.push(0x1B, 0x61, 0x01);
-    pushText('\nThank you for your purchase!\n\n\n\n');
-
-    // Partial cut (also feeds) — after text so paper isn't blank.
-    commands.push(0x1D, 0x56, 0x42, 0x00);
-
-    const data = new Uint8Array(commands);
-    logReceiptPrint('start', {
-      mode: 'escpos_text',
-      phase: 'write',
-      bytes: data.length,
-      preview: Array.from(data.slice(0, 48)),
-    });
-    await this.writeEscPosData(data);
-    });
-
-    const ok = result !== null;
-    if (ok) {
-      logReceiptPrint('success', {
-        mode: 'escpos_text',
-        invoiceName,
-        paperWidth: this.paperWidth,
-        bytes: items.length,
-      });
-    } else {
-      logReceiptPrint('failure', {
-        mode: 'escpos_text',
-        reason: 'busy_or_aborted',
-        invoiceName,
-      });
-    }
     return ok;
   }
 
@@ -1533,62 +1572,17 @@ export class BLEPrinter {
     });
 
     const result = await this.withBluetoothLock(async () => {
-    const canvas = document.createElement('canvas');
-    await drawThermalReceiptCanvas(canvas, {
-      invoiceName,
-      items,
-      runningTotal,
-      currency,
-      attendantName,
-      layoutMode,
-      spec,
-    });
-
-    const printWidth = canvas.width;
-    const printHeight = canvas.height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Could not create 2D canvas context');
-
-    const imgData = ctx.getImageData(0, 0, printWidth, printHeight);
-    const data = imgData.data;
-
-    const bytesWidth = printWidth / 8;
-    const commands: number[] = [];
-
-    commands.push(0x1B, 0x40);
-
-    const xL = bytesWidth % 256;
-    const xH = Math.floor(bytesWidth / 256);
-    const yL = printHeight % 256;
-    const yH = Math.floor(printHeight / 256);
-
-    commands.push(0x1D, 0x76, 0x30, 0, xL, xH, yL, yH);
-
-    for (let y = 0; y < printHeight; y++) {
-      for (let b = 0; b < bytesWidth; b++) {
-        let byteVal = 0;
-        for (let bit = 0; bit < 8; bit++) {
-          const pixelX = b * 8 + bit;
-          const pixelIdx = (y * printWidth + pixelX) * 4;
-
-          const r = data[pixelIdx];
-          const g = data[pixelIdx + 1];
-          const bVal = data[pixelIdx + 2];
-          const a = data[pixelIdx + 3];
-
-          const gray = 0.299 * r + 0.587 * g + 0.114 * bVal;
-          const isBlack = (a > 50 && gray < 128) ? 1 : 0;
-
-          byteVal = (byteVal << 1) | isBlack;
-        }
-        commands.push(byteVal);
-      }
-    }
-
-    commands.push(0x1D, 0x56, 0x42, 0x00);
-
-    const printData = new Uint8Array(commands);
-    await this.writeEscPosData(printData);
+      const canvas = document.createElement('canvas');
+      await drawThermalReceiptCanvas(canvas, {
+        invoiceName,
+        items,
+        runningTotal,
+        currency,
+        attendantName,
+        layoutMode,
+        spec,
+      });
+      await this.sendCanvasAsGsV0(canvas);
     });
 
     const ok = result !== null;
@@ -1610,7 +1604,7 @@ export class BLEPrinter {
     return ok;
   }
 
-  /** ESC/POS text notepad slip (preferred). Kept name alias for call sites. */
+  /** Notepad slip as GS v 0 raster (visible on heads that ignore ESC/POS text). */
   async printNotepadImage(title: string, body: string, attendantName?: string): Promise<boolean> {
     return this.printNotepad(title, body, attendantName);
   }
@@ -1618,65 +1612,56 @@ export class BLEPrinter {
   async printNotepad(title: string, body: string, attendantName?: string): Promise<boolean> {
     const spec = getReceiptSpec(this.paperWidth);
     const lines = body.split('\n').map((l) => l.trimEnd());
+    const lineHeight = 22;
+    const headerHeight = attendantName ? 72 : 52;
+    const height = Math.min(
+      spec.maxHeightPx,
+      headerHeight + Math.max(1, lines.length) * lineHeight + 40
+    );
 
     logReceiptPrint('start', {
-      mode: 'escpos_text_notepad',
+      mode: 'raster_notepad',
       invoiceName: title,
       paperWidth: this.paperWidth,
       lineCount: lines.length,
     });
 
     const result = await this.withBluetoothLock(async () => {
-      const commands: number[] = [];
-      const rule = '-'.repeat(spec.maxCols);
-      const pushText = (text: string) => {
-        commands.push(...this.encodeEscPosText(text));
-      };
-
-      commands.push(0x1B, 0x40);
-      commands.push(0x1B, 0x74, 0x00);
-      commands.push(0x1B, 0x21, 0x00);
-      commands.push(0x1B, 0x61, 0x01);
-      commands.push(0x1B, 0x45, 0x01);
-      pushText(`${truncateReceiptText(title.toUpperCase(), spec.maxInvoiceTitleChars)}\n`);
-      commands.push(0x1B, 0x45, 0x00);
+      const canvas = document.createElement('canvas');
+      canvas.width = spec.widthPx;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not create 2D canvas context');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#000000';
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'center';
+      ctx.font = '700 18px monospace, sans-serif';
+      ctx.fillText(truncateReceiptText(title.toUpperCase(), spec.maxInvoiceTitleChars), canvas.width / 2, 8);
+      ctx.font = '400 12px monospace, sans-serif';
       if (attendantName) {
-        pushText(`${formatServedByLine(attendantName, spec)}\n`);
+        ctx.fillText(formatServedByLine(attendantName, spec), canvas.width / 2, 32);
       }
-      pushText(`${rule}\n`);
-      commands.push(0x1B, 0x61, 0x00);
-
+      ctx.textAlign = 'left';
+      ctx.font = '500 14px monospace, sans-serif';
+      let y = attendantName ? 56 : 40;
       for (const line of lines) {
-        const chunks = wrapReceiptLine(line, spec.maxCols);
-        if (chunks.length === 0) {
-          pushText('\n');
-          continue;
-        }
-        for (const chunk of chunks) {
-          pushText(`${chunk}\n`);
+        for (const chunk of wrapReceiptLine(line, spec.maxCols)) {
+          if (y + lineHeight > height - 16) break;
+          ctx.fillText(chunk, 8, y);
+          y += lineHeight;
         }
       }
-
-      pushText('\n\n\n');
-      commands.push(0x1D, 0x56, 0x42, 0x00);
-      await this.writeEscPosData(new Uint8Array(commands));
+      await this.sendCanvasAsGsV0(canvas);
     });
 
-    // Keep success/failure logging shape used by the old raster path.
     const ok = result !== null;
-    if (ok) {
-      logReceiptPrint('success', {
-        mode: 'escpos_text_notepad',
-        invoiceName: title,
-        paperWidth: this.paperWidth,
-      });
-    } else {
-      logReceiptPrint('failure', {
-        mode: 'escpos_text_notepad',
-        reason: 'busy_or_aborted',
-        invoiceName: title,
-      });
-    }
+    logReceiptPrint(ok ? 'success' : 'failure', {
+      mode: 'raster_notepad',
+      invoiceName: title,
+      paperWidth: this.paperWidth,
+    });
     return ok;
   }
 
