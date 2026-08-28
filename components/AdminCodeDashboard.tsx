@@ -358,19 +358,19 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
         onPointerDown={(e) => {
           if (options?.stopCard) e.stopPropagation();
         }}
-        className={`inline-flex items-center gap-2 font-mono font-black tracking-widest text-left rounded-lg -mx-1 px-1 admin-interactive transition-colors active:opacity-70 ${
+        className={`inline-flex items-center gap-2 font-mono font-black text-left rounded-lg -mx-1 px-1 admin-interactive transition-colors active:opacity-70 ${
           isCopied ? 'text-emerald-500' : ''
         } ${sizeClass}`}
         aria-label={isCopied ? `Copied ${code}` : `Copy code ${code}`}
       >
         <span>{code}</span>
         {isCopied ? (
-          <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-500">
+          <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-emerald-500">
             <Icons.Check size={12} />
             Copied
           </span>
         ) : (
-          <span className="text-[10px] font-black uppercase tracking-wider opacity-40">Copy</span>
+          <span className="text-[10px] font-black uppercase opacity-40">Copy</span>
         )}
       </button>
     );
@@ -639,7 +639,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
             <ProfileAvatar profile={profile} size={40} isLight={isLight} />
           )}
           <div className="min-w-0">
-            <p className="text-xs font-black uppercase tracking-[0.3em] opacity-60">Admin profile</p>
+            <p className="text-xs font-black uppercase opacity-60">Admin profile</p>
             <p className="text-lg font-black truncate">{profile.name || ADMIN_PROFILE_NAME}</p>
           </div>
         </div>
@@ -674,7 +674,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               key={item.id}
               type="button"
               onClick={() => setTab(item.id)}
-              className={`admin-interactive px-5 py-2 rounded-full text-[11px] font-black uppercase tracking-[0.2em] inline-flex items-center gap-2 ${
+              className={`admin-interactive px-5 py-2 rounded-full text-[11px] font-black uppercase inline-flex items-center gap-2 ${
                 tab === item.id
                   ? 'bg-blue-500 text-white shadow-md'
                   : isLight
@@ -730,7 +730,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-[10px] font-black uppercase tracking-wider opacity-80">
+                      <p className="text-[10px] font-black uppercase opacity-80">
                         {busy ? 'Making code…' : 'New code'}
                       </p>
                       <p className="text-xl font-black mt-0.5">{copy.title}</p>
@@ -835,7 +835,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                       <p className="text-xs opacity-70 mt-2 line-clamp-2 italic">"{row.admin_memo}"</p>
                     )}
                     {tab !== 'active' && (
-                      <p className="text-[10px] uppercase tracking-widest opacity-45 mt-2 font-black">
+                      <p className="text-[10px] uppercase opacity-45 mt-2 font-black">
                         {row.status}
                       </p>
                     )}
@@ -849,7 +849,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                           disabled={actionCode === row.code}
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={(e) => { e.stopPropagation(); openApproveModal(row); }}
-                          className="admin-interactive px-3 py-1.5 rounded-lg bg-green-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
+                          className="admin-interactive px-3 py-1.5 rounded-lg bg-green-500 text-white text-[10px] font-black uppercase disabled:opacity-50"
                         >
                           Approve
                         </button>
@@ -858,7 +858,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                           disabled={actionCode === row.code}
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={(e) => { e.stopPropagation(); void runAction(row.code, () => adminDenyCode(adminToken, row.code)); }}
-                          className="admin-interactive px-3 py-1.5 rounded-lg bg-red-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
+                          className="admin-interactive px-3 py-1.5 rounded-lg bg-red-500 text-white text-[10px] font-black uppercase disabled:opacity-50"
                         >
                           Deny
                         </button>
@@ -873,7 +873,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                           e.stopPropagation();
                           void runAction(row.code, () => adminRevokeAccess(adminToken, row.code));
                         }}
-                        className="admin-interactive px-3 py-1.5 rounded-lg bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
+                        className="admin-interactive px-3 py-1.5 rounded-lg bg-amber-500 text-white text-[10px] font-black uppercase disabled:opacity-50"
                       >
                         Revoke
                       </button>
@@ -887,7 +887,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                           e.stopPropagation();
                           openGrantModal(row);
                         }}
-                        className="admin-interactive px-3 py-1.5 rounded-lg bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
+                        className="admin-interactive px-3 py-1.5 rounded-lg bg-blue-500 text-white text-[10px] font-black uppercase disabled:opacity-50"
                       >
                         Grant
                       </button>
@@ -997,7 +997,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setApproveTarget(null)}
-                className={`admin-interactive flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border ${isLight ? 'border-black/15' : 'border-white/15'}`}
+                className={`admin-interactive flex-1 py-2.5 rounded-xl text-xs font-black uppercase border ${isLight ? 'border-black/15' : 'border-white/15'}`}
               >
                 Cancel
               </button>
@@ -1005,7 +1005,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 type="button"
                 disabled={actionCode === approveTarget.code}
                 onClick={() => void confirmApprove()}
-                className="admin-interactive flex-1 py-2.5 rounded-xl bg-green-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
+                className="admin-interactive flex-1 py-2.5 rounded-xl bg-green-500 text-white text-xs font-black uppercase disabled:opacity-50"
               >
                 Approve
               </button>
@@ -1101,7 +1101,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setGrantTarget(null)}
-                className={`admin-interactive flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border ${isLight ? 'border-black/15' : 'border-white/15'}`}
+                className={`admin-interactive flex-1 py-2.5 rounded-xl text-xs font-black uppercase border ${isLight ? 'border-black/15' : 'border-white/15'}`}
               >
                 Cancel
               </button>
@@ -1109,7 +1109,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 type="button"
                 disabled={actionCode === grantTarget.code}
                 onClick={() => void confirmGrantAccess()}
-                className="admin-interactive flex-1 py-2.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
+                className="admin-interactive flex-1 py-2.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase disabled:opacity-50"
               >
                 Grant
               </button>
@@ -1144,11 +1144,11 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
             </div>
 
             {renderCopyableCode(detailRow.code, 'text-2xl')}
-            <p className="text-[10px] uppercase tracking-widest opacity-50 font-black mt-1">{detailRow.status}</p>
+            <p className="text-[10px] uppercase opacity-50 font-black mt-1">{detailRow.status}</p>
 
             {(detailRow.business_name || detailRow.business_phone || detailRow.business_address) && (
               <div className={`admin-section-enter mt-4 rounded-xl border px-4 py-3 space-y-2 ${isLight ? 'bg-emerald-50 border-emerald-200/80' : 'bg-emerald-500/10 border-emerald-400/25'}`} style={{ animationDelay: '60ms' }}>
-                <p className="text-[10px] font-black uppercase tracking-widest opacity-55">Business info</p>
+                <p className="text-[10px] font-black uppercase opacity-55">Business info</p>
                 {detailRow.business_name && (
                   <p className="text-sm font-black">{detailRow.business_name}</p>
                 )}
@@ -1163,7 +1163,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
 
             {detailRow.user_id && (
               <div className={`admin-section-enter mt-4 rounded-xl border px-4 py-3 ${isLight ? 'bg-zinc-50 border-zinc-200' : 'bg-white/5 border-white/10'}`} style={{ animationDelay: '120ms' }}>
-                <p className="text-[10px] font-black uppercase tracking-widest opacity-55 mb-3">
+                <p className="text-[10px] font-black uppercase opacity-55 mb-3">
                   Password history
                 </p>
                 {passwordHistoryLoading ? (
@@ -1194,16 +1194,16 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                             className="min-w-0 flex-1 text-left"
                             aria-label={`Copy password ${entry.password_value}`}
                           >
-                            <span className="font-mono font-black text-sm tracking-widest block truncate transition-opacity duration-200">
+                            <span className="font-mono font-black text-sm block truncate transition-opacity duration-200">
                               {isRevealed ? entry.password_value : maskPassword(entry.password_value)}
                             </span>
-                            <span className="text-[10px] opacity-50 font-bold uppercase tracking-wider">
+                            <span className="text-[10px] opacity-50 font-bold uppercase ">
                               {entry.source.replace('_', ' ')} · {formatWhen(entry.created_at)}
                             </span>
                           </button>
                           <div className="flex items-center gap-1.5 shrink-0">
                             {entry.is_current && (
-                              <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500">
+                              <span className="text-[9px] font-black uppercase text-emerald-500">
                                 Current
                               </span>
                             )}
@@ -1278,7 +1278,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
               type="button"
               disabled={savingMemo}
               onClick={() => void saveDetailMemo()}
-              className={`admin-interactive w-full mt-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider ${isLight ? 'bg-black text-white' : 'bg-white text-black'} disabled:opacity-50`}
+              className={`admin-interactive w-full mt-3 py-2.5 rounded-xl text-xs font-black uppercase ${isLight ? 'bg-black text-white' : 'bg-white text-black'} disabled:opacity-50`}
             >
               {savingMemo ? 'Saving…' : 'Save memo'}
             </button>
@@ -1292,7 +1292,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                     adminRevokeAccess(adminToken, detailRow.code)
                   )
                 }
-                className="admin-interactive w-full mt-2 py-2.5 rounded-xl bg-amber-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
+                className="admin-interactive w-full mt-2 py-2.5 rounded-xl bg-amber-500 text-white text-xs font-black uppercase disabled:opacity-50"
               >
                 Revoke access
               </button>
@@ -1302,7 +1302,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 type="button"
                 disabled={actionCode === detailRow.code}
                 onClick={() => openGrantModal(detailRow)}
-                className="admin-interactive w-full mt-2 py-2.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
+                className="admin-interactive w-full mt-2 py-2.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase disabled:opacity-50"
               >
                 Grant access
               </button>
@@ -1311,7 +1311,7 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
             <button
               type="button"
               onClick={closeDetailModal}
-              className={`admin-interactive w-full mt-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border ${
+              className={`admin-interactive w-full mt-4 py-2.5 rounded-xl text-xs font-black uppercase border ${
                 isLight ? 'border-black/15 hover:bg-black/5' : 'border-white/15 hover:bg-white/5'
               }`}
             >

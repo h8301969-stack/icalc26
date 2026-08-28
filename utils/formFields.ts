@@ -1,9 +1,9 @@
 /** Shared form typography — matches admin portal field uniformity. */
 
 export const FORM_FIELD_LABEL =
-  'app-subtext text-[10px] font-black uppercase tracking-widest opacity-60 block mb-1.5';
+  'app-subtext text-[10px] font-black uppercase opacity-60 block mb-1.5';
 
-export const FORM_SECTION_TITLE = 'text-sm font-black uppercase tracking-[0.2em]';
+export const FORM_SECTION_TITLE = 'text-sm font-black uppercase ';
 
 export const formFieldTheme = (isLight: boolean): string =>
   isLight
@@ -17,7 +17,7 @@ export const formInputClass = (
   const size = options?.size ?? 'md';
   const padding = size === 'lg' ? 'px-5 py-4 text-base' : 'px-4 py-3 text-sm';
   const radius = size === 'lg' ? 'rounded-2xl' : 'rounded-xl';
-  const weight = options?.mono ? 'font-mono font-black tracking-widest' : 'font-bold';
+  const weight = options?.mono ? 'font-mono font-black ' : 'font-bold';
   const extra = options?.className?.trim() ?? '';
   const themeClass = isLight ? 'app-input app-input--light' : 'app-input app-input--dark';
   return [

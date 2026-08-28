@@ -59,7 +59,6 @@ import {
 } from './utils/expressionDisplay';
 import { CartLineItem, InvoiceActionLog, InvoicePrintLog, SavedInvoice } from './types';
 import { usePOSDashboardData } from './hooks/usePOSDashboardData';
-import { clearAppSessionData, isCloudUserAccount } from './utils/freshAppSession';
 import { mergeAccountProfiles } from './utils/supabaseAuth';
 import {
   applyShopTelegramLocally,
@@ -163,6 +162,9 @@ const AppContent: React.FC = () => {
     replaceInvoiceHistory,
     getInvoiceExpression,
     getSavedInvoices,
+    removeInvoice,
+    undoRemoveInvoice,
+    canUndoRemove,
   } = useInvoice(expression, items, settings.currency, activeProfileName);
 
   // Auto 30d local / Telegram archive — no Settings UI; runs in background when linked.
@@ -445,13 +447,9 @@ const AppContent: React.FC = () => {
   }, [account, settings.profiles, settings.activeProfileId, syncProfiles, updateSettings]);
 
   const handleAuthSuccess = useCallback((acc: NonNullable<typeof account>) => {
-    // Cloud accounts: do NOT wipe local React state here. Clearing used to race an empty
-    // push to Supabase and made every re-login look like a brand-new account.
-    // useSupabaseDataSync hydrates from the same user_id database after auth.
-    if (isCloudUserAccount(acc.id)) {
-      // Drop stale guest/local storage keys only; hydrate replaces in-memory state.
-      clearAppSessionData();
-    }
+    // Never wipe inventory / invoices on login — that cleared localStorage while React
+    // state stayed briefly, then the next cold start loaded empty shelves.
+    // Hydrate merges remote into local (and must not replace with empty).
     const mergedProfiles = mergeAccountProfiles(acc.profiles, settings.profiles ?? []);
     const nextActive = mergedProfiles.some((p) => p.id === acc.activeProfileId)
       ? acc.activeProfileId
@@ -1284,7 +1282,7 @@ const AppContent: React.FC = () => {
             {showLiveResult && (
               <div
                 className={`
-                  font-num tracking-[-0.04em] leading-none truncate max-w-full
+                  font-num leading-none truncate max-w-full
                   ${isLight ? 'live-result-green-light' : 'live-result-green'}
                   animate-live-glow-pulse animate-live-spring-loop
                 `}
@@ -1414,7 +1412,7 @@ const AppContent: React.FC = () => {
                         fontSize: `${displayFontSize}px`,
                         color: isLight ? '#000000' : '#ffffff',
                         transition: 'font-size 0.2s ease-out',
-                        letterSpacing: '-0.03em',
+                        letterSpacing: 0,
                         lineHeight: expressionLineHeight,
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-all',
@@ -1613,6 +1611,10 @@ const AppContent: React.FC = () => {
         businessName={settings.businessName ?? ''}
         businessPhone={settings.businessPhone ?? ''}
         businessAddress={settings.businessAddress ?? ''}
+        getSavedInvoices={getSavedInvoices}
+        onRemoveInvoice={removeInvoice}
+        onUndoRemoveInvoice={undoRemoveInvoice}
+        canUndoRemove={canUndoRemove}
       />
       <POSDashboard
         history={history}

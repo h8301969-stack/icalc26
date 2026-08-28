@@ -575,7 +575,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <button
             type="button"
             onClick={() => setShowPasswordPanel(true)}
-            className={`settings-security__btn w-full py-3.5 px-4 rounded-xl text-sm font-black tracking-tight active:scale-[0.98] transition-all ${
+            className={`settings-security__btn w-full py-3.5 px-4 rounded-xl text-sm font-black active:scale-[0.98] transition-all ${
               isLight
                 ? 'bg-blue-500 text-white shadow-[0_8px_22px_rgba(59,130,246,0.35)]'
                 : 'bg-blue-500/90 text-white shadow-[0_10px_28px_rgba(255,255,255,0.22)]'
@@ -696,7 +696,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           paddingBottom: '0.75rem',
         }}
       >
-        <h2 id="settings-title" className="settings-panel-title text-2xl font-black tracking-tight drop-shadow-sm min-w-0">
+        <h2 id="settings-title" className="settings-panel-title text-2xl font-black drop-shadow-sm min-w-0">
           Settings
         </h2>
         <div className="flex items-center gap-2 shrink-0">
@@ -809,7 +809,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <button
               type="button"
               onClick={() => setIsProfilePickerOpen(true)}
-              className="text-xl font-black tracking-tight lowercase active:opacity-60 transition-opacity"
+              className="text-xl font-black lowercase active:opacity-60 transition-opacity"
               aria-label={`Switch profile, current: ${activeProfile?.name ?? 'none'}`}
             >
               {activeProfile?.name ?? 'fred'}
@@ -1119,7 +1119,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => void refreshPrinterState()}
-                className={`text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg active:scale-95 ${
+                className={`text-[10px] font-black uppercase px-3 py-1.5 rounded-lg active:scale-95 ${
                   isLight ? 'bg-zinc-100 text-black' : 'bg-white/10 text-white'
                 }`}
               >
@@ -1192,7 +1192,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               type="button"
               onClick={() => void handleUsbConnect()}
               disabled={isScanning || connectingId !== null || !usbSupport.supported}
-              className="w-full py-3.5 rounded-xl bg-violet-600 text-white text-xs font-black uppercase tracking-widest hover:bg-violet-700 active:scale-95 disabled:opacity-50 transition-all shadow-md"
+              className="w-full py-3.5 rounded-xl bg-violet-600 text-white text-xs font-black uppercase hover:bg-violet-700 active:scale-95 disabled:opacity-50 transition-all shadow-md"
             >
               {isScanning ? 'Connecting...' : 'Connect USB Printer'}
             </button>
@@ -1200,7 +1200,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <button
               onClick={handleScanAndConnect}
               disabled={isScanning || connectingId !== null || !bluetoothSupport.supported}
-              className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all shadow-md"
+              className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all shadow-md"
             >
               {isScanning ? 'Searching...' : knownPrinters.length > 0 ? 'Scan Bluetooth printer' : 'Scan & Connect Bluetooth'}
             </button>
@@ -1209,7 +1209,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               type="button"
               onClick={() => setShowWifiForm((v) => !v)}
               disabled={isScanning || connectingId !== null}
-              className="w-full py-3.5 rounded-xl bg-teal-600 text-white text-xs font-black uppercase tracking-widest hover:bg-teal-700 active:scale-95 disabled:opacity-50 transition-all shadow-md"
+              className="w-full py-3.5 rounded-xl bg-teal-600 text-white text-xs font-black uppercase hover:bg-teal-700 active:scale-95 disabled:opacity-50 transition-all shadow-md"
             >
               {showWifiForm ? 'Hide WiFi form' : 'Add WiFi / Network Printer'}
             </button>
@@ -1264,7 +1264,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             )}
 
             <details className={`rounded-xl border px-3 py-2 ${isLight ? 'border-zinc-200' : 'border-white/10'}`}>
-              <summary className={`text-[10px] font-black uppercase tracking-wider cursor-pointer ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+              <summary className={`text-[10px] font-black uppercase cursor-pointer ${isLight ? 'text-black/60' : 'text-white/60'}`}>
                 Print requirements
               </summary>
               <ul className={`mt-2 list-disc pl-4 space-y-1 text-[10px] font-bold ${isLight ? 'text-black/65' : 'text-white/65'}`}>
@@ -1277,7 +1277,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             {printerName && (
               <button
                 onClick={handlePrintReceipt}
-                className={`w-full py-3 rounded-xl border text-xs font-black uppercase tracking-widest transition-all active:scale-95 ${
+                className={`w-full py-3 rounded-xl border text-xs font-black uppercase transition-all active:scale-95 ${
                   printSuccess
                     ? 'bg-green-500 text-white border-green-500'
                     : (isLight ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-900 border-white')
@@ -1372,7 +1372,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               type="button"
               onClick={() => void handleChangePasswordSubmit()}
               disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}
-              className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
+              className={`w-full py-3 rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
                 isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
               }`}
             >
@@ -1401,7 +1401,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <button
               type="button"
               onClick={() => setShowSignOutConfirm(false)}
-              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
+              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all border ${
                 isLight ? 'border-zinc-200 text-zinc-700' : 'border-white/15 text-white/80'
               }`}
             >
@@ -1414,7 +1414,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 handleClose();
                 onLogout?.();
               }}
-              className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all bg-red-500 text-white"
+              className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all bg-red-500 text-white"
             >
               Sign out
             </button>

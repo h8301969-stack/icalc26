@@ -136,7 +136,7 @@ const INVENTORY_SORT_OPTIONS: { id: SortOption; label: string }[] = [
 
 /** Matches FluidSegmentControl / wholesale toggle outer height (h-10). */
 const HUB_BACK_BTN =
-  'inline-flex items-center justify-center gap-1.5 h-10 px-3 rounded-[14px] font-semibold text-[11px] tracking-normal uppercase active:scale-95 transition-all duration-150';
+  'inline-flex items-center justify-center gap-1.5 h-10 px-3 rounded-[14px] font-semibold text-[11px] uppercase active:scale-95 transition-all duration-150';
 
 const HubBackChevron = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -312,7 +312,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [sortOption, setSortOption] = useState<SortOption>('a-z');
   const [inventoryLayout, setInventoryLayout] = useState<'grid' | 'list'>('grid');
 
-  const [searchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
   useEffect(() => {
@@ -977,7 +977,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     }
                   }}
                   aria-label="Rename wholesale list"
-                  className={`relative z-10 flex-1 min-w-0 mx-0.5 px-2 py-2 rounded-[11px] font-black text-[10px] uppercase tracking-wider outline-none border text-center ${
+                  className={`relative z-10 flex-1 min-w-0 mx-0.5 px-2 py-2 rounded-[11px] font-black text-[10px] uppercase outline-none border text-center ${
                     isLight
                       ? 'bg-white border-zinc-300 text-zinc-900'
                       : 'bg-black/40 border-white/20 text-white'
@@ -1013,7 +1013,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   setWholesaleHoldMenuPos(null);
                 }}
                 onContextMenu={(e) => e.preventDefault()}
-                className={`relative z-10 flex-1 min-w-0 px-2 py-2 rounded-[11px] font-semibold text-[11px] tracking-normal truncate select-none touch-manipulation fluid-segment-btn ${
+                className={`relative z-10 flex-1 min-w-0 px-2 py-2 rounded-[11px] font-semibold text-[11px] truncate select-none touch-manipulation fluid-segment-btn ${
                   isActive
                     ? 'fluid-segment-btn--active text-white'
                     : `fluid-segment-btn--idle ${isLight ? 'text-zinc-700' : 'text-white/85'}`
@@ -1743,7 +1743,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       >
         <HubBackChevron /> Back
       </button>
-      <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-1 ${textColorClass}`}>New Item</h3>
+      <h3 className={`pos-dashboard-section-title text-4xl px-1 ${textColorClass}`}>New Item</h3>
       <p className={`text-sm px-1 -mt-4 text-red-500 font-bold`}>
         Unidentified price {formatPriceLabel(namingUnidentified!.price, currency)}
         {namingUnidentified!.quantity > 1 ? ` × ${namingUnidentified!.quantity}` : ''}
@@ -1778,7 +1778,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           type="button"
           onClick={handleSaveUnidentifiedItem}
           disabled={!newItemName.trim()}
-          className="w-full py-6 rounded-2xl text-black font-black uppercase tracking-[0.4em] text-[11px] active:scale-95 shadow-2xl transition-all disabled:opacity-40"
+          className="w-full py-6 rounded-2xl text-black font-black uppercase text-[11px] active:scale-95 shadow-2xl transition-all disabled:opacity-40"
           style={{ backgroundColor: accentColor }}
         >
           Add Item & Update Log
@@ -1811,7 +1811,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         />
       </div>
       <div className="min-w-0 flex-1">
-        <p className={`text-[12px] font-black tracking-tight truncate ${textColorClass}`}>{item.name}</p>
+        <p className={`text-[12px] font-black truncate ${textColorClass}`}>{item.name}</p>
         <p className={`app-subtext text-[10px] opacity-55 ${cardSubtextMutedClass}`} style={{ letterSpacing: 0 }}>
           Stock {item.stock}
           {(item.grams ?? 0) > 0 ? ` · ${item.grams}g` : ''}
@@ -1856,7 +1856,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       </div>
       <div className="px-0.5 min-w-0">
         <p
-          className={`text-[11px] font-black tracking-tight leading-tight truncate ${textColorClass}`}
+          className={`text-[11px] font-black leading-tight truncate ${textColorClass}`}
           title={item.name}
         >
           {item.name}
@@ -1934,13 +1934,13 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       e.currentTarget.blur();
                     }
                   }}
-                  className={`pos-dashboard-section-title text-4xl tracking-tighter leading-tight w-full min-w-0 bg-transparent border-b-2 outline-none ${textColorClass} ${
+                  className={`pos-dashboard-section-title text-4xl leading-tight w-full min-w-0 bg-transparent border-b-2 outline-none ${textColorClass} ${
                     isLight ? 'border-black/15' : 'border-white/20'
                   }`}
                   aria-label={`Edit name for ${item.name}`}
                 />
               ) : (
-                <h3 className="pos-dashboard-section-title text-4xl tracking-tighter leading-tight">{item.name}</h3>
+                <h3 className="pos-dashboard-section-title text-4xl leading-tight">{item.name}</h3>
               )}
               {item.category ? (
                 <span className={`px-5 py-2 rounded-2xl pos-subtext text-[10px] font-black shrink-0 ${cardSubtextClass} ${isLight ? 'bg-zinc-100' : 'bg-white/10'}`}>{item.category}</span>
@@ -2068,9 +2068,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     onKeyDown={canViewTransactions ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.onClick!(); } } : undefined}
                     aria-label={canViewTransactions ? `${card.label}${card.hint ? `, ${card.hint}` : ''}` : `${card.label}, admin only`}
                   >
-                    <p className={`pos-subtext text-[9px] font-black mb-2 tracking-normal ${cardSubtextMutedClass}`}>{card.label}</p>
+                    <p className={`pos-subtext text-[9px] font-black mb-2 ${cardSubtextMutedClass}`}>{card.label}</p>
                     <p
-                      className="text-2xl font-black tracking-normal"
+                      className="text-2xl font-black "
                       style={{ color: canViewTransactions ? accentColor : undefined }}
                     >
                       {canViewTransactions ? card.val : '*****'}
@@ -2095,7 +2095,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   </div>
                   <div className="space-y-1 relative z-10 translate-y-2">
                     <div className="flex items-end justify-between">
-                      <div className="text-7xl font-black tracking-tighter text-white drop-shadow-[0_8px_24px_rgba(0,0,0,0.7)]">{stats.stockLevel}%</div>
+                      <div className="text-7xl font-black text-white drop-shadow-[0_8px_24px_rgba(0,0,0,0.7)]">{stats.stockLevel}%</div>
                       <div className="text-right pb-3">
                         <p className={`pos-subtext text-[9px] font-black mb-1.5 ${heroSubtextClass}`}>Low stock</p>
                         <div className={`pos-subtext px-4 py-1.5 rounded-full text-[9px] font-black backdrop-blur-3xl shadow-2xl ${stats.criticalItems > 0 ? 'bg-red-500/80 text-white' : 'bg-green-500/80 text-white'}`}>
@@ -2199,7 +2199,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <HubBackChevron /> Hub
               </button>
-              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Monthly Revenue</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl px-2 ${textColorClass}`}>Monthly Revenue</h3>
               <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.monthlyRev.toFixed(2))} this month</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
@@ -2215,7 +2215,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                           <div className={`pos-subtext text-[10px] font-black mb-0.5 ${statDetailTextClass}`}>
                             {row.kind === 'invoice' ? 'Invoice' : 'Sale'}
                           </div>
-                          <div className={`text-lg font-black tracking-tight truncate ${statDetailTextClass}`}>{row.name}</div>
+                          <div className={`text-lg font-black truncate ${statDetailTextClass}`}>{row.name}</div>
                         </div>
                         <div className="text-right shrink-0">
                           <div className="text-base font-black" style={{ color: accentColor }}>{formatCurrency(row.total.toFixed(2))}</div>
@@ -2251,7 +2251,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <HubBackChevron /> Hub
               </button>
-              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Daily Sales</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl px-2 ${textColorClass}`}>Daily Sales</h3>
               <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatCurrency(stats.dailyRev.toFixed(2))} · {formatBusinessDayLabel(actionLogDayKey)}</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
@@ -2267,7 +2267,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                           <div className={`pos-subtext text-[10px] font-black mb-0.5 ${statDetailTextClass}`}>
                             {row.kind === 'invoice' ? 'Invoice' : 'Sale'}
                           </div>
-                          <div className={`text-lg font-black tracking-tight truncate ${statDetailTextClass}`}>{row.name}</div>
+                          <div className={`text-lg font-black truncate ${statDetailTextClass}`}>{row.name}</div>
                         </div>
                         <div className="text-right shrink-0">
                           <div className="text-base font-black" style={{ color: accentColor }}>{formatCurrency(row.total.toFixed(2))}</div>
@@ -2303,7 +2303,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <HubBackChevron /> Hub
               </button>
-              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Customers</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl px-2 ${textColorClass}`}>Customers</h3>
               <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>Invoice names • print count</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
@@ -2314,7 +2314,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       key={customer.name}
                       className={`px-8 py-7 flex items-center justify-between gap-4 ${idx !== customerPrintCounts.length - 1 ? `border-b ${statDetailBorderClass}` : ''}`}
                     >
-                      <div className={`font-black tracking-tight text-lg ${statDetailTextClass}`}>{customer.name}</div>
+                      <div className={`font-black text-lg ${statDetailTextClass}`}>{customer.name}</div>
                       <div className="text-right shrink-0">
                         <div className={`pos-subtext text-[10px] font-black ${statDetailTextClass}`}>Printed</div>
                         <div className="text-2xl font-black" style={{ color: accentColor }}>{customer.printCount}</div>
@@ -2338,7 +2338,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <HubBackChevron /> Hub
               </button>
-              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Invoices</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl px-2 ${textColorClass}`}>Invoices</h3>
               <p className={`pos-subtext text-[10px] px-1 -mt-4 ${cardSubtextMutedClass}`}>{formatBusinessDayLabel(actionLogDayKey)}</p>
               <div className={`rounded-2xl overflow-hidden relative ${statDetailCardClass}`}>
 
@@ -2354,7 +2354,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                           <div className={`pos-subtext text-[10px] font-black mb-0.5 ${statDetailTextClass}`}>
                             {card.isCurrent ? 'Current' : 'Saved'}
                           </div>
-                          <div className={`text-lg font-black tracking-tight truncate ${statDetailTextClass}`}>{card.name}</div>
+                          <div className={`text-lg font-black truncate ${statDetailTextClass}`}>{card.name}</div>
                         </div>
                         <div className="text-right shrink-0">
                           <div className={`pos-subtext text-[10px] font-black ${statDetailTextClass}`}>Total</div>
@@ -2399,24 +2399,43 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 />
               )}
               <div className={`sticky top-0 z-50 -mx-4 px-4 pt-2 pb-4 mb-2 backdrop-blur-3xl ${isLight ? 'bg-[#f2f2f7]/92' : 'bg-black/70'}`}>
-                {/* Top row: Hub + centered title + add */}
-                <div className="relative flex items-center justify-between gap-2 mb-3 min-h-11">
+                {/* Top row: Hub + search + add — title sits below */}
+                <div className="flex items-center gap-2 mb-2 min-h-11">
                   <button
-                    onClick={() => { setSelectedItem(null); setInventoryExpanded(false); }}
+                    onClick={() => { setSelectedItem(null); setInventoryExpanded(false); setSearchQuery(''); }}
                     aria-label="Back to Vision Hub"
-                    className={`relative z-10 ${HUB_BACK_BTN} ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'}`}
+                    className={`relative z-10 shrink-0 ${HUB_BACK_BTN} ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'}`}
                   >
                     <HubBackChevron /> Hub
                   </button>
-                  <h3
-                    className={`pointer-events-none absolute inset-x-0 top-[38%] -translate-y-1/2 text-center pos-dashboard-section-title text-[1.5rem] sm:text-[1.8rem] leading-none ${textColorClass}`}
-                  >
-                    Assets Hub
-                  </h3>
+                  <label className="relative flex-1 min-w-0">
+                    <span className="sr-only">Search assets</span>
+                    <span
+                      className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${
+                        isLight ? 'text-black/35' : 'text-white/40'
+                      }`}
+                      aria-hidden
+                    >
+                      <Icons.Search size={14} />
+                    </span>
+                    <input
+                      type="search"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search items…"
+                      className={`w-full h-10 rounded-full pl-9 pr-3 text-sm font-semibold outline-none border ${
+                        isLight
+                          ? 'bg-white text-black border-black/8 placeholder:text-black/35 shadow-sm'
+                          : 'bg-white/10 text-white border-white/12 placeholder:text-white/35'
+                      }`}
+                      style={{ letterSpacing: 0 }}
+                      aria-label="Search inventory items"
+                    />
+                  </label>
                   <button
                     type="button"
                     onClick={toggleAssetMenu}
-                    className="relative z-10 inline-flex items-center justify-center h-10 w-10 rounded-full shadow-2xl text-white active:scale-90 transition-all"
+                    className="relative z-10 shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-full shadow-2xl text-white active:scale-90 transition-all"
                     style={{ backgroundColor: accentColor }}
                     aria-label="Add asset actions"
                     aria-expanded={showAssetMenu}
@@ -2426,21 +2445,60 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   </button>
                 </div>
 
+                <h3
+                  className={`text-center pos-dashboard-section-title text-[1.35rem] sm:text-[1.6rem] leading-none mb-3 ${textColorClass}`}
+                >
+                  Assets Hub
+                </h3>
+
                 {renderWholesaleToggleBar()}
 
-                <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-                  <FluidSegmentControl
-                    isLight={isLight}
-                    size="sm"
-                    variant="slide"
-                    ariaLabel="Inventory layout"
-                    value={inventoryLayout}
-                    onChange={(id) => setInventoryLayout(id as 'grid' | 'list')}
-                    options={[
-                      { id: 'grid', label: 'Grid' },
-                      { id: 'list', label: 'List' },
-                    ]}
-                  />
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  {/* Distinct icon pill toggle — not the same control as Sort */}
+                  <div
+                    role="radiogroup"
+                    aria-label="Inventory layout"
+                    className={`inline-flex items-center gap-1 p-1 rounded-2xl border ${
+                      isLight ? 'bg-white border-black/8 shadow-sm' : 'bg-white/8 border-white/12'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={inventoryLayout === 'grid'}
+                      onClick={() => setInventoryLayout('grid')}
+                      className={`h-9 w-11 rounded-xl inline-flex items-center justify-center transition-all active:scale-95 ${
+                        inventoryLayout === 'grid'
+                          ? isLight
+                            ? 'bg-zinc-900 text-white shadow'
+                            : 'bg-white text-black shadow'
+                          : isLight
+                            ? 'text-black/45 hover:bg-black/5'
+                            : 'text-white/45 hover:bg-white/8'
+                      }`}
+                      aria-label="Grid view"
+                    >
+                      <Icons.Grid size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={inventoryLayout === 'list'}
+                      onClick={() => setInventoryLayout('list')}
+                      className={`h-9 w-11 rounded-xl inline-flex items-center justify-center transition-all active:scale-95 ${
+                        inventoryLayout === 'list'
+                          ? isLight
+                            ? 'bg-zinc-900 text-white shadow'
+                            : 'bg-white text-black shadow'
+                          : isLight
+                            ? 'text-black/45 hover:bg-black/5'
+                            : 'text-white/45 hover:bg-white/8'
+                      }`}
+                      aria-label="List view"
+                    >
+                      <Icons.List size={16} />
+                    </button>
+                  </div>
                   <FluidSegmentControl
                     isLight={isLight}
                     size="sm"
@@ -2473,7 +2531,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               ) : (
                 <div className={`p-12 text-center rounded-2xl ${isLight ? 'bg-white/70' : 'bg-white/5'}`}>
                   <p className={`pos-subtext text-[10px] font-black ${isLight ? 'text-black/60' : 'text-white/60'}`}>
-                    Nothing in {activeWholesaleName} yet. Tap + to add something.
+                    {searchQuery.trim()
+                      ? `No items match “${searchQuery.trim()}”.`
+                      : `Nothing in ${activeWholesaleName} yet. Tap + to add something.`}
                   </p>
                 </div>
               )}
@@ -2488,7 +2548,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <HubBackChevron /> Back
               </button>
-              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Transaction Archive</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl px-2 ${textColorClass}`}>Transaction Archive</h3>
 
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3 pb-20" role="list" aria-label="Inventory items">
                 {filteredInventory.map((item, idx) => (
@@ -2507,7 +2567,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       <div className="absolute bottom-3 left-3 right-3 flex flex-col pointer-events-none" aria-hidden="true">
                          <div className="flex flex-col items-start gap-0.5">
                            <div className="flex-1 min-w-0">
-                             <h4 className="text-[11px] font-black tracking-tight leading-tight truncate text-white">{item.name}</h4>
+                             <h4 className="text-[11px] font-black leading-tight truncate text-white">{item.name}</h4>
                              {item.category ? (
                     <p className={`pos-subtext text-[8px] font-black truncate ${heroSubtextClass}`}>{item.category}</p>
                   ) : null}
@@ -2535,7 +2595,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               >
                 <HubBackChevron /> Back
               </button>
-              <h3 className={`pos-dashboard-section-title text-4xl tracking-tighter px-2 ${textColorClass}`}>Transaction Archive</h3>
+              <h3 className={`pos-dashboard-section-title text-4xl px-2 ${textColorClass}`}>Transaction Archive</h3>
               <div className={`rounded-2xl overflow-hidden ${levitateClass}`} role="list" aria-label="Transaction records">
                 {[...paidInvoiceCards]
                   .sort((a, b) => b.latestTimestamp - a.latestTimestamp)
@@ -2556,7 +2616,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                         className={`p-10 flex flex-col gap-2 ${idx !== list.length - 1 ? 'border-b border-zinc-100 dark:border-white/5' : ''}`}
                       >
                         <div className="flex justify-between items-start">
-                          <span className={`text-xl font-black tracking-tight ${textColorClass}`}>{card.name}</span>
+                          <span className={`text-xl font-black ${textColorClass}`}>{card.name}</span>
                           <span className="text-xl font-black" style={{ color: accentColor }}>{formatCurrency(card.total)}</span>
                         </div>
                         <div className={`flex justify-between items-center pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>
@@ -2581,7 +2641,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       {/* Asset sheet — iOS-like centered spring sheet (same form for + and action-log add) */}
       <MorphPresence show={showAssetMenu}>
         {(visible) => {
-          const fieldLabelClass = `pos-subtext text-[9px] font-black uppercase tracking-widest ${
+          const fieldLabelClass = `pos-subtext text-[9px] font-black uppercase ${
             isLight ? 'text-black/50' : 'text-white/50'
           }`;
           return (
@@ -2664,7 +2724,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => void handleChooseItemPhoto()}
-                        className={`flex-1 min-w-0 py-2.5 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider active:scale-[0.98] ${
+                        className={`flex-1 min-w-0 py-2.5 px-3 rounded-xl text-[10px] font-black uppercase active:scale-[0.98] ${
                           isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                         }`}
                       >
@@ -2688,7 +2748,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     <span className={fieldLabelClass}>Grams</span>
                     <input type="number" min={0} step="0.01" value={newItemGrams} onChange={(e) => setNewItemGrams(e.target.value)} placeholder="0" aria-label="Grams" className={formInputClass(isLight, { size: 'md' })} />
                   </label>
-                  <button type="button" onClick={handleAddItem} disabled={!newItemName.trim()} className="w-full py-3 rounded-xl text-black font-black uppercase tracking-[0.2em] text-[10px] active:scale-95 transition-all disabled:opacity-40" style={{ backgroundColor: accentColor }}>
+                  <button type="button" onClick={handleAddItem} disabled={!newItemName.trim()} className="w-full py-3 rounded-xl text-black font-black uppercase text-[10px] active:scale-95 transition-all disabled:opacity-40" style={{ backgroundColor: accentColor }}>
                     Save item
                   </button>
                 </div>
@@ -2754,7 +2814,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     type="button"
                     onClick={handleRestockExisting}
                     disabled={!restockItemId || ((parseFloat(restockQty) || 0) <= 0 && (parseFloat(restockGrams) || 0) <= 0)}
-                    className="w-full py-3 rounded-xl text-black font-black uppercase tracking-[0.2em] text-[10px] active:scale-95 transition-all disabled:opacity-40"
+                    className="w-full py-3 rounded-xl text-black font-black uppercase text-[10px] active:scale-95 transition-all disabled:opacity-40"
                     style={{ backgroundColor: accentColor }}
                   >
                     Apply restock
@@ -2793,7 +2853,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               type="button"
               role="menuitem"
               onClick={() => wholesaleHoldMenuId && beginRenameWholesale(wholesaleHoldMenuId)}
-              className={`w-full text-left px-3 py-2.5 rounded-lg text-[11px] font-black uppercase tracking-wider ${
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-[11px] font-black uppercase ${
                 isLight ? 'hover:bg-zinc-100 text-zinc-900' : 'hover:bg-white/10 text-white'
               }`}
             >
@@ -2807,7 +2867,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 closeWholesaleHoldMenu();
                 setWholesaleActionError(null);
               }}
-              className="w-full text-left px-3 py-2.5 rounded-lg text-[11px] font-black uppercase tracking-wider text-red-500 hover:bg-red-500/10"
+              className="w-full text-left px-3 py-2.5 rounded-lg text-[11px] font-black uppercase text-red-500 hover:bg-red-500/10"
             >
               Remove
             </button>
@@ -2835,7 +2895,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               visible ? 'morph-panel--in' : 'morph-panel--out'
             } ${isLight ? 'bg-white border-zinc-200 text-zinc-900' : 'bg-zinc-900 border-white/10 text-white'}`}
           >
-            <h4 id="wholesale-delete-title" className="text-sm font-black tracking-tight mb-2">
+            <h4 id="wholesale-delete-title" className="text-sm font-black mb-2">
               Do you want to delete?
             </h4>
             <p className={`text-[11px] font-bold mb-4 ${isLight ? 'text-black/55' : 'text-white/55'}`}>
@@ -2852,7 +2912,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                   setWholesaleDeleteConfirmId(null);
                   setWholesaleActionError(null);
                 }}
-                className={`flex-1 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider ${
+                className={`flex-1 py-2.5 rounded-xl text-[11px] font-black uppercase ${
                   isLight ? 'bg-zinc-100 text-zinc-800' : 'bg-white/10 text-white'
                 }`}
               >
@@ -2861,7 +2921,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
               <button
                 type="button"
                 onClick={confirmArchiveWholesale}
-                className="flex-1 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider bg-red-500 text-white"
+                className="flex-1 py-2.5 rounded-xl text-[11px] font-black uppercase bg-red-500 text-white"
               >
                 Yes
               </button>
@@ -2898,7 +2958,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             >
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div>
-                  <h3 id="wholesale-archive-title" className={`pos-dashboard-section-title text-2xl tracking-tighter ${textColorClass}`}>
+                  <h3 id="wholesale-archive-title" className={`pos-dashboard-section-title text-2xl ${textColorClass}`}>
                     Archive
                   </h3>
                   <p className={`pos-subtext text-[10px] font-bold mt-1 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
@@ -2950,7 +3010,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                             setWholesaleActionError(null);
                             setSelectedItem(null);
                           }}
-                          className="shrink-0 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider bg-emerald-500 text-white active:scale-95"
+                          className="shrink-0 px-3 py-2 rounded-xl text-[10px] font-black uppercase bg-emerald-500 text-white active:scale-95"
                         >
                           Restore
                         </button>

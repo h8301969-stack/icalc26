@@ -409,7 +409,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        <p className="text-sm font-black tracking-tight truncate">{queuedNotepad.title}</p>
+        <p className="text-sm font-black truncate">{queuedNotepad.title}</p>
         <pre className="text-[11px] font-medium leading-relaxed whitespace-pre-wrap opacity-75 max-h-36 overflow-y-auto mt-2 custom-scrollbar">
           {queuedNotepad.body}
         </pre>
@@ -417,7 +417,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
           type="button"
           onClick={() => void runNotepadPrint()}
           disabled={isPrinting}
-          className="mt-3 w-full py-3 rounded-full font-black text-xs uppercase tracking-[0.2em] active:scale-95 disabled:opacity-50 text-black"
+          className="mt-3 w-full py-3 rounded-full font-black text-xs uppercase active:scale-95 disabled:opacity-50 text-black"
           style={{ backgroundColor: accentColor }}
         >
           Print notepad
@@ -737,9 +737,9 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
                 <span className={`pos-subtext text-[9px] font-black mb-1 ${invertedBarSubtextClass}`}>
                   Neural Terminal
                 </span>
-                <h2 className="vision-hub-title text-4xl font-black tracking-tighter">Vision Hub</h2>
+                <h2 className="vision-hub-title text-4xl font-black ">Vision Hub</h2>
                 <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <div className="font-num-medium text-xl tracking-tight leading-none shrink-0">{currentTimeLabel}</div>
+                  <div className="font-num-medium text-xl leading-none shrink-0">{currentTimeLabel}</div>
                   <div className={`w-px h-4 shrink-0 ${isLight ? 'bg-white/20' : 'bg-zinc-900/20'}`} />
                   <div className="flex items-center gap-1.5 shrink-0 min-w-0">
                     {showSessionStatus && (

@@ -240,7 +240,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
         <div className={`px-5 pt-5 pb-3 flex items-center justify-between border-b ${isLight ? 'border-black/6' : 'border-white/6'}`}>
           <div className="flex items-center gap-2">
             <span className="text-blue-500"><Icons.Printer size={20} /></span>
-            <h3 id="printer-connect-title" className="text-lg font-black tracking-tight">
+            <h3 id="printer-connect-title" className="text-lg font-black ">
               Connect Printer
             </h3>
           </div>
@@ -339,7 +339,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             type="button"
             onClick={() => void handleUsbConnect()}
             disabled={isScanning || connectingId !== null || !usbSupport.supported}
-            className="w-full py-3.5 rounded-xl bg-violet-600 text-white text-xs font-black uppercase tracking-widest hover:bg-violet-700 active:scale-95 disabled:opacity-50 transition-all"
+            className="w-full py-3.5 rounded-xl bg-violet-600 text-white text-xs font-black uppercase hover:bg-violet-700 active:scale-95 disabled:opacity-50 transition-all"
           >
             {isScanning ? 'Connecting...' : 'Connect USB Printer'}
           </button>
@@ -348,7 +348,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             type="button"
             onClick={handleScanAndConnect}
             disabled={isScanning || connectingId !== null || !bluetoothSupport.supported}
-            className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all"
+            className="w-full py-3.5 rounded-xl bg-blue-500 text-white text-xs font-black uppercase hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all"
           >
             {isScanning ? 'Searching...' : 'Search for Bluetooth Printer'}
           </button>
@@ -357,7 +357,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             type="button"
             onClick={() => setShowWifiForm((v) => !v)}
             disabled={isScanning || connectingId !== null}
-            className="w-full py-3.5 rounded-xl bg-teal-600 text-white text-xs font-black uppercase tracking-widest hover:bg-teal-700 active:scale-95 disabled:opacity-50 transition-all"
+            className="w-full py-3.5 rounded-xl bg-teal-600 text-white text-xs font-black uppercase hover:bg-teal-700 active:scale-95 disabled:opacity-50 transition-all"
           >
             {showWifiForm ? 'Hide WiFi form' : 'Add WiFi / Network Printer'}
           </button>
@@ -408,7 +408,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
           <button
             type="button"
             onClick={() => setShowReqs((v) => !v)}
-            className={`w-full text-left text-[10px] font-black uppercase tracking-wider ${isLight ? 'text-black/50' : 'text-white/50'}`}
+            className={`w-full text-left text-[10px] font-black uppercase ${isLight ? 'text-black/50' : 'text-white/50'}`}
           >
             {showReqs ? 'Hide' : 'Show'} print requirements & format
           </button>
@@ -454,7 +454,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
               type="button"
               onClick={handlePrint}
               disabled={isPrinting}
-              className="w-full py-3.5 rounded-xl bg-green-500 text-white text-xs font-black uppercase tracking-widest shadow-[0_0_20px_rgba(48,209,88,0.4)] hover:bg-green-600 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              className="w-full py-3.5 rounded-xl bg-green-500 text-white text-xs font-black uppercase shadow-[0_0_20px_rgba(48,209,88,0.4)] hover:bg-green-600 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
             >
               <Icons.Check size={16} />
               {isPrinting ? 'Printing...' : 'Print Invoice'}

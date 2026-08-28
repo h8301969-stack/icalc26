@@ -48,7 +48,7 @@ const formatItemLine = (item: CartLineItem, index: number, currency: string): st
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-  return `${name}  ${qty}x  ${currency}${lineTotal}`;
+  return `${name} ${qty}x ${currency}${lineTotal}`;
 };
 
 export const renderInvoiceShareImage = (

@@ -254,7 +254,7 @@ const InventoryNotepad: React.FC<InventoryNotepadProps> = ({
               type="button"
               onClick={commitCompose}
               disabled={!composeQuery.trim()}
-              className={`shrink-0 px-5 py-2.5 rounded-full font-black text-xs tracking-[0.2em] uppercase active:scale-95 transition-all disabled:opacity-40 ${
+              className={`shrink-0 px-5 py-2.5 rounded-full font-black text-xs uppercase active:scale-95 transition-all disabled:opacity-40 ${
                 isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
               }`}
               aria-label="Add product to list"

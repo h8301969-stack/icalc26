@@ -4,7 +4,6 @@ import { InventoryItem, PurchaseRecord } from './usePOS';
 import { isCloudBackendEnabled } from '../utils/supabase';
 import { isTelegramDbConnected, telegramSaveSnapshot } from '../utils/telegramDb';
 
-import { FRESH_INVOICE_NAME } from '../utils/freshAppSession';
 import {
   fetchCalcHistoryFromSupabase,
   fetchInventoryFromSupabase,
@@ -178,40 +177,29 @@ export const useSupabaseDataSync = ({
 
         if (cancelled) return;
 
+        // Never replace local data with empty remote — that wiped overnight inventory/invoices.
         if (remoteInventory?.length) {
           setInventory(mergeInventory(remoteInventory));
-        } else if (reason === 'mount') {
-          setInventory([]);
         }
 
         if (remoteHistory?.length) {
           setHistory(remoteHistory);
-        } else if (reason === 'mount') {
-          setHistory([]);
         }
 
         if (remotePurchases?.length) {
           setPurchases(remotePurchases);
-        } else if (reason === 'mount') {
-          setPurchases([]);
         }
 
         if (remoteSuppliers?.length) {
           setSuppliers(remoteSuppliers);
-        } else if (reason === 'mount') {
-          setSuppliers([]);
         }
 
         if (remoteRequests?.length) {
           setRequests(remoteRequests);
-        } else if (reason === 'mount') {
-          setRequests([]);
         }
 
         if (remoteRestocks?.length) {
           setRestocks(remoteRestocks);
-        } else if (reason === 'mount') {
-          setRestocks([]);
         }
 
         if (remoteInvoice) {
@@ -226,20 +214,21 @@ export const useSupabaseDataSync = ({
           for (const l of localPrint) {
             if (!printById.has(l.id)) printById.set(l.id, l);
           }
+          const localSaved = invoiceRef.current.getSavedInvoices?.() ?? [];
+          const savedByName = new Map(
+            (remoteInvoice.savedInvoices ?? []).map((inv) => [inv.name, inv])
+          );
+          for (const inv of localSaved) {
+            if (!savedByName.has(inv.name)) savedByName.set(inv.name, inv);
+          }
           onInvoiceHydratedRef.current({
             ...remoteInvoice,
             pastLogs: [...pastById.values()].sort((a, b) => a.timestamp - b.timestamp),
             printLogs: [...printById.values()].sort((a, b) => a.timestamp - b.timestamp),
-          });
-        } else if (reason === 'mount') {
-          onInvoiceHydratedRef.current({
-            invoiceName: FRESH_INVOICE_NAME,
-            expression: '0',
-            pastLogs: [],
-            printLogs: [],
-            savedInvoices: [{ name: FRESH_INVOICE_NAME, expression: '0', isCurrent: true }],
+            savedInvoices: [...savedByName.values()],
           });
         }
+        // If remote invoice is missing, keep whatever is already on this device.
 
         if (!cancelled) {
           hydratedRef.current = true;

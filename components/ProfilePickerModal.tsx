@@ -232,7 +232,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
         {adminTargetId ? (
           <form onSubmit={(e) => void handleAdminPasswordSubmit(e)} className="p-6 space-y-5">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black tracking-tight">Unlock @admin</h3>
+              <h3 className="text-lg font-black ">Unlock @admin</h3>
               <button
                 type="button"
                 onClick={() => { setAdminTargetId(null); setAdminPassword(''); setAdminPasswordError(null); }}
@@ -259,7 +259,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
             <button
               type="submit"
               disabled={isVerifyingAdmin || !adminPassword}
-              className={`w-full py-4 rounded-2xl text-xs font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
+              className={`w-full py-4 rounded-2xl text-xs font-black uppercase active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
                 isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
               }`}
             >
@@ -276,7 +276,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
         ) : (
           <>
             <div className={`px-5 pt-5 pb-3 flex items-center justify-between border-b ${isLight ? 'border-black/6' : 'border-white/6'}`}>
-              <h3 id="profile-picker-title" className="text-lg font-black tracking-tight">
+              <h3 id="profile-picker-title" className="text-lg font-black ">
                 {isAdding ? 'New profile' : 'Profiles'}
               </h3>
               <div className="flex items-center gap-2">
@@ -369,7 +369,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                       type="button"
                       disabled={isCreatingProfile}
                       onClick={() => setNewSellerType('retailer')}
-                      className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
+                      className={`flex-1 py-2.5 text-[10px] font-black uppercase transition-all disabled:opacity-50 ${
                         newSellerType === 'retailer'
                           ? isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                           : 'opacity-50'
@@ -381,7 +381,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                       type="button"
                       disabled={isCreatingProfile}
                       onClick={() => setNewSellerType('wholesaler')}
-                      className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
+                      className={`flex-1 py-2.5 text-[10px] font-black uppercase transition-all disabled:opacity-50 ${
                         newSellerType === 'wholesaler'
                           ? isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                           : 'opacity-50'
@@ -395,7 +395,7 @@ const ProfilePickerModal: React.FC<ProfilePickerModalProps> = ({
                   type="button"
                   onClick={() => void handleCreate()}
                   disabled={isCreatingProfile || !canCreateProfile}
-                  className={`w-full py-4 rounded-2xl text-xs font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
+                  className={`w-full py-4 rounded-2xl text-xs font-black uppercase active:scale-95 transition-all disabled:opacity-40 flex items-center justify-center gap-2 ${
                     isLight ? 'bg-zinc-900 text-white' : 'bg-white text-black'
                   }`}
                 >

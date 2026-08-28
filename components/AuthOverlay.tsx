@@ -982,7 +982,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
         <div className={`unlock-logo-wrap shrink-0 w-12 h-12 sm:w-14 sm:h-14 ${isLoading ? 'auth-loading-logo' : ''}`}>
           <img src={icalcLogo} alt="iCalc logo" className="w-full h-full object-cover" draggable={false} />
         </div>
-        <div className="font-brand text-4xl sm:text-5xl leading-none tracking-tighter font-black" aria-label="iCalc 26">
+        <div className="font-brand text-4xl sm:text-5xl leading-none font-black" aria-label="iCalc 26">
           <span className="italic text-white font-bold">i</span>
           <span className={isLight ? 'text-black' : 'text-white'}>Calc</span>
           <span className="unlock-brand-26">26</span>
@@ -992,7 +992,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
       <div className={`flex flex-col items-center justify-center flex-1 w-full max-w-sm gap-6 pt-16 ${showAuthForm ? 'pb-24' : 'pb-10'}`}>
         {!showSettings && (
           <div className={`text-center select-none pointer-events-none transition-opacity duration-300 ${isLoading ? 'opacity-40' : 'opacity-100'}`}>
-            <p className="font-num-light text-5xl tracking-tighter tabular-nums opacity-80" style={{ color: textColor }}>
+            <p className="font-num-light text-5xl tabular-nums opacity-80" style={{ color: textColor }}>
               {timeString}
             </p>
             <p className="app-subtext opacity-50 mt-1" style={{ color: textColor }}>
@@ -1041,7 +1041,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
               isLight={isLight}
               disabled={isLoading || showSignupInsight || showBusinessSetup}
               ariaLabel="Authentication mode"
-              className="mb-5 text-[10px] font-black uppercase tracking-widest"
+              className="mb-5 text-[10px] font-black uppercase "
               value={mode}
               onChange={handleAuthModeChange}
               options={[
@@ -1123,7 +1123,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                       maxLength={mode === 'signup' ? 7 : 64}
                       disabled={isLoading || showSignupInsight}
                       mono={mode === 'signup'}
-                      inputClassName={`transition-all duration-300 ${mode === 'signup' ? 'tracking-widest' : ''}`}
+                      inputClassName={`transition-all duration-300 ${mode === 'signup' ? '' : ''}`}
                       placeholder={mode === 'signup' ? '7-character code' : 'Your password'}
                     />
                   </label>
@@ -1160,7 +1160,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   <button
                     type="submit"
                     disabled={isLoading || showSignupInsight}
-                    className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all duration-300 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2.5 min-h-[46px] ${
+                    className={`w-full py-3.5 rounded-xl font-black text-xs uppercase transition-all duration-300 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2.5 min-h-[46px] ${
                       isLight ? 'bg-black text-white' : 'bg-white text-black'
                     }`}
                   >
@@ -1179,7 +1179,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                       type="button"
                       onClick={handleDevSkip}
                       disabled={isLoading || showSignupInsight}
-                      className={`w-full py-3 rounded-xl font-black text-[10px] uppercase tracking-[0.3em] transition-all active:scale-[0.98] disabled:opacity-40 border border-dashed ${
+                      className={`w-full py-3 rounded-xl font-black text-[10px] uppercase transition-all active:scale-[0.98] disabled:opacity-40 border border-dashed ${
                         isLight
                           ? 'border-black/20 text-black/50 hover:text-black/70'
                           : 'border-white/20 text-white/50 hover:text-white/70'
@@ -1225,7 +1225,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   <button
                     type="button"
                     onClick={dismissSignupConfirmation}
-                    className={`w-full mt-6 py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.35em] transition-all active:scale-[0.98] ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
+                    className={`w-full mt-6 py-3.5 rounded-xl font-black text-xs uppercase transition-all active:scale-[0.98] ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
                   >
                     Got it
                   </button>
@@ -1258,7 +1258,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
               disabled={isLoading || isExiting}
               onPointerDown={(e) => e.stopPropagation()}
               onPointerUp={(e) => e.stopPropagation()}
-              className={`app-subtext mt-5 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.25em] border border-dashed transition-all active:scale-95 pointer-events-auto disabled:opacity-40 ${
+              className={`app-subtext mt-5 px-4 py-2 rounded-full text-[10px] font-black uppercase border border-dashed transition-all active:scale-95 pointer-events-auto disabled:opacity-40 ${
                 isLight
                   ? 'border-black/20 text-black/45 hover:text-black/65'
                   : 'border-white/20 text-white/45 hover:text-white/65'
@@ -1312,7 +1312,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
             </div>
 
             <div className="text-center space-y-2">
-              <p className={`auth-loading-status text-sm font-black tracking-tight ${isLight ? 'text-black' : 'text-white'}`}>
+              <p className={`auth-loading-status text-sm font-black ${isLight ? 'text-black' : 'text-white'}`}>
                 {loadingLabel}
               </p>
               <p className={`app-subtext text-[10px] font-bold ${isLight ? 'text-black/45' : 'text-white/45'}`}>
@@ -1428,7 +1428,7 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   type="button"
                   disabled={isSubmitting || !adminInfoName.trim()}
                   onClick={() => void handleBusinessReceiveContinue()}
-                  className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.25em] transition-all active:scale-[0.98] min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
+                  className={`w-full py-3.5 rounded-xl font-black text-xs uppercase transition-all active:scale-[0.98] min-h-[46px] disabled:opacity-50 ${isLight ? 'bg-black text-white' : 'bg-white text-black'}`}
                 >
                   {isSubmitting ? 'Opening…' : 'Continue'}
                 </button>

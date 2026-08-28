@@ -9,7 +9,9 @@ import {
 import { storage } from './storage';
 import { isCloudBackendEnabled, supabase } from '../utils/supabase';
 
-const PILL_MS = 2200;
+/** Last notification stays visible this long unless the user swipes it away. */
+const PILL_LAST_MS = 10_000;
+/** Intermediate cascade steps stay shorter so the queue moves. */
 const CASCADE_STEP_MS = 900;
 const HOLD_MS = 480;
 
@@ -245,8 +247,8 @@ export const useAccountNotifications = ({
     const [next, ...rest] = liveQueue;
     setLiveQueue(rest);
     markRead([next.id]);
-    const duration =
-      notificationStyleRef.current === 'pill' ? PILL_MS : PILL_MS;
+    // Last (or only) toast in this batch stays 10s; others step faster.
+    const duration = rest.length === 0 ? PILL_LAST_MS : CASCADE_STEP_MS;
     showToast(next, duration);
   }, [liveQueue, activeToast, listOpen, cascadeActive, markRead, showToast]);
 
@@ -260,7 +262,7 @@ export const useAccountNotifications = ({
     }
     const noti = queue[idx];
     const isLast = idx === queue.length - 1;
-    const duration = isLast ? PILL_MS : CASCADE_STEP_MS;
+    const duration = isLast ? PILL_LAST_MS : CASCADE_STEP_MS;
     showToast(noti, duration);
     markRead([noti.id]);
     cascadeIndexRef.current = idx + 1;
@@ -352,8 +354,15 @@ export const useAccountNotifications = ({
 
   const dismissToast = useCallback(() => {
     clearHideTimer();
+    clearCascadeTimer();
+    // If cascading, skip ahead / end so swipe doesn't leave a stuck queue
+    if (cascadeActive) {
+      cascadeQueueRef.current = [];
+      cascadeIndexRef.current = 0;
+      setCascadeActive(false);
+    }
     setActiveToast(null);
-  }, []);
+  }, [cascadeActive]);
 
   useEffect(
     () => () => {

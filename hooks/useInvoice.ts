@@ -11,6 +11,11 @@ import {
 import { safeEvaluate } from '../utils/calculator';
 
 const INVOICE_NAME_KEY = 'invoice_name';
+const PAST_LOGS_KEY = 'past_invoice_logs';
+const PRINT_LOGS_KEY = 'invoice_print_logs';
+/** Durable invoice roster — survives empty days / restarts until swipe-removed. */
+const SAVED_INVOICES_KEY = 'saved_invoices';
+const EXPRESSIONS_KEY = 'invoice_expressions';
 
 const matchInventoryByPrice = (
   price: number,
@@ -18,13 +23,33 @@ const matchInventoryByPrice = (
 ): InventoryItem | undefined =>
   inventory.find((item) => Math.abs(item.price - price) < 0.001);
 
-const PAST_LOGS_KEY = 'past_invoice_logs';
-const PRINT_LOGS_KEY = 'invoice_print_logs';
-
 interface SegmentMeta {
   timestamp: number;
   profileName: string;
 }
+
+interface RemovedInvoiceSnapshot {
+  name: string;
+  expression: string;
+  logs: InvoiceActionLog[];
+  printLogs: InvoicePrintLog[];
+  wasCurrent: boolean;
+}
+
+const loadSavedInvoices = (): SavedInvoice[] => {
+  const raw = storage.get<SavedInvoice[]>(SAVED_INVOICES_KEY, []);
+  if (!Array.isArray(raw) || raw.length === 0) {
+    const name = storage.get(INVOICE_NAME_KEY, 'Invoice #1');
+    return [{ name, expression: '0', isCurrent: true }];
+  }
+  return raw
+    .filter((inv) => inv && typeof inv.name === 'string' && !inv.deletedAt)
+    .map((inv) => ({
+      name: inv.name,
+      expression: typeof inv.expression === 'string' ? inv.expression : '0',
+      isCurrent: !!inv.isCurrent,
+    }));
+};
 
 export const useInvoice = (
   expression: string,
@@ -44,11 +69,18 @@ export const useInvoice = (
     storage.get(PRINT_LOGS_KEY, [])
   );
 
+  const [savedInvoices, setSavedInvoices] = useState<SavedInvoice[]>(() => loadSavedInvoices());
+
   const segmentMetaRef = useRef<Map<string, SegmentMeta>>(new Map());
-  const expressionsByInvoiceRef = useRef<Record<string, string>>({});
+  const expressionsByInvoiceRef = useRef<Record<string, string>>(
+    storage.get<Record<string, string>>(EXPRESSIONS_KEY, {})
+  );
+  const undoStackRef = useRef<RemovedInvoiceSnapshot[]>([]);
+  const [, setUndoTick] = useState(0);
 
   useEffect(() => {
     expressionsByInvoiceRef.current[invoiceName] = expression;
+    storage.set(EXPRESSIONS_KEY, expressionsByInvoiceRef.current);
   }, [invoiceName, expression]);
 
   useEffect(() => {
@@ -62,6 +94,33 @@ export const useInvoice = (
   useEffect(() => {
     storage.set(PRINT_LOGS_KEY, printLogs);
   }, [printLogs]);
+
+  useEffect(() => {
+    // Keep current flag in sync and ensure current invoice is always listed.
+    setSavedInvoices((prev) => {
+      const byName = new Map(prev.map((inv) => [inv.name, inv]));
+      if (!byName.has(invoiceName)) {
+        byName.set(invoiceName, {
+          name: invoiceName,
+          expression,
+          isCurrent: true,
+        });
+      }
+      const next = [...byName.values()].map((inv) => ({
+        ...inv,
+        expression:
+          inv.name === invoiceName
+            ? expression
+            : expressionsByInvoiceRef.current[inv.name] ?? inv.expression,
+        isCurrent: inv.name === invoiceName,
+      }));
+      return next;
+    });
+  }, [invoiceName, expression]);
+
+  useEffect(() => {
+    storage.set(SAVED_INVOICES_KEY, savedInvoices);
+  }, [savedInvoices]);
 
   const cartItems = useMemo((): CartLineItem[] => {
     if (!expression || expression === '0') return [];
@@ -132,13 +191,30 @@ export const useInvoice = (
 
   const saveCurrentInvoiceAndStartNew = () => {
     saveCurrentToPast();
+    expressionsByInvoiceRef.current[invoiceName] = expression;
 
     const match = invoiceName.match(/Invoice #(\d+)/);
     let nextNum = 2;
     if (match) {
       nextNum = parseInt(match[1], 10) + 1;
     }
-    setInvoiceName(`Invoice #${nextNum}`);
+    // Prefer next unused number among saved roster
+    const used = new Set(savedInvoices.map((inv) => inv.name));
+    while (used.has(`Invoice #${nextNum}`)) nextNum += 1;
+    const nextName = `Invoice #${nextNum}`;
+    expressionsByInvoiceRef.current[nextName] = '0';
+    storage.set(EXPRESSIONS_KEY, expressionsByInvoiceRef.current);
+    setSavedInvoices((prev) => {
+      const byName = new Map(prev.map((inv) => [inv.name, { ...inv, isCurrent: false }]));
+      byName.set(invoiceName, {
+        name: invoiceName,
+        expression,
+        isCurrent: false,
+      });
+      byName.set(nextName, { name: nextName, expression: '0', isCurrent: true });
+      return [...byName.values()];
+    });
+    setInvoiceName(nextName);
   };
 
   const clearAllInvoices = () => {
@@ -173,23 +249,107 @@ export const useInvoice = (
     ]);
   };
 
-  const getInvoiceExpression = useCallback((name: string) => {
-    if (expressionsByInvoiceRef.current[name]) return expressionsByInvoiceRef.current[name];
-    if (name === invoiceName) return expression;
-    const items = pastLogs
-      .filter((log) => log.invoiceName === name)
-      .map((log) => ({ price: log.price, quantity: log.quantity }));
-    return buildPosExpressionFromItems(items) || '0';
-  }, [expression, invoiceName, pastLogs]);
+  const getInvoiceExpression = useCallback(
+    (name: string) => {
+      if (expressionsByInvoiceRef.current[name]) return expressionsByInvoiceRef.current[name];
+      if (name === invoiceName) return expression;
+      const items = pastLogs
+        .filter((log) => log.invoiceName === name)
+        .map((log) => ({ price: log.price, quantity: log.quantity }));
+      return buildPosExpressionFromItems(items) || '0';
+    },
+    [expression, invoiceName, pastLogs]
+  );
 
   const getSavedInvoices = useCallback((): SavedInvoice[] => {
-    const names = new Set<string>([invoiceName, ...pastLogs.map((log) => log.invoiceName)]);
-    return [...names].map((name) => ({
-      name,
-      expression: getInvoiceExpression(name),
-      isCurrent: name === invoiceName,
-    }));
-  }, [getInvoiceExpression, invoiceName, pastLogs]);
+    const byName = new Map<string, SavedInvoice>();
+    for (const inv of savedInvoices) {
+      byName.set(inv.name, {
+        name: inv.name,
+        expression: getInvoiceExpression(inv.name),
+        isCurrent: inv.name === invoiceName,
+      });
+    }
+    // Include any names that only exist in logs (legacy)
+    for (const log of pastLogs) {
+      if (!byName.has(log.invoiceName)) {
+        byName.set(log.invoiceName, {
+          name: log.invoiceName,
+          expression: getInvoiceExpression(log.invoiceName),
+          isCurrent: log.invoiceName === invoiceName,
+        });
+      }
+    }
+    if (!byName.has(invoiceName)) {
+      byName.set(invoiceName, {
+        name: invoiceName,
+        expression,
+        isCurrent: true,
+      });
+    }
+    return [...byName.values()];
+  }, [savedInvoices, pastLogs, getInvoiceExpression, invoiceName, expression]);
+
+  const canUndoRemove = undoStackRef.current.length > 0;
+
+  /** Swipe-up remove — keeps roster forever unless explicitly removed. */
+  const removeInvoice = useCallback(
+    (name: string): { ok: true } | { ok: false; error: string } => {
+      const roster = getSavedInvoices();
+      if (roster.length <= 1) {
+        return { ok: false, error: 'Keep at least one invoice.' };
+      }
+      const target = roster.find((inv) => inv.name === name);
+      if (!target) return { ok: false, error: 'Invoice not found.' };
+
+      const snapshot: RemovedInvoiceSnapshot = {
+        name,
+        expression: getInvoiceExpression(name),
+        logs: pastLogs.filter((l) => l.invoiceName === name),
+        printLogs: printLogs.filter((p) => p.invoiceName === name),
+        wasCurrent: name === invoiceName,
+      };
+      undoStackRef.current = [...undoStackRef.current.slice(-19), snapshot];
+      setUndoTick((n) => n + 1);
+
+      setPastLogs((prev) => prev.filter((l) => l.invoiceName !== name));
+      setPrintLogs((prev) => prev.filter((p) => p.invoiceName !== name));
+      setSavedInvoices((prev) => prev.filter((inv) => inv.name !== name));
+      delete expressionsByInvoiceRef.current[name];
+      storage.set(EXPRESSIONS_KEY, expressionsByInvoiceRef.current);
+
+      if (name === invoiceName) {
+        const next = roster.find((inv) => inv.name !== name);
+        if (next) setInvoiceName(next.name);
+      }
+      return { ok: true };
+    },
+    [getSavedInvoices, getInvoiceExpression, pastLogs, printLogs, invoiceName]
+  );
+
+  const undoRemoveInvoice = useCallback((): { ok: true; name: string } | { ok: false } => {
+    const snapshot = undoStackRef.current.pop();
+    setUndoTick((n) => n + 1);
+    if (!snapshot) return { ok: false };
+
+    expressionsByInvoiceRef.current[snapshot.name] = snapshot.expression;
+    storage.set(EXPRESSIONS_KEY, expressionsByInvoiceRef.current);
+    setPastLogs((prev) => [...prev, ...snapshot.logs]);
+    setPrintLogs((prev) => [...prev, ...snapshot.printLogs]);
+    setSavedInvoices((prev) => {
+      if (prev.some((inv) => inv.name === snapshot.name)) return prev;
+      return [
+        ...prev.map((inv) => ({ ...inv, isCurrent: false })),
+        {
+          name: snapshot.name,
+          expression: snapshot.expression,
+          isCurrent: snapshot.wasCurrent,
+        },
+      ];
+    });
+    if (snapshot.wasCurrent) setInvoiceName(snapshot.name);
+    return { ok: true, name: snapshot.name };
+  }, []);
 
   const hydrateInvoiceState = useCallback((data: {
     invoiceName: string;
@@ -201,9 +361,18 @@ export const useInvoice = (
     setPastLogs(data.pastLogs);
     setPrintLogs(data.printLogs);
     segmentMetaRef.current.clear();
-    if (data.savedInvoices) {
-      expressionsByInvoiceRef.current = Object.fromEntries(
-        data.savedInvoices.map((invoice) => [invoice.name, invoice.expression])
+    if (data.savedInvoices?.length) {
+      expressionsByInvoiceRef.current = {
+        ...expressionsByInvoiceRef.current,
+        ...Object.fromEntries(data.savedInvoices.map((invoice) => [invoice.name, invoice.expression])),
+      };
+      storage.set(EXPRESSIONS_KEY, expressionsByInvoiceRef.current);
+      setSavedInvoices(
+        data.savedInvoices.map((inv) => ({
+          name: inv.name,
+          expression: inv.expression,
+          isCurrent: inv.name === data.invoiceName,
+        }))
       );
     }
   }, []);
@@ -235,5 +404,8 @@ export const useInvoice = (
     replaceInvoiceHistory,
     getInvoiceExpression,
     getSavedInvoices,
+    removeInvoice,
+    undoRemoveInvoice,
+    canUndoRemove,
   };
 };

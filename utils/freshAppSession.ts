@@ -26,4 +26,8 @@ export const clearAppSessionData = (): void => {
   storage.set('past_invoice_logs', []);
   storage.set('invoice_print_logs', []);
   storage.set('invoice_attendant_names', {});
+  storage.set('saved_invoices', [
+    { name: FRESH_INVOICE_NAME, expression: '0', isCurrent: true },
+  ]);
+  storage.set('invoice_expressions', { [FRESH_INVOICE_NAME]: '0' });
 };

@@ -111,14 +111,14 @@ const FluidSegmentControl = <T extends string>({
             }}
             className={
               isChip
-                ? `fluid-chip-btn px-3 ${py} rounded-xl font-semibold tracking-normal transition-all duration-200 ${
+                ? `fluid-chip-btn px-3 ${py} rounded-xl font-semibold transition-all duration-200 ${
                     active
                       ? 'fluid-chip-btn--active'
                       : isLight
                         ? 'fluid-chip-btn--idle-light'
                         : 'fluid-chip-btn--idle-dark'
                   }`
-                : `fluid-segment-btn relative z-[1] flex items-center justify-center gap-1 px-3 ${py} rounded-[11px] font-semibold tracking-normal transition-[color,opacity] duration-200 ease-out ${
+                : `fluid-segment-btn relative z-[1] flex items-center justify-center gap-1 px-3 ${py} rounded-[11px] font-semibold transition-[color,opacity] duration-200 ease-out ${
                     fullWidth ? 'flex-1 min-w-0' : ''
                   } ${active ? 'fluid-segment-btn--active' : 'fluid-segment-btn--idle'}`
             }

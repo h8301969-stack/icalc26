@@ -97,7 +97,7 @@ const SettingsNotificationsInbox: React.FC<SettingsNotificationsInboxProps> = ({
           >
             <div className="flex items-center justify-between gap-3 mb-3 shrink-0">
               <div className="min-w-0">
-                <h3 className="text-lg font-black tracking-tight">Notifications</h3>
+                <h3 className="text-lg font-black ">Notifications</h3>
                 <p className={`app-subtext text-[10px] ${isLight ? 'text-black/50' : 'text-white/50'}`}>
                   {filtered.length} shown
                 </p>
@@ -160,13 +160,13 @@ const SettingsNotificationsInbox: React.FC<SettingsNotificationsInboxProps> = ({
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-[11px] font-black tracking-tight">{n.title}</p>
+                      <p className="text-[11px] font-black ">{n.title}</p>
                       {!n.readAt && (
                         <span className="shrink-0 mt-1 w-2 h-2 rounded-full bg-blue-500" aria-label="Unread" />
                       )}
                     </div>
                     <p className="text-[10px] font-semibold opacity-70 mt-0.5 leading-snug">{n.body}</p>
-                    <p className="text-[8px] font-bold opacity-40 mt-1.5 uppercase tracking-wider">
+                    <p className="text-[8px] font-bold opacity-40 mt-1.5 uppercase ">
                       {new Date(n.createdAt).toLocaleString([], {
                         month: 'short',
                         day: 'numeric',

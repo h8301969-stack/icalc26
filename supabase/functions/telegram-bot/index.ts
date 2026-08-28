@@ -2,11 +2,11 @@
  * Telegram Bot proxy for iCalc (admin / system use).
  *
  * Secrets (never commit tokens):
- *   supabase secrets set TELEGRAM_BOT_TOKEN=…
- *   supabase secrets set TELEGRAM_CHAT_ID=…   (optional default storage chat)
+ * supabase secrets set TELEGRAM_BOT_TOKEN=…
+ * supabase secrets set TELEGRAM_CHAT_ID=… (optional default storage chat)
  *
  * Deploy:
- *   supabase functions deploy telegram-bot
+ * supabase functions deploy telegram-bot
  *
  * Admin portal / dev-skip do NOT require pasting a bot token in the UI.
  * End-user Premium/Regular accounts still link their own bot on first login after approval.

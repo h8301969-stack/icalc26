@@ -21,7 +21,7 @@ const BrandHeader: React.FC = () => (
       />
     </div>
     <div
-      className="font-brand text-5xl leading-none tracking-tighter font-black"
+      className="font-brand text-5xl leading-none font-black"
       aria-label="iCalc 26"
     >
       <span className="italic text-white font-bold">i</span>
@@ -86,7 +86,7 @@ const WallpaperOverlay: React.FC<WallpaperOverlayProps> = ({
       <BrandHeader />
 
       <div className="flex flex-col items-center justify-center flex-1 select-none pointer-events-none">
-        <p className="font-num-light text-5xl tracking-tighter tabular-nums opacity-80 mb-2" style={{ color: textColor }}>
+        <p className="font-num-light text-5xl tabular-nums opacity-80 mb-2" style={{ color: textColor }}>
           {timeString}
         </p>
         <p className="font-text text-sm font-medium opacity-50" style={{ color: textColor }}>

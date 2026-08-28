@@ -748,6 +748,15 @@ body {
   overscroll-behavior-y: none;
 }
 
+/* Kill all letter-spacing (Tailwind tracking-* + custom CSS) */
+html,
+body,
+body *,
+body *::before,
+body *::after {
+  letter-spacing: 0 !important;
+}
+
 .font-text {
   font-family: var(--font-text);
 }
@@ -1160,7 +1169,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   border-radius: 999px;
   font-size: 0.62rem;
   font-weight: 900;
-  letter-spacing: 0.14em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: #fff;
   background: rgba(0, 0, 0, 0.72);
@@ -1250,7 +1259,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   font-family: var(--font-brand, "Montserrat"), Candara, sans-serif;
   font-size: 10px;
   font-weight: 900;
-  letter-spacing: 0.1em;
+  letter-spacing: 0;
   text-transform: lowercase;
   color: inherit;
   opacity: 0.52;
@@ -1358,7 +1367,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   font-size: 0.78rem;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   line-height: 1.2;
   max-width: 100%;
   flex-shrink: 0;
@@ -1376,7 +1385,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   font-family: var(--font-brand, "Montserrat"), Candara, sans-serif;
   font-size: 0.52rem;
   font-weight: 900;
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: #6ee7b7;
   background: rgba(16, 185, 129, 0.2);
@@ -1547,7 +1556,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   border-radius: 999px;
   font-size: 0.55rem;
   font-weight: 900;
-  letter-spacing: 0.1em;
+  letter-spacing: 0;
   text-transform: uppercase;
   border: 1px solid transparent;
   transition: all 0.22s ease;
@@ -1589,7 +1598,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   text-align: center;
   font-size: 0.62rem;
   font-weight: 900;
-  letter-spacing: 0.14em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: #ef4444;
   text-shadow: 0 1px 6px rgba(239, 68, 68, 0.35);
@@ -1667,7 +1676,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   font-size: 0.82rem;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   line-height: 1.2;
   flex-shrink: 0;
 }
@@ -1725,7 +1734,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   font-family: var(--font-brand, "Montserrat"), Candara, sans-serif;
   font-size: 0.82rem;
   font-weight: 900;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
   cursor: pointer;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
@@ -1747,7 +1756,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   font-family: var(--font-brand, "Montserrat"), Candara, sans-serif;
   font-size: 0.62rem;
   font-weight: 900;
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
   text-transform: uppercase;
   cursor: pointer;
   padding: 0.25rem 0.5rem;
@@ -1775,7 +1784,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .pos-subtext,
 .low-block {
   text-transform: lowercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
 }
 
 /* App-wide hint / helper subtext — uniform 10px mobile, 11px desktop (matches admin portal footer) */
@@ -1786,7 +1795,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   font-size: 10px;
   font-weight: 500;
   line-height: 1.4;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 @media (min-width: 768px) {
@@ -1816,7 +1825,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 
 .app-hint {
   text-transform: none;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 /* Form fields — admin portal uniformity (Candara UI, shared borders/sizing) */
@@ -1905,7 +1914,7 @@ select.app-input--dark {
   .pos-dashboard .text-xs { font-size: 0.6875rem !important; }
   .pos-dashboard [class*="text-\["] {
     font-size: 11px !important;
-    letter-spacing: 0.08em !important;
+    letter-spacing: 0;
   }
 
   .pos-dashboard svg {
@@ -2047,7 +2056,7 @@ select.app-input--dark {
   background: #fff;
   font-size: 0.68rem;
   font-weight: 900;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: #2563eb;
   cursor: pointer;
   transition: background 0.2s ease, transform 0.2s ease;
@@ -2101,7 +2110,7 @@ select.app-input--dark {
   color: #fff;
   font-size: 0.68rem;
   font-weight: 900;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(16, 185, 129, 0.32);
@@ -2177,7 +2186,7 @@ select.app-input--dark {
   font-size: 1.35rem;
   font-weight: 900;
   text-transform: capitalize;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   line-height: 1.2;
   text-shadow:
     0 3px 12px rgba(59, 130, 246, 0.28),
@@ -2197,7 +2206,7 @@ select.app-input--dark {
 .pos-dashboard-section-title {
   font-weight: 900;
   text-transform: capitalize;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
 }
 .pos-dashboard-shell--light .pos-dashboard-section-title {
   text-shadow:
@@ -2222,7 +2231,7 @@ select.app-input--dark {
 .pos-dashboard .vision-hub-title {
   font-weight: 900;
   text-transform: capitalize;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
 }
 .vision-hub-shell.bg-zinc-900 .vision-hub-title {
   text-shadow:
@@ -2263,7 +2272,7 @@ select.app-input--dark {
 }
 .vision-hub-session-label {
   text-transform: capitalize;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   transition: opacity 0.3s ease, transform 0.3s ease;
 }
 .vision-hub-session-label--pulse {
@@ -2309,7 +2318,7 @@ select.app-input--dark {
   font-weight: 600;
   text-align: center;
   opacity: 0.42;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 .invoice-grid-tile--58mm {
   width: 100%;
@@ -2319,7 +2328,7 @@ select.app-input--dark {
 .invoice-receipt-line {
   font-family: var(--font-num);
   font-weight: 300;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2375,14 +2384,14 @@ select.app-input--dark {
 .invoice-switcher-card__brand {
   font-size: 0.62rem;
   font-weight: 900;
-  letter-spacing: 0.32em;
+  letter-spacing: 0;
   text-transform: uppercase;
   opacity: 0.72;
 }
 .invoice-switcher-card__badge {
   font-size: 0.58rem;
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0;
   text-transform: uppercase;
   padding: 0.2rem 0.55rem;
   border-radius: 999px;
@@ -2397,7 +2406,7 @@ select.app-input--dark {
 .invoice-switcher-card__title {
   font-size: 1.15rem;
   font-weight: 900;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   line-height: 1.15;
   color: #fff;
 }
@@ -2405,7 +2414,7 @@ select.app-input--dark {
   margin-top: 0.35rem;
   font-size: 0.58rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
   text-transform: uppercase;
   opacity: 0.48;
 }
@@ -2455,7 +2464,7 @@ select.app-input--dark {
   color: #2563eb;
   font-weight: 800;
   min-width: 0;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 .invoice-switcher-card__line-sum {
   text-align: right;
@@ -2473,7 +2482,7 @@ select.app-input--dark {
   color: #16a34a;
   font-weight: 900;
   font-size: 1rem;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 .invoice-switcher-card__footer {
   flex-shrink: 0;
@@ -2490,7 +2499,7 @@ select.app-input--dark {
   opacity: 0.5;
   font-size: 0.62rem;
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 .invoice-receipt-preview {
@@ -2500,7 +2509,7 @@ select.app-input--dark {
 .invoice-receipt-preview__empty {
   font-size: 0.62rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
   opacity: 0.42;
   text-align: center;
@@ -2509,7 +2518,7 @@ select.app-input--dark {
 .invoice-receipt-preview__more {
   font-size: 0.58rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   opacity: 0.45;
 }
 .invoice-receipt-preview--tile {
@@ -2522,7 +2531,7 @@ select.app-input--dark {
 }
 .invoice-receipt-preview--tile .invoice-switcher-card__brand {
   font-size: 0.48rem;
-  letter-spacing: 0.22em;
+  letter-spacing: 0;
 }
 .invoice-receipt-preview--tile .invoice-switcher-card__badge {
   font-size: 0.48rem;
@@ -2647,7 +2656,7 @@ select.app-input--dark {
 .business-receipt-identity__name {
   font-size: 1.05rem;
   font-weight: 900;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   line-height: 1.2;
   color: #fff;
   width: 100%;
@@ -2688,7 +2697,7 @@ select.app-input--dark {
 .business-receipt-identity__name-input {
   font-size: 1.05rem;
   font-weight: 900;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   padding: 0.3rem 0;
 }
 .business-receipt-identity__location-input {
@@ -2775,20 +2784,23 @@ select.app-input--dark {
 }
 
 .account-toast-pill {
+  /* Match calculator search bar: py-1.5 px-4 text-sm rounded-full */
   border-radius: 999px;
   border: 1px solid transparent;
   backdrop-filter: blur(20px) saturate(1.3);
   -webkit-backdrop-filter: blur(20px) saturate(1.3);
   box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.18),
-    0 1px 0 rgba(255, 255, 255, 0.12) inset;
+    0 8px 24px rgba(0, 0, 0, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.1);
   transform-origin: top center;
   touch-action: none;
   user-select: none;
-  /* Hug the text — avoid a wide empty bar */
-  width: fit-content !important;
-  max-width: min(22rem, calc(100vw - 1.5rem)) !important;
-  padding: 0.35rem 0.75rem !important;
+  /* Same footprint as calc search (card ~94% of max 430px, minus side buttons) */
+  width: min(22.5rem, calc(94vw - 5.5rem)) !important;
+  max-width: min(22.5rem, calc(100vw - 1.5rem)) !important;
+  min-height: 2.25rem;
+  padding: 0.375rem 1rem !important;
+  box-sizing: border-box;
 }
 
 .account-toast-pill--light {
@@ -3152,7 +3164,7 @@ select.app-input--dark {
 .fluid-toggle-label {
   font-size: 0.6875rem;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   min-width: 0;
   width: max-content;
   max-width: 6rem;
@@ -3260,7 +3272,7 @@ select.app-input--dark {
 .settings-panel-action {
   font-size: 0.65rem;
   font-weight: 900;
-  letter-spacing: 0.14em;
+  letter-spacing: 0;
   text-transform: uppercase;
   padding: 0.55rem 0.85rem;
   border-radius: 999px;

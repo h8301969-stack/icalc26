@@ -128,7 +128,7 @@ const AdminProfilesPopup: React.FC<AdminProfilesPopupProps> = ({
           >
             <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3 shrink-0 border-b border-current/10">
               <div className="min-w-0">
-                <h3 className="text-base font-black tracking-tight">Profiles</h3>
+                <h3 className="text-base font-black ">Profiles</h3>
                 <p className={`app-subtext text-[10px] ${isLight ? 'text-black/50' : 'text-white/50'}`} style={{ letterSpacing: 0 }}>
                   Tap to switch · hold for details
                 </p>
@@ -184,7 +184,7 @@ const AdminProfilesPopup: React.FC<AdminProfilesPopupProps> = ({
                         <p className="text-[12px] font-black truncate">
                           {profile.name}
                           {isAdminProfile(profile) ? (
-                            <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wider opacity-50">
+                            <span className="ml-1.5 text-[9px] font-bold uppercase opacity-50">
                               admin
                             </span>
                           ) : null}

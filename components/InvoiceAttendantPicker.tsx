@@ -57,7 +57,7 @@ const InvoiceAttendantPicker: React.FC<InvoiceAttendantPickerProps> = ({
                 isLight ? 'border-black/6' : 'border-white/6'
               }`}
             >
-              <h3 id="attendant-picker-title" className="text-sm font-black tracking-tight">
+              <h3 id="attendant-picker-title" className="text-sm font-black ">
                 Print as
               </h3>
               <button

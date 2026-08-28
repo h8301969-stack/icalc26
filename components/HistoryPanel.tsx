@@ -51,6 +51,10 @@ interface HistoryPanelProps {
   businessName?: string;
   businessPhone?: string;
   businessAddress?: string;
+  getSavedInvoices?: () => { name: string; expression: string; isCurrent: boolean }[];
+  onRemoveInvoice?: (name: string) => { ok: true } | { ok: false; error: string };
+  onUndoRemoveInvoice?: () => { ok: true; name: string } | { ok: false };
+  canUndoRemove?: boolean;
 }
 
 const SWITCHER_LAYOUT_OPTIONS = [
@@ -78,6 +82,8 @@ interface InvoiceCard {
 
 const DRAG_FACTOR = 1.25;
 const SWIPE_THRESHOLD = 22;
+/** Swipe up on the active card to remove it (undoable). */
+const SWIPE_UP_REMOVE_THRESHOLD = 72;
 
 const formatSwitcherAmount = (value: number): string => {
   if (!Number.isFinite(value)) return '0';
@@ -108,6 +114,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   businessName = '',
   businessPhone = '',
   businessAddress = '',
+  getSavedInvoices,
+  onRemoveInvoice,
+  onUndoRemoveInvoice,
+  canUndoRemove = false,
 }) => {
   const safeSwitcherMode: SwitcherMode =
     switcherMode === 'list' ? 'list' : 'horizontal';
@@ -442,17 +452,32 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       grouped.get(key)!.push(log);
     }
 
-    const built: InvoiceCard[] = [];
-    const pastNames = [...grouped.keys()].filter(k => k !== invoiceName);
-
-    for (const name of pastNames) {
-      const logs = grouped.get(name)!;
-      built.push({
-        id: `past-${name}`,
+    const roster =
+      getSavedInvoices?.() ??
+      [...new Set([invoiceName, ...actionLogs.map((l) => l.invoiceName)])].map((name) => ({
         name,
-        items: logs.map(l => ({ price: l.price, quantity: l.quantity })),
+        expression: '0',
+        isCurrent: name === invoiceName,
+      }));
+
+    const built: InvoiceCard[] = [];
+    for (const inv of roster) {
+      if (inv.name === invoiceName) continue;
+      const logs = grouped.get(inv.name) ?? [];
+      const items =
+        logs.length > 0
+          ? logs.map((l) => ({ price: l.price, quantity: l.quantity, name: l.itemName }))
+          : [];
+      const total =
+        logs.length > 0
+          ? logs.reduce((s, l) => s + l.price * l.quantity, 0).toFixed(2)
+          : '0.00';
+      built.push({
+        id: `past-${inv.name}`,
+        name: inv.name,
+        items,
         logs,
-        total: logs.reduce((s, l) => s + l.price * l.quantity, 0).toFixed(2),
+        total,
         isCurrent: false,
       });
     }
@@ -467,7 +492,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     });
 
     return built;
-  }, [actionLogs, cartItems, invoiceName, runningTotal]);
+  }, [actionLogs, cartItems, invoiceName, runningTotal, getSavedInvoices]);
 
   const [activeIdx, setActiveIdx] = useState(0);
   const [loadingInvoiceIdx, setLoadingInvoiceIdx] = useState<number | null>(null);
@@ -663,6 +688,9 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, handleClose, cards.length, renderMode, activeIdx, previewInvoice, focusZoomed, isBrowseMode]);
 
+  const dragRafRef = useRef<number | null>(null);
+  const pendingDeltaRef = useRef(0);
+
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (isBrowseMode) return;
     if ((e.target as HTMLElement).closest('input, button, textarea')) return;
@@ -670,6 +698,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     dragStartY.current = e.clientY;
     dragAxis.current = 'none';
     suppressClickSelectRef.current = false;
+    pendingDeltaRef.current = 0;
     setIsDragging(true);
     setDragDelta(0);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -682,20 +711,35 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     if (dragAxis.current === 'none' && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
       dragAxis.current = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
     }
-    if (dragAxis.current !== 'x') return;
-
-    setDragDelta(dx * DRAG_FACTOR);
+    if (dragAxis.current === 'x') {
+      pendingDeltaRef.current = dx * DRAG_FACTOR;
+    } else if (dragAxis.current === 'y') {
+      // Only allow upward dismiss gesture
+      pendingDeltaRef.current = Math.min(0, dy);
+    } else {
+      return;
+    }
+    if (dragRafRef.current !== null) return;
+    dragRafRef.current = window.requestAnimationFrame(() => {
+      dragRafRef.current = null;
+      setDragDelta(pendingDeltaRef.current);
+    });
   }, [isDragging, isBrowseMode]);
 
   const onPointerUp = useCallback(() => {
     if (!isDragging || isBrowseMode) return;
+    if (dragRafRef.current !== null) {
+      window.cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
     setIsDragging(false);
+    const delta = pendingDeltaRef.current;
     if (dragAxis.current === 'x') {
-      const absDelta = Math.abs(dragDelta);
+      const absDelta = Math.abs(delta);
       let nextIdx = activeIdx;
-      if (dragDelta < -SWIPE_THRESHOLD) {
+      if (delta < -SWIPE_THRESHOLD) {
         nextIdx = Math.min(activeIdx + 1, cards.length - 1);
-      } else if (dragDelta > SWIPE_THRESHOLD) {
+      } else if (delta > SWIPE_THRESHOLD) {
         nextIdx = Math.max(activeIdx - 1, 0);
       }
       if (nextIdx !== activeIdx) {
@@ -704,10 +748,20 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       } else if (absDelta >= SWIPE_THRESHOLD) {
         suppressClickSelectRef.current = true;
       }
+    } else if (dragAxis.current === 'y' && delta <= -SWIPE_UP_REMOVE_THRESHOLD && onRemoveInvoice) {
+      const card = cardsRef.current[activeIdx];
+      if (card) {
+        const result = onRemoveInvoice(card.name);
+        if (result.ok) {
+          suppressClickSelectRef.current = true;
+          setActiveIdx((idx) => Math.max(0, Math.min(idx, cardsRef.current.length - 2)));
+        }
+      }
     }
     dragAxis.current = 'none';
+    pendingDeltaRef.current = 0;
     setDragDelta(0);
-  }, [isDragging, isBrowseMode, dragDelta, cards.length, renderMode, activeIdx, previewInvoice]);
+  }, [isDragging, isBrowseMode, cards.length, activeIdx, previewInvoice, onRemoveInvoice]);
 
   const handleCardSelectClick = useCallback((idx: number) => {
     if (suppressClickSelectRef.current) {
@@ -741,7 +795,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           aria-busy="true"
         >
           <span className="auth-spinner invoice-switcher-loading__spinner" aria-hidden="true" />
-          <span className="app-subtext text-[10px] font-black uppercase tracking-[0.2em] mt-3 text-black/50">
+          <span className="app-subtext text-[10px] font-black uppercase mt-3 text-black/50">
             Loading
           </span>
         </div>
@@ -774,27 +828,34 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     let blurPx = 0;
     let zIndex = 100;
     let transformOrigin = 'center center';
-    let translateXValue = `${dragDelta}px`;
+    const verticalDismiss = dragAxis.current === 'y';
+    let translateXValue = verticalDismiss ? '0px' : `${dragDelta}px`;
+    const neighborBlur = isDragging ? 0 : 2.5;
 
     if (relativePos === 0) {
       opacity = 1;
       zIndex = 120;
+      if (verticalDismiss) {
+        translateY = dragDelta;
+        opacity = Math.max(0.2, 1 + dragDelta / 160);
+        scale = Math.max(0.92, 1 + dragDelta / 400);
+      }
     } else if (relativePos === -1) {
       translateY = 6;
       scale = 0.98;
-      opacity = 0.9;
-      blurPx = 2.5;
+      opacity = isDragging ? 0.7 : 0.9;
+      blurPx = neighborBlur;
       zIndex = 119;
       transformOrigin = 'right center';
-      translateXValue = `calc(-65% + ${dragDelta}px)`;
+      translateXValue = verticalDismiss ? '-65%' : `calc(-65% + ${dragDelta}px)`;
     } else {
       translateY = 6;
       scale = 0.98;
-      opacity = 0.9;
-      blurPx = 2.5;
+      opacity = isDragging ? 0.7 : 0.9;
+      blurPx = neighborBlur;
       zIndex = 119;
       transformOrigin = 'left center';
-      translateXValue = `calc(65% + ${dragDelta}px)`;
+      translateXValue = verticalDismiss ? '65%' : `calc(65% + ${dragDelta}px)`;
     }
 
     return {
@@ -871,18 +932,43 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   };
 
   const renderCloseButton = (ref?: React.Ref<HTMLButtonElement>) => (
-    <button
-      ref={ref ?? closeRef}
-      onClick={handleClose}
-      aria-label="Close invoice panel"
-      className={`w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 border ${
-        isLight
-          ? 'bg-white/70 backdrop-blur-xl text-black border-black/10 hover:bg-white/90'
-          : 'bg-white/10 backdrop-blur-xl text-white border-white/15 hover:bg-white/20'
-      }`}
-    >
-      <Icons.X size={20} />
-    </button>
+    <div className="flex items-center gap-2 shrink-0 pointer-events-auto">
+      {canUndoRemove && onUndoRemoveInvoice ? (
+        <button
+          type="button"
+          onClick={() => {
+            const result = onUndoRemoveInvoice();
+            if (result.ok) {
+              // Focus restored invoice after roster rebuild
+              window.setTimeout(() => {
+                const idx = cardsRef.current.findIndex((c) => c.name === result.name);
+                if (idx >= 0) setActiveIdx(idx);
+              }, 0);
+            }
+          }}
+          aria-label="Undo remove invoice"
+          className={`h-11 px-3 rounded-full flex items-center justify-center gap-1.5 transition-all active:scale-90 border text-[10px] font-black uppercase ${
+            isLight
+              ? 'bg-white/70 backdrop-blur-xl text-black border-black/10 hover:bg-white/90'
+              : 'bg-white/10 backdrop-blur-xl text-white border-white/15 hover:bg-white/20'
+          }`}
+        >
+          Undo
+        </button>
+      ) : null}
+      <button
+        ref={ref ?? closeRef}
+        onClick={handleClose}
+        aria-label="Close invoice panel"
+        className={`w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 border ${
+          isLight
+            ? 'bg-white/70 backdrop-blur-xl text-black border-black/10 hover:bg-white/90'
+            : 'bg-white/10 backdrop-blur-xl text-white border-white/15 hover:bg-white/20'
+        }`}
+      >
+        <Icons.X size={20} />
+      </button>
+    </div>
   );
 
   const renderSwitcherLayoutToolbar = () => {
@@ -994,7 +1080,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 {card.items.length}
               </span>
             </div>
-            <div className="text-[12px] sm:text-[13px] font-black tracking-tight leading-tight line-clamp-2 min-h-[1.6em]">
+            <div className="text-[12px] sm:text-[13px] font-black leading-tight line-clamp-2 min-h-[1.6em]">
               {card.name}
             </div>
             <div className="mt-1 space-y-0.5 min-h-0 flex-1 overflow-hidden opacity-70">
@@ -1075,7 +1161,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                   {card.items.length} items
                 </span>
               </div>
-              <div className="text-sm font-black tracking-tight truncate">{card.name}</div>
+              <div className="text-sm font-black truncate">{card.name}</div>
               {card.items.length > 0 && (
                 <div className="mt-1.5 space-y-0.5 max-h-[4.5rem] overflow-hidden">
                   {card.items.slice(0, 3).map((item, i) =>
@@ -1150,7 +1236,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           style={{ touchAction: 'pan-y' }}
         >
           {card.items.length === 0 ? (
-            <div className={`flex-1 flex items-center justify-center ${textMuted} text-[10px] font-black uppercase tracking-[0.28em] opacity-50`}>
+            <div className={`flex-1 flex items-center justify-center ${textMuted} text-[10px] font-black uppercase opacity-50`}>
               No items yet
             </div>
           ) : (
@@ -1447,7 +1533,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                   focusZoomed ? 'blur-md opacity-40' : ''
                 }`}
               >
-                <div className="text-sm font-black tracking-tight text-white drop-shadow-sm">
+                <div className="text-sm font-black text-white drop-shadow-sm">
                   Invoices
                 </div>
                 <p className="app-subtext text-[10px] opacity-45 text-white/50 mt-1">
@@ -1472,12 +1558,12 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         <div
           ref={stageRef}
           className={`relative z-20 ${receiptStageClass} select-none overflow-visible ${sheetClass}`}
-          style={{ touchAction: 'pan-x' }}
+          style={{ touchAction: 'none' }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
-          aria-label="Invoice switcher"
+          aria-label="Invoice switcher. Swipe sideways to browse, swipe up to remove."
           role="region"
         >
           <div className={`absolute inset-0 ${modeContentClass}`}>
@@ -1512,7 +1598,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                         filter: blurPx > 0 ? `blur(${blurPx}px)` : 'none',
                         transition: isDragging
                           ? 'none'
-                          : 'transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1), filter 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
+                          : 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s cubic-bezier(0.22, 1, 0.36, 1), filter 0.18s cubic-bezier(0.22, 1, 0.36, 1)',
+                        willChange: isDragging ? 'transform, opacity' : undefined,
                         pointerEvents: 'auto',
                         cursor: isActive ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
                       }}
