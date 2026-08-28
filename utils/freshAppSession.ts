@@ -7,7 +7,10 @@ export const isCloudUserAccount = (accountId: string): boolean =>
 
 export const FRESH_INVOICE_NAME = 'Invoice #1';
 
-/** Wipe POS / calculator / invoice local data (not auth or theme settings). */
+/**
+ * Manual shop-data reset only — NEVER call from login, hydrate, or APK update.
+ * Wiping here caused overnight inventory/invoice loss when wired to auth success.
+ */
 export const clearAppSessionData = (): void => {
   storage.set('pos_inventory', []);
   storage.set('pos_purchases', []);

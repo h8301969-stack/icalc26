@@ -88,14 +88,17 @@ export const useAuth = () => {
 
     void hydrate();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
-      if (!session) {
+      // Stay signed in across restarts / APK updates until explicit logout.
+      // Transient null sessions (startup race, token refresh) must NOT clear local login.
+      if (event === 'SIGNED_OUT') {
         logoutAccount();
         setAccount(null);
         setIsAuthenticated(false);
         return;
       }
+      if (!session) return;
       void getSupabaseSessionAccount().then((remote) => {
         if (!mounted || !remote) return;
         persistLocalSession(remote);

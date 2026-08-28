@@ -15,15 +15,22 @@ export const isCloudBackendEnabled = (): boolean => isSupabaseConfigured();
 
 let client: SupabaseClient | null = null;
 
+const authOptions = {
+  persistSession: true,
+  autoRefreshToken: true,
+  // Capacitor / APK: don't treat deep-link URL noise as a sign-out.
+  detectSessionInUrl: false,
+} as const;
+
 export const supabase: SupabaseClient = (() => {
   if (!isSupabaseConfigured()) {
     return createClient('https://placeholder.supabase.co', 'placeholder-key', {
-      auth: { persistSession: true, autoRefreshToken: true },
+      auth: authOptions,
     });
   }
   if (!client) {
     client = createClient(supabaseUrl!, supabaseKey!, {
-      auth: { persistSession: true, autoRefreshToken: true },
+      auth: authOptions,
     });
   }
   return client;

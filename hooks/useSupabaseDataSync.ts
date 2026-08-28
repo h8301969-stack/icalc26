@@ -129,9 +129,11 @@ export const useSupabaseDataSync = ({
 
     let cancelled = false;
 
+    /** Union local ∪ remote by id — never drop offline-only items or local images. */
     const mergeInventory = (remote: InventoryItem[]) => {
-      const localById = new Map(inventoryRef.current.map((item) => [item.id, item]));
-      return remote.map((remoteItem) => {
+      const localItems = inventoryRef.current;
+      const localById = new Map(localItems.map((item) => [item.id, item]));
+      const mergedRemote = remote.map((remoteItem) => {
         const local = localById.get(remoteItem.id);
         const activityById = new Map<string, InventoryItem['activities'][number]>();
         for (const a of remoteItem.activities ?? []) activityById.set(a.id, a);
@@ -143,10 +145,25 @@ export const useSupabaseDataSync = ({
         );
         return {
           ...remoteItem,
+          // Prefer local image (data:/tgfile:) so photos survive cloud rows with null image_url.
           image: local?.image || remoteItem.image || '',
+          stock: local && local.lastStocked >= remoteItem.lastStocked ? local.stock : remoteItem.stock,
+          price: local && local.lastStocked >= remoteItem.lastStocked ? local.price : remoteItem.price,
+          name: local?.name || remoteItem.name,
           activities,
         };
       });
+      const remoteIds = new Set(remote.map((item) => item.id));
+      const localOnly = localItems.filter((item) => !remoteIds.has(item.id));
+      return [...mergedRemote, ...localOnly];
+    };
+
+    const mergeById = <T extends { id: string }>(remote: T[], local: T[]): T[] => {
+      const byId = new Map(remote.map((row) => [row.id, row]));
+      for (const row of local) {
+        if (!byId.has(row.id)) byId.set(row.id, row);
+      }
+      return [...byId.values()];
     };
 
     const hydrate = async (reason: 'mount' | 'resume') => {
@@ -183,23 +200,23 @@ export const useSupabaseDataSync = ({
         }
 
         if (remoteHistory?.length) {
-          setHistory(remoteHistory);
+          setHistory(mergeById(remoteHistory, historyRef.current));
         }
 
         if (remotePurchases?.length) {
-          setPurchases(remotePurchases);
+          setPurchases(mergeById(remotePurchases, purchasesRef.current));
         }
 
         if (remoteSuppliers?.length) {
-          setSuppliers(remoteSuppliers);
+          setSuppliers(mergeById(remoteSuppliers, suppliersRef.current));
         }
 
         if (remoteRequests?.length) {
-          setRequests(remoteRequests);
+          setRequests(mergeById(remoteRequests, requestsRef.current));
         }
 
         if (remoteRestocks?.length) {
-          setRestocks(remoteRestocks);
+          setRestocks(mergeById(remoteRestocks, restocksRef.current));
         }
 
         if (remoteInvoice) {

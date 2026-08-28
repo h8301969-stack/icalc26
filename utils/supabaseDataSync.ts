@@ -359,13 +359,20 @@ export const syncInvoiceDataToSupabase = async (
 
   if (invoiceError) throw new Error(invoiceError.message);
 
-  const localNames = new Set(savedInvoices.map((invoice) => invoice.name));
-  const staleInvoiceIds = (existingRows ?? [])
-    .filter((row) => !localNames.has(row.name as string))
-    .map((row) => row.id as string);
+  // Only prune remote invoices when local has real invoice rows.
+  // Empty / default-only local must never wipe cloud invoice history.
+  const hasMeaningfulLocalInvoices = savedInvoices.some(
+    (invoice) => invoice.expression !== '0' || !invoice.isCurrent || savedInvoices.length > 1
+  );
+  if (hasMeaningfulLocalInvoices) {
+    const localNames = new Set(savedInvoices.map((invoice) => invoice.name));
+    const staleInvoiceIds = (existingRows ?? [])
+      .filter((row) => !localNames.has(row.name as string))
+      .map((row) => row.id as string);
 
-  if (staleInvoiceIds.length > 0) {
-    await supabase.from('invoices').delete().in('id', staleInvoiceIds);
+    if (staleInvoiceIds.length > 0) {
+      await supabase.from('invoices').delete().in('id', staleInvoiceIds);
+    }
   }
 
   const logRows = payload.pastLogs.map((log) => ({
@@ -441,20 +448,21 @@ export const syncCalcHistoryToSupabase = async (
     id: ensureUuid(item.id),
   }));
 
+  // Never wipe remote history when local is empty (pre-hydrate / fresh device race).
+  if (normalized.length === 0) return normalized;
+
   await supabase.from('calc_history').delete().eq('user_id', userId);
 
-  if (normalized.length > 0) {
-    const rows = normalized.map((item) => ({
-      id: item.id,
-      user_id: userId,
-      expression: item.expression,
-      result: item.result,
-      created_at: new Date(item.timestamp).toISOString(),
-    }));
+  const rows = normalized.map((item) => ({
+    id: item.id,
+    user_id: userId,
+    expression: item.expression,
+    result: item.result,
+    created_at: new Date(item.timestamp).toISOString(),
+  }));
 
-    const { error } = await supabase.from('calc_history').insert(rows);
-    if (error) throw new Error(error.message);
-  }
+  const { error } = await supabase.from('calc_history').insert(rows);
+  if (error) throw new Error(error.message);
 
   return normalized;
 };
@@ -498,22 +506,23 @@ export const syncPurchasesToSupabase = async (
     id: ensureUuid(purchase.id),
   }));
 
+  // Never wipe remote purchases when local is empty.
+  if (normalized.length === 0) return normalized;
+
   await supabase.from('purchases').delete().eq('user_id', userId);
 
-  if (normalized.length > 0) {
-    const rows = normalized.map((purchase) => ({
-      id: purchase.id,
-      user_id: userId,
-      item_name: purchase.itemName,
-      quantity: purchase.quantity,
-      price: purchase.price,
-      total: purchase.total,
-      purchased_at: new Date(purchase.timestamp).toISOString(),
-    }));
+  const rows = normalized.map((purchase) => ({
+    id: purchase.id,
+    user_id: userId,
+    item_name: purchase.itemName,
+    quantity: purchase.quantity,
+    price: purchase.price,
+    total: purchase.total,
+    purchased_at: new Date(purchase.timestamp).toISOString(),
+  }));
 
-    const { error } = await supabase.from('purchases').insert(rows);
-    if (error) throw new Error(error.message);
-  }
+  const { error } = await supabase.from('purchases').insert(rows);
+  if (error) throw new Error(error.message);
 
   return normalized;
 };
@@ -601,13 +610,16 @@ export const syncSuppliersToSupabase = async (
     .select('id')
     .eq('user_id', userId);
 
-  const localIds = new Set(supplierIds);
-  const staleIds = [...(remoteRows ?? []).map((row) => row.id as string)].filter(
-    (id) => !localIds.has(id)
-  );
+  // Never mass-delete remote suppliers when local is empty.
+  if (supplierIds.length > 0) {
+    const localIds = new Set(supplierIds);
+    const staleIds = [...(remoteRows ?? []).map((row) => row.id as string)].filter(
+      (id) => !localIds.has(id)
+    );
 
-  if (staleIds.length > 0) {
-    await supabase.from('suppliers').delete().in('id', staleIds);
+    if (staleIds.length > 0) {
+      await supabase.from('suppliers').delete().in('id', staleIds);
+    }
   }
 
   return normalized;
@@ -649,24 +661,25 @@ export const syncRequestsToSupabase = async (
     id: ensureUuid(request.id),
   }));
 
+  // Never wipe remote requests when local is empty.
+  if (normalized.length === 0) return normalized;
+
   await supabase.from('requests').delete().eq('user_id', userId);
 
-  if (normalized.length > 0) {
-    const rows = normalized.map((request) => ({
-      id: request.id,
-      user_id: userId,
-      requester: request.requester,
-      notes: request.notes || null,
-      status: request.status,
-      item_count: request.itemCount,
-      total: request.total,
-      created_at: new Date(request.timestamp).toISOString(),
-      updated_at: new Date(request.timestamp).toISOString(),
-    }));
+  const rows = normalized.map((request) => ({
+    id: request.id,
+    user_id: userId,
+    requester: request.requester,
+    notes: request.notes || null,
+    status: request.status,
+    item_count: request.itemCount,
+    total: request.total,
+    created_at: new Date(request.timestamp).toISOString(),
+    updated_at: new Date(request.timestamp).toISOString(),
+  }));
 
-    const { error } = await supabase.from('requests').insert(rows);
-    if (error) throw new Error(error.message);
-  }
+  const { error } = await supabase.from('requests').insert(rows);
+  if (error) throw new Error(error.message);
 
   return normalized;
 };
@@ -723,9 +736,10 @@ export const syncRestocksToSupabase = async (
     })),
   }));
 
-  await supabase.from('restock_notes').delete().eq('user_id', userId);
-
+  // Never wipe remote restocks when local is empty.
   if (normalized.length === 0) return normalized;
+
+  await supabase.from('restock_notes').delete().eq('user_id', userId);
 
   const noteRows = normalized.map((note) => ({
     id: note.id,
