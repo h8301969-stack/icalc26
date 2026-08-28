@@ -32,7 +32,10 @@ import {
   PHONE_APP_DOWNLOAD_URL,
   fetchLatestPhoneRelease,
   formatReleaseElapsed,
+  getInstalledAppVersion,
+  buildPhoneUpdateStatus,
   type AppReleaseInfo,
+  type PhoneUpdateStatus,
 } from '../utils/appRelease';
 import { heartbeatProfilePresence, touchProfilePresence } from '../utils/profilePresence';
 
@@ -186,6 +189,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [phoneRelease, setPhoneRelease] = useState<AppReleaseInfo | null>(null);
   const [phoneReleaseLoading, setPhoneReleaseLoading] = useState(false);
   const [phoneReleaseNow, setPhoneReleaseNow] = useState(() => Date.now());
+  const [installedAppVersion, setInstalledAppVersion] = useState<string | null>(null);
+  const isNativeApp = Capacitor.isNativePlatform();
 
   // Snapshot committed settings into draft when panel opens
   useEffect(() => {
@@ -211,17 +216,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     return () => window.clearInterval(tick);
   }, [isOpen, draft.activeProfileId, settings.activeProfileId]);
 
-  // Load latest phone release metadata whenever Settings opens (web download card)
+  // Load latest phone release metadata whenever Settings opens (web + native)
   useEffect(() => {
-    if (!isOpen || Capacitor.isNativePlatform()) return;
+    if (!isOpen) return;
     let cancelled = false;
     setPhoneReleaseLoading(true);
     setPhoneReleaseNow(Date.now());
-    void fetchLatestPhoneRelease().then((info) => {
-      if (cancelled) return;
-      setPhoneRelease(info);
-      setPhoneReleaseLoading(false);
-    });
+    void Promise.all([fetchLatestPhoneRelease(), getInstalledAppVersion()]).then(
+      ([info, installed]) => {
+        if (cancelled) return;
+        setPhoneRelease(info);
+        setInstalledAppVersion(installed);
+        setPhoneReleaseLoading(false);
+      }
+    );
     const tick = window.setInterval(() => setPhoneReleaseNow(Date.now()), 60_000);
     return () => {
       cancelled = true;
@@ -917,7 +925,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   })
                 }
                 options={[
-                  { id: 'horizontal', label: 'Horizontal', icon: <Icons.Carousel size={14} /> },
+                  { id: 'horizontal', label: 'App switcher', icon: <Icons.Carousel size={14} /> },
                   { id: 'list', label: 'List', icon: <Icons.List size={14} /> },
                 ]}
               />
@@ -1295,32 +1303,82 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
 
-        {/* Phone install — always points at the rolling latest release (web only) */}
-        {!Capacitor.isNativePlatform() && (
-          <div className="settings-card p-6 shadow-2xl">
-            {renderSettingsCardHeader('Get iCalc on your phone', <Icons.Download size={22} />)}
-            <p className={`app-subtext text-[11px] font-medium mb-2 ${isLight ? 'text-black/60' : 'text-white/60'}`} style={{ letterSpacing: 0 }}>
-              Download the latest phone app.
-            </p>
-            <p className={`text-[11px] font-semibold mb-4 ${isLight ? 'text-black/45' : 'text-white/45'}`} style={{ letterSpacing: 0 }}>
-              {phoneReleaseLoading
-                ? 'Checking for updates…'
-                : phoneRelease
-                  ? `Updated ${formatReleaseElapsed(phoneRelease.publishedAt, phoneReleaseNow)} ago`
-                  : 'Ready to download'}
-            </p>
-            <a
-              href={PHONE_APP_DOWNLOAD_URL}
-              className={`w-full py-3.5 px-4 rounded-xl font-semibold text-[12px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
-                isLight ? 'bg-blue-500 text-white' : 'bg-blue-500/90 text-white'
-              }`}
-              style={{ letterSpacing: 0 }}
-            >
-              <Icons.Download size={16} />
-              Download for phone
-            </a>
-          </div>
-        )}
+        {/* Phone install / update — web download + native version status */}
+        {(() => {
+          const updateStatus: PhoneUpdateStatus = phoneReleaseLoading
+            ? { kind: 'loading' }
+            : isNativeApp
+              ? buildPhoneUpdateStatus(installedAppVersion || '0.0.0', phoneRelease, phoneReleaseNow)
+              : phoneRelease
+                ? {
+                    kind: 'unknown',
+                    message: `Updated ${formatReleaseElapsed(phoneRelease.publishedAt, phoneReleaseNow)} ago`,
+                  }
+                : { kind: 'unknown', message: 'Ready to download' };
+          const statusMessage =
+            updateStatus.kind === 'loading'
+              ? 'Checking for updates…'
+              : updateStatus.message;
+          const canDownloadUpdate = !isNativeApp || updateStatus.kind === 'update' || updateStatus.kind === 'unknown';
+          const buttonDisabled = isNativeApp && updateStatus.kind === 'current';
+
+          return (
+            <div className="settings-card p-6 shadow-2xl">
+              {renderSettingsCardHeader(
+                isNativeApp ? 'App updates' : 'Get iCalc on your phone',
+                <Icons.Download size={22} />
+              )}
+              <p className={`app-subtext text-[11px] font-medium mb-2 ${isLight ? 'text-black/60' : 'text-white/60'}`} style={{ letterSpacing: 0 }}>
+                {isNativeApp
+                  ? 'See whether this install is current, or grab the newest APK.'
+                  : 'Download the latest phone app.'}
+              </p>
+              <p
+                className={`text-[11px] font-semibold mb-4 ${
+                  updateStatus.kind === 'update'
+                    ? 'text-amber-500'
+                    : updateStatus.kind === 'current'
+                      ? isLight
+                        ? 'text-emerald-600'
+                        : 'text-emerald-400'
+                      : isLight
+                        ? 'text-black/45'
+                        : 'text-white/45'
+                }`}
+                style={{ letterSpacing: 0 }}
+              >
+                {statusMessage}
+              </p>
+              {buttonDisabled ? (
+                <div
+                  className={`w-full py-3.5 px-4 rounded-xl font-semibold text-[12px] flex items-center justify-center gap-2 opacity-70 ${
+                    isLight ? 'bg-black/8 text-black/70' : 'bg-white/10 text-white/70'
+                  }`}
+                  style={{ letterSpacing: 0 }}
+                  aria-disabled="true"
+                >
+                  <Icons.Check size={16} />
+                  You’re up to date
+                </div>
+              ) : (
+                <a
+                  href={PHONE_APP_DOWNLOAD_URL}
+                  className={`w-full py-3.5 px-4 rounded-xl font-semibold text-[12px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
+                    isLight ? 'bg-blue-500 text-white' : 'bg-blue-500/90 text-white'
+                  } ${canDownloadUpdate ? '' : 'pointer-events-none opacity-50'}`}
+                  style={{ letterSpacing: 0 }}
+                >
+                  <Icons.Download size={16} />
+                  {isNativeApp
+                    ? updateStatus.kind === 'update'
+                      ? `Download ${updateStatus.latestVersion}`
+                      : 'Download latest APK'
+                    : 'Download for phone'}
+                </a>
+              )}
+            </div>
+          );
+        })()}
 
       </div>
 

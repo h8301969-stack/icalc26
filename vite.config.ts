@@ -1,10 +1,14 @@
 /// <reference types="vitest/config" />
 import path from 'path';
+import { readFileSync } from 'fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import net from 'net';
 
 const allowedPorts = [3000, 3002, 3003, 3004, 3005];
+const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8')) as {
+  version?: string;
+};
 
 async function getAvailablePort(ports: number[]) {
   for (const port of ports) {
@@ -31,8 +35,9 @@ export default defineConfig(async () => {
         host: true,
       },
       plugins: [react()],
-      // No env injection needed — all features are client-side only.
-      // (Previously contained GEMINI_API_KEY wiring; removed during production cleanup.)
+      define: {
+        __APP_VERSION__: JSON.stringify(pkg.version || '0.0.0'),
+      },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),

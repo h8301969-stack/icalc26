@@ -1,10 +1,11 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+﻿import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   safeEvaluate,
   tryEvaluateExpression,
   sanitizeClipboardExpression,
 } from '../utils/calculator';
 import {
+  addOrIncrementPosItem,
   formatInventoryPriceSegment,
 } from '../utils/posExpression';
 
@@ -18,7 +19,6 @@ export const useCalculator = (
   const [redoStack, setRedoStack] = useState<string[]>([]);
   const [calcError, setCalcError] = useState<string | null>(null);
 
-  // Movable blinker / cursor position inside the expression (preferred insertion point)
   const [cursorPos, setCursorPos] = useState(0);
   const cursorPosRef = useRef(0);
 
@@ -49,7 +49,6 @@ export const useCalculator = (
     triggerHaptic();
     pushToUndo(expression);
 
-    // Normalize incoming symbols
     let char = raw;
     if (char === '×') char = '*';
     if (char === '÷') char = '/';
@@ -81,7 +80,6 @@ export const useCalculator = (
       let pos = cursorPosRef.current;
       if (pos < 0 || pos > prev.length) pos = prev.length;
 
-      // Special handling when at '0' start
       if (prev === '0' && !['+', '×', '÷', '.', '%'].includes(sym)) {
         const newExpr = sym;
         const nextPos = newExpr.length;
@@ -105,7 +103,6 @@ export const useCalculator = (
         }
       }
 
-      // Insert at current cursor position (movable blinker support)
       const newExpr = prev.slice(0, pos) + sym + prev.slice(pos);
       const nextPos = pos + 1;
       cursorPosRef.current = nextPos;
@@ -251,6 +248,21 @@ export const useCalculator = (
     });
   }, [expression, triggerHaptic, pushToUndo]);
 
+  const addPosCartItem = useCallback(
+    (price: number, quantity = 1) => {
+      triggerHaptic();
+      pushToUndo(expression);
+      setIsResultMode(false);
+      setExpression((prev) => {
+        const next = addOrIncrementPosItem(prev, price, quantity);
+        cursorPosRef.current = next.length;
+        setCursorPos(next.length);
+        return next;
+      });
+    },
+    [expression, triggerHaptic, pushToUndo]
+  );
+
   return {
     expression,
     setExpression,
@@ -263,6 +275,7 @@ export const useCalculator = (
     clearExpression,
     deleteLast,
     addInventoryItem,
+    addPosCartItem,
     pasteExpression,
     cursorPos,
     setCursorPos,

@@ -129,3 +129,27 @@ export const buildPosExpressionFromItems = (items: PosLineItem[]): string => {
   if (!items.length) return '0';
   return items.map(formatPosSegment).join('+');
 };
+
+/** Add qty to a price line (or create it). Used by Assets Hub carting. */
+export const addOrIncrementPosItem = (
+  expression: string,
+  price: number,
+  qtyDelta = 1
+): string => {
+  if (!Number.isFinite(price) || !Number.isFinite(qtyDelta) || qtyDelta === 0) {
+    return expression && expression !== '0' ? expression : '0';
+  }
+  const base = !expression || expression === '0' ? [] : parsePosLineItems(expression);
+  const idx = base.findIndex((item) => Math.abs(item.price - price) < 0.001);
+  if (idx >= 0) {
+    const nextQty = base[idx].quantity + qtyDelta;
+    if (nextQty <= 0) {
+      base.splice(idx, 1);
+    } else {
+      base[idx] = { ...base[idx], quantity: nextQty };
+    }
+  } else if (qtyDelta > 0) {
+    base.push({ price, quantity: qtyDelta });
+  }
+  return buildPosExpressionFromItems(base);
+};

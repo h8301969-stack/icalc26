@@ -58,7 +58,7 @@ interface HistoryPanelProps {
 }
 
 const SWITCHER_LAYOUT_OPTIONS = [
-  { id: 'horizontal' as const, label: 'Horizontal carousel', icon: Icons.Carousel },
+  { id: 'horizontal' as const, label: 'App switcher', icon: Icons.Carousel },
   { id: 'list' as const, label: 'List view', icon: Icons.List },
 ];
 
@@ -768,8 +768,13 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       suppressClickSelectRef.current = false;
       return;
     }
+    // Side cards bring forward (Apple switcher); focused card loads into calculator.
+    if (idx !== activeIdx) {
+      previewInvoice(idx);
+      return;
+    }
     beginInvoiceLoad(idx);
-  }, [beginInvoiceLoad]);
+  }, [activeIdx, beginInvoiceLoad, previewInvoice]);
 
   const handleSwitcherModeChange = useCallback(
     (mode: SwitcherMode) => {
@@ -805,14 +810,23 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   if (!mounted) return null;
 
+  /** Apple app-switcher stack: focused card front/center; neighbors recede with depth. */
   const getCardStyle = (idx: number) => {
     const relativePos = idx - activeIdx;
+    const verticalDismiss = dragAxis.current === 'y';
+    // Normalize drag to ~[-1, 1] so cards interpolate toward the next stack slot.
+    const dragProgress = verticalDismiss
+      ? 0
+      : Math.max(-1.15, Math.min(1.15, dragDelta / 160));
+    const effectiveRel = relativePos - dragProgress;
 
-    if (Math.abs(relativePos) > 1) {
+    if (Math.abs(effectiveRel) > 2.35 && Math.abs(relativePos) > 2) {
       return {
         translateX: '0px',
         translateY: 0,
         scale: 1,
+        rotateY: 0,
+        translateZ: 0,
         opacity: 0,
         blurPx: 0,
         zIndex: 90,
@@ -822,52 +836,54 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       };
     }
 
+    const absRel = Math.abs(effectiveRel);
+    const sign = effectiveRel === 0 ? 0 : effectiveRel > 0 ? 1 : -1;
     let translateY = 0;
-    let scale = 1;
-    let opacity = 0;
+    let scale = Math.max(0.72, 1 - absRel * 0.11);
+    let opacity = Math.max(0, 1 - absRel * 0.28);
     let blurPx = 0;
-    let zIndex = 100;
+    let rotateY = -effectiveRel * 16;
+    let translateZ = -absRel * 72;
+    let zIndex = Math.round(130 - absRel * 12);
     let transformOrigin = 'center center';
-    const verticalDismiss = dragAxis.current === 'y';
-    let translateXValue = verticalDismiss ? '0px' : `${dragDelta}px`;
-    const neighborBlur = isDragging ? 0 : 2.5;
+    let translateXValue = `${effectiveRel * 34}%`;
 
-    if (relativePos === 0) {
+    if (relativePos === 0 && verticalDismiss) {
+      translateY = dragDelta;
+      opacity = Math.max(0.2, 1 + dragDelta / 160);
+      scale = Math.max(0.88, 1 + dragDelta / 400);
+      rotateY = 0;
+      translateZ = 0;
+      translateXValue = '0%';
+      zIndex = 140;
+    } else if (absRel < 0.08) {
       opacity = 1;
-      zIndex = 120;
-      if (verticalDismiss) {
-        translateY = dragDelta;
-        opacity = Math.max(0.2, 1 + dragDelta / 160);
-        scale = Math.max(0.92, 1 + dragDelta / 400);
-      }
-    } else if (relativePos === -1) {
-      translateY = 6;
-      scale = 0.98;
-      opacity = isDragging ? 0.7 : 0.9;
-      blurPx = neighborBlur;
-      zIndex = 119;
-      transformOrigin = 'right center';
-      translateXValue = verticalDismiss ? '-65%' : `calc(-65% + ${dragDelta}px)`;
+      scale = 1;
+      rotateY = 0;
+      translateZ = 0;
+      translateXValue = `${effectiveRel * 10}%`;
+      zIndex = 140;
     } else {
-      translateY = 6;
-      scale = 0.98;
-      opacity = isDragging ? 0.7 : 0.9;
-      blurPx = neighborBlur;
-      zIndex = 119;
-      transformOrigin = 'left center';
-      translateXValue = verticalDismiss ? '65%' : `calc(65% + ${dragDelta}px)`;
+      // Soft side peek — cards sit under/behind the focused one.
+      translateY = absRel * 4;
+      transformOrigin = sign < 0 ? 'right center' : 'left center';
+      if (!isDragging && absRel > 0.55) {
+        blurPx = Math.min(1.6, (absRel - 0.55) * 1.2);
+      }
     }
 
     return {
       translateX: translateXValue,
       translateY,
       scale,
+      rotateY,
+      translateZ,
       opacity,
       blurPx,
       zIndex,
       transformOrigin,
       isActive: relativePos === 0,
-      hidden: false,
+      hidden: Math.abs(relativePos) > 2,
     };
   };
 
@@ -1557,21 +1573,23 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       ) : (
         <div
           ref={stageRef}
-          className={`relative z-20 ${receiptStageClass} select-none overflow-visible ${sheetClass}`}
+          className={`relative z-20 invoice-switcher-stage--apple ${receiptStageClass} select-none overflow-visible ${sheetClass}`}
           style={{ touchAction: 'none' }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
-          aria-label="Invoice switcher. Swipe sideways to browse, swipe up to remove."
+          aria-label="Invoice switcher. Swipe sideways to browse stacked invoices, swipe up to remove."
           role="region"
         >
-          <div className={`absolute inset-0 ${modeContentClass}`}>
+          <div className={`absolute inset-0 invoice-switcher-stage__stack ${modeContentClass}`}>
             {cards.map((card, idx) => {
                   const {
                     translateX,
                     translateY,
                     scale,
+                    rotateY,
+                    translateZ,
                     opacity,
                     blurPx,
                     zIndex,
@@ -1589,18 +1607,18 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                       inert={!isActive || !isOpen ? true : undefined}
                       role={isActive ? 'dialog' : undefined}
                       aria-modal={isActive ? true : undefined}
-                      className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]`}
+                      className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_24px_80px_rgba(0,0,0,0.55)] invoice-switcher-stage__card`}
                       style={{
-                        transform: `translateX(${translateX}) translateY(${translateY}) scale(${scale})`,
+                        transform: `translateX(${translateX}) translateY(${translateY}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`,
                         transformOrigin,
                         opacity,
                         zIndex,
                         filter: blurPx > 0 ? `blur(${blurPx}px)` : 'none',
                         transition: isDragging
                           ? 'none'
-                          : 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s cubic-bezier(0.22, 1, 0.36, 1), filter 0.18s cubic-bezier(0.22, 1, 0.36, 1)',
+                          : 'transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1), filter 0.2s cubic-bezier(0.22, 1, 0.36, 1)',
                         willChange: isDragging ? 'transform, opacity' : undefined,
-                        pointerEvents: 'auto',
+                        pointerEvents: isActive || Math.abs(idx - activeIdx) === 1 ? 'auto' : 'none',
                         cursor: isActive ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
                       }}
                       onClick={() => handleCardSelectClick(idx)}

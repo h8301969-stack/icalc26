@@ -124,7 +124,7 @@ const AppContent: React.FC = () => {
   const {
     expression, calcError, inputChar,
     toggleSign, finalize, handleUndo, handleRedo, clearExpression, deleteLast,
-    addInventoryItem, pasteExpression, cursorPos, setCursorPos, setExpression
+    addInventoryItem, addPosCartItem, pasteExpression, cursorPos, setCursorPos, setExpression
   } = useCalculator(saveResult, triggerHaptic);
 
   const syncStatus = useSyncStatus();
@@ -1658,6 +1658,8 @@ const AppContent: React.FC = () => {
         onLogout={handleLogout}
         onVerifyAdminPassword={handleVerifyAdminPassword}
         onAccountNotify={handleAccountNotify}
+        onAddProductToCart={(price) => addPosCartItem(price, 1)}
+        onStartNewInvoice={handleNewInvoice}
       />
       {isUnlocked && <AccountToastHost isLight={isLight} api={accountNotifications} />}
       <SyncStatusIndicator

@@ -118,13 +118,22 @@ jobs:
           ls -lh public/icalc.apk
           echo "kind=$KIND" >> "$GITHUB_OUTPUT"
 
+      - name: Read app version
+        id: appver
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-${{ github.run_number }}-${{ github.sha }}
-          name: APK build ${{ github.run_number }} (${{ steps.stage.outputs.kind }})
+          name: APK ${{ steps.appver.outputs.version }} · build ${{ github.run_number }} (${{ steps.stage.outputs.kind }})
           body: |
             Automated Android APK from commit `${{ github.sha }}` on `${{ github.ref_name }}`.
+
+            App-Version: ${{ steps.appver.outputs.version }}
+            Commit: `${{ github.sha }}`
 
             - Build type: **${{ steps.stage.outputs.kind }}**
             - Download: `icalc.apk` (attached)
@@ -140,9 +149,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: Latest APK
+          name: Latest APK ${{ steps.appver.outputs.version }}
           body: |
             Rolling release — always the newest CI APK from `main`.
+
+            App-Version: ${{ steps.appver.outputs.version }}
+            Commit: `${{ github.sha }}`
 
             **Download:** [icalc.apk](https://github.com/${{ github.repository }}/releases/download/apk-latest/icalc.apk)
 

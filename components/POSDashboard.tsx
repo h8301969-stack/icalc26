@@ -91,6 +91,10 @@ interface POSDashboardProps {
     title: string;
     body: string;
   }) => void;
+  /** Assets Hub carting — tap product adds +1 and syncs calculator expression. */
+  onAddProductToCart?: (price: number) => void;
+  /** Cart panel + button — start a fresh invoice (same as calculator +). */
+  onStartNewInvoice?: () => void;
 }
 
 /** Accept any common photo container; empty MIME (HEIC etc.) falls back to extension. */
@@ -251,6 +255,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   onLogout,
   onVerifyAdminPassword,
   onAccountNotify,
+  onAddProductToCart,
+  onStartNewInvoice,
 }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [renamingWholesaleId, setRenamingWholesaleId] = useState<string | null>(null);
@@ -314,6 +320,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+  const [cartOpen, setCartOpen] = useState(false);
+  const itemLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const itemLongPressFired = useRef(false);
 
   useEffect(() => {
     if (!selectedItem) return;
@@ -375,6 +384,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         } else if (showAssetMenu) {
           setShowAssetMenu(false);
           setAssetActionMode('add');
+        } else if (cartOpen) {
+          setCartOpen(false);
         } else if (namingUnidentified) {
           setNamingUnidentified(null);
         } else if (actionLogsExpanded) {
@@ -405,7 +416,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     return () => window.removeEventListener('keydown', onKey);
     // closeAssetAction defined later; Escape closes form via setState
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, onClose, showAssetMenu, namingUnidentified, actionLogsExpanded, selectedItem, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded, wholesaleDeleteConfirmId, wholesaleHoldMenuId, showWholesaleArchive]);
+  }, [isOpen, onClose, showAssetMenu, cartOpen, namingUnidentified, actionLogsExpanded, selectedItem, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded, wholesaleDeleteConfirmId, wholesaleHoldMenuId, showWholesaleArchive]);
 
   useEffect(() => {
     if (!canViewTransactions) {
@@ -1791,13 +1802,61 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     setSelectedItem(item);
   }, []);
 
+  const addProductToCart = useCallback(
+    (item: InventoryItem) => {
+      if (!onAddProductToCart) {
+        openInventoryItem(item);
+        return;
+      }
+      onAddProductToCart(item.price);
+      setCartOpen(true);
+    },
+    [onAddProductToCart, openInventoryItem]
+  );
+
+  const clearItemLongPress = useCallback(() => {
+    if (itemLongPressTimer.current) {
+      clearTimeout(itemLongPressTimer.current);
+      itemLongPressTimer.current = null;
+    }
+  }, []);
+
+  const startItemLongPress = useCallback(
+    (item: InventoryItem) => {
+      itemLongPressFired.current = false;
+      clearItemLongPress();
+      itemLongPressTimer.current = setTimeout(() => {
+        itemLongPressFired.current = true;
+        openInventoryItem(item);
+      }, 480);
+    },
+    [clearItemLongPress, openInventoryItem]
+  );
+
+  const handleItemTap = useCallback(
+    (item: InventoryItem) => {
+      if (itemLongPressFired.current) {
+        itemLongPressFired.current = false;
+        return;
+      }
+      addProductToCart(item);
+    },
+    [addProductToCart]
+  );
+
+  const cartLineCount = cartItems.reduce((sum, line) => sum + (line.quantity || 0), 0);
+
   const renderInventoryListRow = (item: InventoryItem, idx: number) => (
     <button
       key={item.id}
       type="button"
       role="listitem"
-      aria-label={`Inventory item ${idx + 1}: ${item.name}, stock ${item.stock}, price ¢${item.price}`}
-      onClick={() => openInventoryItem(item)}
+      aria-label={`Add ${item.name} to cart. Long-press for details. Stock ${item.stock}, price ¢${item.price}`}
+      onClick={() => handleItemTap(item)}
+      onPointerDown={() => startItemLongPress(item)}
+      onPointerUp={clearItemLongPress}
+      onPointerCancel={clearItemLongPress}
+      onPointerLeave={clearItemLongPress}
       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left active:scale-[0.99] transition-all pos-dashboard-glass-btn ${
         isLight ? 'pos-dashboard-glass-btn--light' : 'pos-dashboard-glass-btn--dark'
       }`}
@@ -1826,12 +1885,16 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       <div
         role="listitem"
         tabIndex={0}
-        aria-label={`Inventory item ${idx + 1}: ${item.name}, stock ${item.stock}, price ¢${item.price}`}
-        onClick={() => openInventoryItem(item)}
+        aria-label={`Add ${item.name} to cart. Long-press for details. Stock ${item.stock}, price ¢${item.price}`}
+        onClick={() => handleItemTap(item)}
+        onPointerDown={() => startItemLongPress(item)}
+        onPointerUp={clearItemLongPress}
+        onPointerCancel={clearItemLongPress}
+        onPointerLeave={clearItemLongPress}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            openInventoryItem(item);
+            handleItemTap(item);
           }
         }}
         className={`group rounded-xl overflow-hidden cursor-pointer ${levitateClass} relative focus:outline-none focus:ring-2 focus:ring-white/40`}
@@ -2402,7 +2465,12 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                 {/* Top row: Hub + search + add — title sits below */}
                 <div className="flex items-center gap-2 mb-2 min-h-11">
                   <button
-                    onClick={() => { setSelectedItem(null); setInventoryExpanded(false); setSearchQuery(''); }}
+                    onClick={() => {
+                      setSelectedItem(null);
+                      setInventoryExpanded(false);
+                      setSearchQuery('');
+                      setCartOpen(false);
+                    }}
                     aria-label="Back to Vision Hub"
                     className={`relative z-10 shrink-0 ${HUB_BACK_BTN} ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'}`}
                   >
@@ -2432,6 +2500,25 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                       aria-label="Search inventory items"
                     />
                   </label>
+                  {cartLineCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setCartOpen(true)}
+                      className={`relative z-10 shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-full active:scale-90 transition-all ${
+                        isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'
+                      }`}
+                      aria-label={`Open cart, ${cartLineCount} items`}
+                      aria-expanded={cartOpen}
+                    >
+                      <Icons.Cart size={16} />
+                      <span
+                        className="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full text-[9px] font-black text-white flex items-center justify-center"
+                        style={{ backgroundColor: accentColor }}
+                      >
+                        {cartLineCount > 99 ? '99+' : cartLineCount}
+                      </span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={toggleAssetMenu}
@@ -2637,6 +2724,123 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           ) : null}
         </div>
       </div>
+
+      {/* Assets Hub cart — right-side popup synced with calculator invoice */}
+      <MorphPresence show={cartOpen && inventoryExpanded && !selectedItem}>
+        {(visible) => (
+          <div
+            className={`fixed inset-0 z-[240] flex justify-end ${
+              visible ? 'pointer-events-auto' : 'pointer-events-none'
+            }`}
+            role="presentation"
+          >
+            <button
+              type="button"
+              className={`absolute inset-0 morph-scrim ${visible ? 'morph-scrim--in' : 'morph-scrim--out'}`}
+              aria-label="Close cart"
+              onClick={() => setCartOpen(false)}
+            />
+            <aside
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Cart for ${invoiceName || 'current invoice'}`}
+              className={`relative z-[241] h-full w-[min(20rem,88vw)] flex flex-col border-l shadow-[-24px_0_80px_rgba(0,0,0,0.35)] transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+                visible ? 'translate-x-0' : 'translate-x-full'
+              } ${isLight ? 'bg-[#f7f7f8] border-black/8 text-zinc-900' : 'bg-zinc-950 border-white/10 text-white'}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={`flex items-center gap-2 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 border-b ${isLight ? 'border-black/8' : 'border-white/10'}`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onStartNewInvoice?.();
+                    setCartOpen(true);
+                  }}
+                  className="inline-flex items-center justify-center h-9 w-9 rounded-full text-white active:scale-90 transition-all shadow-lg"
+                  style={{ backgroundColor: accentColor }}
+                  aria-label="Start new invoice"
+                  title="New invoice"
+                >
+                  <Icons.Plus size={16} />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-[10px] font-black uppercase opacity-45 ${textColorClass}`} style={{ letterSpacing: 0 }}>
+                    Current invoice
+                  </p>
+                  <p className={`text-[13px] font-black truncate ${textColorClass}`} title={invoiceName}>
+                    {invoiceName || 'Untitled'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCartOpen(false)}
+                  className={`inline-flex items-center justify-center h-9 w-9 rounded-full active:scale-90 transition-all ${
+                    isLight ? 'bg-black/5 text-zinc-800' : 'bg-white/10 text-white'
+                  }`}
+                  aria-label="Close cart"
+                >
+                  <Icons.X size={16} />
+                </button>
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 py-3 space-y-2">
+                {cartItems.length === 0 ? (
+                  <div className={`rounded-2xl p-6 text-center ${isLight ? 'bg-white' : 'bg-white/5'}`}>
+                    <p className={`text-[12px] font-black ${textColorClass}`}>Cart is empty</p>
+                    <p className={`app-subtext text-[10px] mt-1 opacity-55 ${cardSubtextMutedClass}`} style={{ letterSpacing: 0 }}>
+                      Tap a product to add it. It syncs with the calculator.
+                    </p>
+                  </div>
+                ) : (
+                  cartItems.map((line, idx) => {
+                    const name = line.name || `Item ${idx + 1}`;
+                    const lineTotal = (line.price || 0) * (line.quantity || 0);
+                    return (
+                      <div
+                        key={`${name}-${line.price}-${idx}`}
+                        className={`rounded-2xl px-3 py-2.5 flex items-center gap-3 ${
+                          isLight ? 'bg-white shadow-sm' : 'bg-white/6'
+                        }`}
+                      >
+                        <span
+                          className={`shrink-0 inline-flex items-center justify-center min-w-[1.75rem] h-7 px-1.5 rounded-lg text-[11px] font-black tabular-nums ${
+                            isLight ? 'bg-black/6 text-zinc-900' : 'bg-white/10 text-white'
+                          }`}
+                        >
+                          {line.quantity}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-[12px] font-black truncate ${textColorClass}`}>{name}</p>
+                          <p className={`app-subtext text-[10px] opacity-50 tabular-nums ${cardSubtextMutedClass}`} style={{ letterSpacing: 0 }}>
+                            {formatCurrency(String(line.price))}
+                          </p>
+                        </div>
+                        <p className={`text-[12px] font-black tabular-nums shrink-0 ${textColorClass}`}>
+                          {formatCurrency(String(lineTotal))}
+                        </p>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className={`px-3 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] border-t ${isLight ? 'border-black/8 bg-white/80' : 'border-white/10 bg-black/40'}`}>
+                <div className="flex items-end justify-between gap-3 mb-1">
+                  <span className={`text-[10px] font-black uppercase opacity-45 ${textColorClass}`} style={{ letterSpacing: 0 }}>
+                    Total
+                  </span>
+                  <span className={`text-xl font-black tabular-nums ${textColorClass}`}>
+                    {formatCurrency(runningTotal || '0')}
+                  </span>
+                </div>
+                <p className={`app-subtext text-[10px] opacity-45 ${cardSubtextMutedClass}`} style={{ letterSpacing: 0 }}>
+                  Synced with calculator · {cartLineCount} item{cartLineCount === 1 ? '' : 's'}
+                </p>
+              </div>
+            </aside>
+          </div>
+        )}
+      </MorphPresence>
 
       {/* Asset sheet — iOS-like centered spring sheet (same form for + and action-log add) */}
       <MorphPresence show={showAssetMenu}>

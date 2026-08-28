@@ -1971,6 +1971,18 @@ select.app-input--dark {
   height: min(calc(var(--invoice-receipt-width) * 13 / 6), calc(100dvh - 7.5rem));
   aspect-ratio: 6 / 13;
 }
+/* Apple-style stacked app switcher (horizontal depth) */
+.invoice-switcher-stage--apple {
+  perspective: 1400px;
+  perspective-origin: 50% 42%;
+}
+.invoice-switcher-stage__stack {
+  transform-style: preserve-3d;
+}
+.invoice-switcher-stage__card {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
 .invoice-switcher-printable--full {
   width: 100%;
   max-width: 100%;
