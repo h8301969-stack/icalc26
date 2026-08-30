@@ -180,12 +180,16 @@ const pickWriteChannel = (
     const service = services.find((s) => uuidEq(s.uuid, fun.serviceUuid));
     const control = service?.characteristics.find((c) => uuidEq(c.uuid, fun.controlCharUuid));
     if (control && isWritable(control.properties)) {
-      return build(service!.uuid, control.uuid, !!control.properties.writeWithoutResponse, {
+      // Fun Print AE01/AE03 are write-without-response. write-with-response waits ~2s
+      // per chunk (Android ATT timeout) and the head ticks out one scanline each time.
+      const channel = build(service!.uuid, control.uuid, true, {
         dialect: fun.dialect,
         controlCharUuid: control.uuid,
         dataCharUuid: fun.dataCharUuid,
         notifyCharUuid: fun.notifyCharUuid,
       });
+      channel.chunkSize = 20;
+      return channel;
     }
   }
 
@@ -419,9 +423,13 @@ export const nativeWriteChunks = async (
   await ensureNativeBleInitialized();
 
   const charUuid = characteristicUuid ?? channel.characteristicUuid;
-  const chunkSize = Math.max(20, chunkSizeOverride ?? channel.chunkSize ?? 20);
-  // Mini printers need a short inter-chunk gap; WWR can go slightly faster
-  const interChunkMs = channel.writeWithoutResponse ? 12 : 22;
+  const fun = isFunPrintDialect(channel.dialect);
+  // Fun Print: stay at 20-byte ATT payloads. Larger chunks fail WWR, then a
+  // write-with-response fallback waits ~2s per packet and burns a paper line.
+  const chunkSize = fun
+    ? 20
+    : Math.max(20, chunkSizeOverride ?? channel.chunkSize ?? 20);
+  const interChunkMs = fun ? 8 : channel.writeWithoutResponse ? 12 : 22;
 
   for (let i = 0; i < data.length; i += chunkSize) {
     const chunk = data.slice(i, i + chunkSize);
@@ -433,7 +441,7 @@ export const nativeWriteChunks = async (
 
     for (let attempt = 0; attempt < 3 && !wrote; attempt++) {
       try {
-        if (channel.writeWithoutResponse) {
+        if (fun || channel.writeWithoutResponse) {
           await BleClient.writeWithoutResponse(
             channel.deviceId,
             channel.serviceUuid,
@@ -451,8 +459,8 @@ export const nativeWriteChunks = async (
         wrote = true;
       } catch (err) {
         lastErr = err;
-        // If WWR fails, fall back to write-with-response for remaining chunks
-        if (channel.writeWithoutResponse && attempt === 1) {
+        // ESC/POS only: WWR → write-with-response. Never do this for Fun Print.
+        if (!fun && channel.writeWithoutResponse && attempt === 1) {
           channel.writeWithoutResponse = false;
         }
         await delay(40 * (attempt + 1));

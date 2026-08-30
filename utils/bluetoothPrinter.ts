@@ -41,6 +41,7 @@ import {
   buildMxw01PrintJob,
   detectFunPrintFromServices,
   dialectSummary,
+  FUN_PRINT_DATA_CHAR_UUID,
   FUN_PRINT_SERVICE_UUIDS,
   FUN_PRINT_WIDTH_DOTS,
   isFunPrintDialect,
@@ -371,6 +372,8 @@ export class BLEPrinter {
   private startKeepAlive() {
     this.stopKeepAlive();
     if (this.transport !== 'ble') return;
+    // Fun Print status/wake packets click the motor and can burn a stray line.
+    if (isFunPrintDialect(this.bleDialect)) return;
     this.keepAliveTimer = setInterval(() => {
       void this.sendBleKeepAlive();
     }, BLEPrinter.KEEP_ALIVE_MS);
@@ -493,8 +496,9 @@ export class BLEPrinter {
     });
     this.bleConnected = true;
     this.savePairedDeviceById(deviceId, this.nativeDeviceName);
-    this.startKeepAlive();
     await this.attachFunPrintNotifications();
+    await this.probeFunPrintDialect();
+    this.startKeepAlive();
     await this.claimBleLink();
     this.notifyConnectionChange();
     return this.nativeDeviceName;
@@ -513,10 +517,52 @@ export class BLEPrinter {
   }
 
   private async claimBleLink(): Promise<void> {
+    if (isFunPrintDialect(this.bleDialect)) return;
     try {
       await this.writeBleBytes(this.keepAliveBytes(), this.funPrintChars?.controlCharUuid);
     } catch {
       // Some heads reject wake before first real print — connection can still be fine
+    }
+  }
+
+  /** Ask the head which Fun Print dialect it speaks. Do not send print/scanline bytes. */
+  private async probeFunPrintDialect(): Promise<void> {
+    if (!this.funPrintChars || this.transport !== 'ble') return;
+    if (this.funPrintChars.dataCharUuid) {
+      this.bleDialect = 'funprint_mxw01';
+      this.funPrintChars = { ...this.funPrintChars, dialect: 'funprint_mxw01' };
+      if (this.nativeChannel) this.nativeChannel.dialect = 'funprint_mxw01';
+      logReceiptPrint('dialect', { dialect: this.bleDialect, via: 'ae03' });
+      return;
+    }
+    try {
+      await this.writeBleBytes(buildMxw01KeepAlive(), this.funPrintChars.controlCharUuid);
+      const mx = await this.waitFunPrintNotify(0xa1, 600);
+      if (mx) {
+        this.bleDialect = 'funprint_mxw01';
+        this.funPrintChars = {
+          ...this.funPrintChars,
+          dialect: 'funprint_mxw01',
+          dataCharUuid: this.funPrintChars.dataCharUuid ?? FUN_PRINT_DATA_CHAR_UUID,
+        };
+        if (this.nativeChannel) {
+          this.nativeChannel.dialect = 'funprint_mxw01';
+          this.nativeChannel.dataCharUuid = this.funPrintChars.dataCharUuid;
+        }
+        logReceiptPrint('dialect', { dialect: this.bleDialect, via: 'mxw01_status' });
+        return;
+      }
+
+      await this.writeBleBytes(buildCatKeepAlive(), this.funPrintChars.controlCharUuid);
+      const cat = await this.waitFunPrintNotify(0xa3, 600);
+      if (cat) {
+        this.bleDialect = 'funprint_cat';
+        this.funPrintChars = { ...this.funPrintChars, dialect: 'funprint_cat' };
+        if (this.nativeChannel) this.nativeChannel.dialect = 'funprint_cat';
+        logReceiptPrint('dialect', { dialect: this.bleDialect, via: 'cat_state' });
+      }
+    } catch {
+      // Keep UUID-based guess; first real print still goes through the detected path.
     }
   }
 
@@ -569,8 +615,8 @@ export class BLEPrinter {
       await nativeWriteChunks(this.nativeChannel, data, undefined, characteristicUuid);
       return;
     }
-    const funChunk = isFunPrintDialect(this.bleDialect) ? 180 : 20;
-    const funGap = isFunPrintDialect(this.bleDialect) ? 10 : 30;
+    const funChunk = 20;
+    const funGap = isFunPrintDialect(this.bleDialect) ? 8 : 30;
     if (characteristicUuid && this.webDataChar && characteristicUuid.toLowerCase() === this.webDataChar.uuid.toLowerCase()) {
       await this.writeDataInChunks(this.webDataChar, data, funChunk, funGap);
       return;
@@ -875,8 +921,9 @@ export class BLEPrinter {
     this.characteristic = await this.rediscoverServices(device);
     this.bleConnected = true;
     this.savePairedDevice(device);
-    this.startKeepAlive();
     await this.attachFunPrintNotifications();
+    await this.probeFunPrintDialect();
+    this.startKeepAlive();
     await this.claimBleLink();
     this.notifyConnectionChange();
 
@@ -1483,7 +1530,7 @@ export class BLEPrinter {
     const size = Math.max(20, chunkSize);
     for (let i = 0; i < data.length; i += size) {
       const chunk = data.slice(i, i + size);
-      if (characteristic.properties.writeWithoutResponse) {
+      if (characteristic.properties.writeWithoutResponse || isFunPrintDialect(this.bleDialect)) {
         await characteristic.writeValueWithoutResponse(chunk);
       } else if (characteristic.properties.write) {
         await characteristic.writeValueWithResponse(chunk);
@@ -1678,7 +1725,15 @@ export class BLEPrinter {
         throw new Error('Fun Print printer rejected the job. Check paper and try again.');
       }
       const dataUuid = this.funPrintChars?.dataCharUuid ?? this.funPrintChars?.controlCharUuid;
-      await this.writeBleBytes(job.image, dataUuid);
+      try {
+        await this.writeBleBytes(job.image, dataUuid);
+      } catch (err) {
+        if (dataUuid && dataUuid !== this.funPrintChars?.controlCharUuid) {
+          await this.writeBleBytes(job.image, this.funPrintChars?.controlCharUuid);
+        } else {
+          throw err;
+        }
+      }
       await this.writeBleBytes(job.flush, this.funPrintChars?.controlCharUuid);
       await this.waitFunPrintNotify(0xaa, Math.min(20000, 80 + job.lineCount * 18));
       return;
