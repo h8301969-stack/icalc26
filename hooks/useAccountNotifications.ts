@@ -241,16 +241,16 @@ export const useAccountNotifications = ({
     }, durationMs);
   }, []);
 
-  // Live queue (single toasts while profile is already active)
+  // Live queue (single toasts while profile is already active).
+  // Do NOT mark read here — popup + bell list both keep it until opened under the bell.
   useEffect(() => {
     if (listOpen || cascadeActive || activeToast || liveQueue.length === 0) return;
     const [next, ...rest] = liveQueue;
     setLiveQueue(rest);
-    markRead([next.id]);
     // Last (or only) toast in this batch stays 10s; others step faster.
     const duration = rest.length === 0 ? PILL_LAST_MS : CASCADE_STEP_MS;
     showToast(next, duration);
-  }, [liveQueue, activeToast, listOpen, cascadeActive, markRead, showToast]);
+  }, [liveQueue, activeToast, listOpen, cascadeActive, showToast]);
 
   const advanceCascade = useCallback(() => {
     const queue = cascadeQueueRef.current;
@@ -264,7 +264,6 @@ export const useAccountNotifications = ({
     const isLast = idx === queue.length - 1;
     const duration = isLast ? PILL_LAST_MS : CASCADE_STEP_MS;
     showToast(noti, duration);
-    markRead([noti.id]);
     cascadeIndexRef.current = idx + 1;
     cascadeTimerRef.current = window.setTimeout(() => {
       cascadeTimerRef.current = null;
@@ -275,7 +274,7 @@ export const useAccountNotifications = ({
         advanceCascade();
       }
     }, duration);
-  }, [markRead, showToast]);
+  }, [showToast]);
 
   const startCascade = useCallback(
     (profileId: string) => {

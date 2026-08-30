@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Icons } from '../constants';
 import { MorphPresence } from './MorphCrossfade';
 import FluidSegmentControl from './FluidSegmentControl';
@@ -54,12 +54,26 @@ const SettingsNotificationsInbox: React.FC<SettingsNotificationsInboxProps> = ({
   isAdmin = false,
   onMarkRead,
 }) => {
-  const [dateFilter, setDateFilter] = useState<DateFilter>('7d');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [scope, setScope] = useState<'me' | 'all'>(isAdmin ? 'all' : 'me');
+  const markedOnOpenRef = useRef(false);
 
   useEffect(() => {
-    if (isOpen && isAdmin) setScope('all');
-  }, [isOpen, isAdmin]);
+    if (!isOpen) {
+      markedOnOpenRef.current = false;
+      return;
+    }
+    if (isAdmin) setScope('all');
+    if (markedOnOpenRef.current) return;
+    markedOnOpenRef.current = true;
+    // Opening the bell list marks unread rows as seen (popup already showed them).
+    const unreadIds = (
+      (isAdmin ? notifications : notifications.filter((n) => n.targetProfileId === activeProfileId))
+    )
+      .filter((n) => !n.readAt)
+      .map((n) => n.id);
+    if (unreadIds.length > 0) onMarkRead?.(unreadIds);
+  }, [isOpen, isAdmin, notifications, activeProfileId, onMarkRead]);
 
   const filtered = useMemo(() => {
     const base =
@@ -138,35 +152,35 @@ const SettingsNotificationsInbox: React.FC<SettingsNotificationsInboxProps> = ({
               />
             </div>
 
-            <div className="overflow-y-auto custom-scrollbar space-y-2 min-h-0 flex-1">
+            <div className="overflow-y-auto custom-scrollbar space-y-2 min-h-0 flex-1" role="list" aria-label="Notification list">
               {filtered.length === 0 ? (
                 <div className={`p-10 text-center rounded-2xl ${isLight ? 'bg-zinc-50' : 'bg-white/5'}`}>
                   <p className="text-[11px] font-black opacity-50">Nothing here for this range</p>
                 </div>
               ) : (
                 filtered.map((n) => (
-                  <button
+                  <div
                     key={n.id}
-                    type="button"
-                    onClick={() => {
-                      if (!n.readAt) onMarkRead?.([n.id]);
-                    }}
-                    className={`w-full text-left rounded-2xl px-3.5 py-3 border transition-opacity ${
+                    role="listitem"
+                    className={`w-full text-left rounded-2xl px-3.5 py-3 border ${
                       n.readAt ? 'opacity-70' : ''
                     } ${
                       isLight
-                        ? 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100'
-                        : 'border-white/10 bg-white/5 hover:bg-white/8'
+                        ? 'border-zinc-200 bg-zinc-50'
+                        : 'border-white/10 bg-white/5'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-[11px] font-black ">{n.title}</p>
                       {!n.readAt && (
-                        <span className="shrink-0 mt-1 w-2 h-2 rounded-full bg-blue-500" aria-label="Unread" />
+                        <span
+                          className="shrink-0 mt-0.5 w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_8px_2px_rgba(59,130,246,0.75)]"
+                          aria-label="Unread"
+                        />
                       )}
                     </div>
                     <p className="text-[10px] font-semibold opacity-70 mt-0.5 leading-snug">{n.body}</p>
-                    <p className="text-[8px] font-bold opacity-40 mt-1.5 uppercase ">
+                    <p className="text-[8px] font-bold opacity-40 mt-1.5 uppercase " style={{ letterSpacing: 0 }}>
                       {new Date(n.createdAt).toLocaleString([], {
                         month: 'short',
                         day: 'numeric',
@@ -174,7 +188,7 @@ const SettingsNotificationsInbox: React.FC<SettingsNotificationsInboxProps> = ({
                         minute: '2-digit',
                       })}
                     </p>
-                  </button>
+                  </div>
                 ))
               )}
             </div>

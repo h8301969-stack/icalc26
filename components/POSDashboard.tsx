@@ -17,7 +17,9 @@ import {
   WholesaleList,
   ArchivedWholesale,
   defaultWholesaleId,
+  PENDING_ITEM_IMAGE_UPLOADS_KEY,
 } from '../hooks/usePOS';
+import { storage } from '../hooks/storage';
 import { isAdminProfile } from '../utils/auth';
 
 import SettingsPanel from './SettingsPanel';
@@ -30,7 +32,10 @@ import FluidSegmentControl from './FluidSegmentControl';
 import InventoryItemImage from './InventoryItemImage';
 import { Capacitor } from '@capacitor/core';
 import { pickPhotoFromGallery } from '../utils/nativeCamera';
-import { isTelegramDbConnected, telegramUploadItemImage } from '../utils/telegramDb';
+import {
+  isTelegramDbConnected,
+  telegramUploadItemImage,
+} from '../utils/telegramDb';
 
 interface POSDashboardProps {
   history: HistoryItem[];
@@ -323,6 +328,50 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const [cartOpen, setCartOpen] = useState(false);
   const itemLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const itemLongPressFired = useRef(false);
+  const imageMigrateRunning = useRef(false);
+
+  // Move any leftover local data: photos to Telegram so every device can resolve tgfile: refs.
+  useEffect(() => {
+    if (!accountId || !isTelegramDbConnected(accountId) || imageMigrateRunning.current) return;
+    const pending = storage.get<Record<string, string>>(PENDING_ITEM_IMAGE_UPLOADS_KEY, {});
+    const entries = Object.entries(pending).filter(([, url]) => /^data:image\//i.test(url));
+    if (entries.length === 0) return;
+
+    imageMigrateRunning.current = true;
+    let cancelled = false;
+
+    void (async () => {
+      const nextPending = { ...pending };
+      for (const [itemId, dataUrl] of entries) {
+        if (cancelled) break;
+        const item = items.find((row) => row.id === itemId);
+        const uploaded = await telegramUploadItemImage({
+          accountId,
+          itemId,
+          image: dataUrl,
+          itemName: item?.name,
+        });
+        if (uploaded.ok === false) {
+          console.warn('[iCalc] migrate item image failed', itemId, uploaded.error);
+          continue;
+        }
+        delete nextPending[itemId];
+        if (!cancelled) {
+          setItems((prev) =>
+            prev.map((row) => (row.id === itemId ? { ...row, image: uploaded.imageRef } : row))
+          );
+        }
+      }
+      storage.set(PENDING_ITEM_IMAGE_UPLOADS_KEY, nextPending);
+      imageMigrateRunning.current = false;
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally once per account connection — items lookup is best-effort for captions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId]);
 
   useEffect(() => {
     if (!selectedItem) return;
@@ -1138,6 +1187,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     const now = new Date();
     const stock = Math.max(0, Math.floor(parseFloat(newItemStock) || 0));
     const grams = Math.max(0, parseFloat(newItemGrams) || 0);
+    const pendingPhoto =
+      /^data:image\//i.test(newItemImage) || /^blob:/i.test(newItemImage) ? newItemImage : '';
+    // Never persist base64 photos in inventory — Telegram stores bytes; we keep tgfile: only.
     const newItem: InventoryItem = {
       id: crypto.randomUUID(),
       name: newItemName.trim(),
@@ -1148,7 +1200,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       dateAdded: now.toLocaleDateString(),
       supplier: 'Generic Systems',
       lastStocked: now.toISOString(),
-      image: newItemImage || DEFAULT_INVENTORY_IMAGE,
+      image: DEFAULT_INVENTORY_IMAGE,
       grams,
       wholesaleId: activeWholesaleId || fallbackWholesaleId,
       activities: [{
@@ -1161,29 +1213,35 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       }]
     };
     setItems(prev => [newItem, ...prev]);
-    const hasPhoto = /^data:image\//i.test(newItem.image) || /^blob:/i.test(newItem.image);
-    if (hasPhoto && accountId && isTelegramDbConnected(accountId)) {
-      void telegramUploadItemImage({
-        accountId,
-        itemId: newItem.id,
-        image: newItem.image,
-        itemName: newItem.name,
-      }).then((uploaded) => {
-        if (uploaded.ok === false) {
-          console.warn('[iCalc] new item image Telegram upload failed', uploaded.error);
-          return;
-        }
-        setItems((prev) =>
-          prev.map((row) => (row.id === newItem.id ? { ...row, image: uploaded.imageRef } : row))
-        );
-      });
+
+    let photoNote = '';
+    if (pendingPhoto) {
+      if (!accountId || !isTelegramDbConnected(accountId)) {
+        photoNote = ' · photo skipped (link Telegram to sync photos)';
+        console.warn('[iCalc] item photo not stored locally — Telegram link required for cross-device photos');
+      } else {
+        photoNote = ' · uploading photo…';
+        void telegramUploadItemImage({
+          accountId,
+          itemId: newItem.id,
+          image: pendingPhoto,
+          itemName: newItem.name,
+        }).then((uploaded) => {
+          if (uploaded.ok === false) {
+            console.warn('[iCalc] new item image Telegram upload failed', uploaded.error);
+            return;
+          }
+          setItems((prev) =>
+            prev.map((row) => (row.id === newItem.id ? { ...row, image: uploaded.imageRef } : row))
+          );
+        });
+      }
     }
+
     onAccountNotify?.({
       kind: 'item_added',
       title: `Added ${newItem.name}`,
-      body: `Stock ${stock}${grams > 0 ? ` · ${grams}g` : ''} · ${formatCurrency(String(newItem.price))}${
-        hasPhoto ? ' · photo added' : ''
-      }`,
+      body: `Stock ${stock}${grams > 0 ? ` · ${grams}g` : ''} · ${formatCurrency(String(newItem.price))}${photoNote}`,
     });
     closeAssetAction();
   };
@@ -1467,15 +1525,19 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const commitImageUpdate = useCallback(
     (item: InventoryItem, imageDataUrl: string) => {
       if (!imageDataUrl || imageDataUrl === item.image) return;
+      if (!accountId || !isTelegramDbConnected(accountId)) {
+        alert('Link Telegram (set by admin on approve) to sync item photos across devices. Photos are not stored as large local files.');
+        return;
+      }
+
       const now = Date.now();
       const action = `${item.name} photo updated`;
-      // Optimistic local preview; replace with tgfile: after Telegram upload when linked.
+      // Activity first; image stays until Telegram returns tgfile: (no base64 in inventory).
       setItems((prev) =>
         prev.map((row) => {
           if (row.id !== item.id) return row;
           return {
             ...row,
-            image: imageDataUrl,
             activities: [
               {
                 id: crypto.randomUUID(),
@@ -1490,30 +1552,27 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           };
         })
       );
-      onAccountNotify?.({
-        kind: 'image_updated',
-        title: `${item.name} photo changed`,
-        body: `${activeProfileName} updated the photo`,
-      });
 
-      if (accountId && isTelegramDbConnected(accountId)) {
-        void telegramUploadItemImage({
-          accountId,
-          itemId: item.id,
-          image: imageDataUrl,
-          itemName: item.name,
-        }).then((uploaded) => {
-          if (uploaded.ok === false) {
-            console.warn('[iCalc] item image Telegram upload failed', uploaded.error);
-            return;
-          }
-          setItems((prev) =>
-            prev.map((row) =>
-              row.id === item.id ? { ...row, image: uploaded.imageRef } : row
-            )
-          );
+      void telegramUploadItemImage({
+        accountId,
+        itemId: item.id,
+        image: imageDataUrl,
+        itemName: item.name,
+      }).then((uploaded) => {
+        if (uploaded.ok === false) {
+          console.warn('[iCalc] item image Telegram upload failed', uploaded.error);
+          alert(uploaded.error || 'Could not upload photo to Telegram.');
+          return;
+        }
+        setItems((prev) =>
+          prev.map((row) => (row.id === item.id ? { ...row, image: uploaded.imageRef } : row))
+        );
+        onAccountNotify?.({
+          kind: 'image_updated',
+          title: `${item.name} photo changed`,
+          body: `${activeProfileName} updated the photo`,
         });
-      }
+      });
     },
     [accountId, activeProfileName, onAccountNotify, setItems]
   );

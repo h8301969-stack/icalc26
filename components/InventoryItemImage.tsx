@@ -13,8 +13,9 @@ interface InventoryItemImageProps {
 }
 
 /**
- * Renders inventory photos. Local data URLs / http(s) resolve sync;
- * `tgfile:` refs load from Telegram (cached) using the shop bot link.
+ * Renders inventory photos. http(s) resolve sync;
+ * `tgfile:` refs load from durable offline cache, then Telegram (shop bot link).
+ * Large data: URLs are not kept on inventory rows — upload to Telegram instead.
  */
 const InventoryItemImage: React.FC<InventoryItemImageProps> = ({
   image,

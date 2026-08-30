@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, type SetStateAction } from 'react';
 import { HistoryItem } from '../types';
+import { DEFAULT_INVENTORY_IMAGE } from '../utils/wallpapers';
 import { storage } from './storage';
 
 export interface ActivityLogEntry {
@@ -59,6 +60,8 @@ export const DEFAULT_WHOLESALE_LISTS: WholesaleList[] = [
 const WHOLESALES_KEY = 'pos_wholesales';
 const ACTIVE_WHOLESALE_KEY = 'pos_active_wholesale';
 const WHOLESALE_ARCHIVE_KEY = 'pos_wholesale_archive';
+/** Temporary queue of itemId → data URL awaiting Telegram upload (not inventory). */
+export const PENDING_ITEM_IMAGE_UPLOADS_KEY = 'pos_inventory_image_uploads';
 const MAX_WHOLESALES = 16;
 
 export const createWholesaleId = (): string =>
@@ -74,6 +77,18 @@ export const ensureWholesaleLists = (lists: WholesaleList[] | null | undefined):
 
 export const defaultWholesaleId = (lists: WholesaleList[]): string =>
   lists[0]?.id ?? DEFAULT_WHOLESALE_LISTS[0].id;
+
+const INLINE_IMAGE_RE = /^data:image\//i;
+const BLOB_IMAGE_RE = /^blob:/i;
+
+/** Drop huge local image payloads — inventory must only keep tgfile:/http/default. */
+export const stripInlineInventoryImage = (image: string | undefined, fallback: string): string => {
+  if (!image) return fallback;
+  if (INLINE_IMAGE_RE.test(image) || BLOB_IMAGE_RE.test(image) || image.length > 512) {
+    return fallback;
+  }
+  return image;
+};
 
 export const normalizeInventoryItem = (
   item: InventoryItem,
@@ -101,7 +116,22 @@ export const usePOS = (_history: HistoryItem[]) => {
   const [items, setItems] = useState<InventoryItem[]>(() => {
     const lists = ensureWholesaleLists(storage.get<WholesaleList[]>(WHOLESALES_KEY, DEFAULT_WHOLESALE_LISTS));
     const fallback = defaultWholesaleId(lists);
-    return normalizeInventoryItems(storage.get<InventoryItem[]>('pos_inventory', []), fallback);
+    const raw = storage.get<InventoryItem[]>('pos_inventory', []);
+    const pending = storage.get<Record<string, string>>(PENDING_ITEM_IMAGE_UPLOADS_KEY, {});
+    let pendingChanged = false;
+    const cleaned = raw.map((item) => {
+      const normalized = normalizeInventoryItem(item, fallback);
+      if (INLINE_IMAGE_RE.test(normalized.image) || BLOB_IMAGE_RE.test(normalized.image)) {
+        pending[normalized.id] = normalized.image;
+        pendingChanged = true;
+        return { ...normalized, image: DEFAULT_INVENTORY_IMAGE };
+      }
+      return normalized;
+    });
+    if (pendingChanged) storage.set(PENDING_ITEM_IMAGE_UPLOADS_KEY, pending);
+    // Rewrite inventory without inline payloads immediately.
+    storage.set('pos_inventory', cleaned);
+    return cleaned;
   });
   const [purchases, setPurchases] = useState<PurchaseRecord[]>(() => storage.get('pos_purchases', []));
   const [archivedWholesales, setArchivedWholesales] = useState<ArchivedWholesale[]>(() =>
@@ -121,7 +151,14 @@ export const usePOS = (_history: HistoryItem[]) => {
   }, [archivedWholesales]);
 
   useEffect(() => {
-    storage.set('pos_inventory', items);
+    // Persist only durable image refs (tgfile:/http/default) — strip any leftover data: payloads.
+    storage.set(
+      'pos_inventory',
+      items.map((item) => ({
+        ...item,
+        image: stripInlineInventoryImage(item.image, DEFAULT_INVENTORY_IMAGE),
+      }))
+    );
   }, [items]);
 
   useEffect(() => {

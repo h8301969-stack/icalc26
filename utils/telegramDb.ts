@@ -6,6 +6,7 @@
 
 import { Capacitor } from '@capacitor/core';
 import { storage } from '../hooks/storage';
+import { cacheItemImageBlob, readCachedItemImageUrl } from './itemImageCache';
 
 export interface TelegramDbConfig {
   botToken: string;
@@ -506,12 +507,10 @@ export async function telegramUploadItemImage(input: {
     const fileId = photos[photos.length - 1]?.file_id?.trim();
     if (!fileId) return { ok: false, error: 'Telegram did not return a file_id.' };
 
-    // Prefer showing the just-uploaded bytes while we have them.
-    if (typeof input.image === 'string' && input.image.startsWith('data:')) {
-      itemImageUrlCache.set(fileId, input.image);
-    } else {
-      itemImageUrlCache.set(fileId, URL.createObjectURL(blob));
-    }
+    // Memory + durable offline cache (inventory itself only keeps tgfile: ref).
+    const objectUrl = URL.createObjectURL(blob);
+    itemImageUrlCache.set(fileId, objectUrl);
+    void cacheItemImageBlob(fileId, blob);
 
     return { ok: true, imageRef: encodeTelegramItemImageRef(fileId), fileId };
   } catch (error) {
@@ -520,15 +519,21 @@ export async function telegramUploadItemImage(input: {
   }
 }
 
-/** Resolve a `tgfile:` inventory ref to a displayable URL (cached). */
+/** Resolve a `tgfile:` inventory ref to a displayable URL (memory → IDB → Telegram). */
 export async function telegramResolveItemImageUrl(
   accountId: string | null | undefined,
   imageRef: string | null | undefined
 ): Promise<string | null> {
   const fileId = parseTelegramItemImageRef(imageRef);
   if (!fileId) return null;
-  const cached = itemImageUrlCache.get(fileId);
-  if (cached) return cached;
+  const mem = itemImageUrlCache.get(fileId);
+  if (mem) return mem;
+
+  const offlineUrl = await readCachedItemImageUrl(fileId);
+  if (offlineUrl) {
+    itemImageUrlCache.set(fileId, offlineUrl);
+    return offlineUrl;
+  }
 
   const config =
     (accountId ? getTelegramDbConfig(accountId) : null) ?? getSharedTelegramDbConfig();
@@ -547,6 +552,7 @@ export async function telegramResolveItemImageUrl(
     const blob = await fileRes.blob();
     const url = URL.createObjectURL(blob);
     itemImageUrlCache.set(fileId, url);
+    void cacheItemImageBlob(fileId, blob);
     return url;
   } catch {
     return null;

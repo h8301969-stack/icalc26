@@ -794,7 +794,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setShowNotificationsInbox(true)}
-                className={`shrink-0 w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+                className={`relative shrink-0 w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-all ${
                   isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-white/10 text-white'
                 } ${notificationsUnreadCount > 0 ? 'settings-noti-bell--unread' : ''}`}
                 aria-label={`Notifications${notificationsUnreadCount > 0 ? `, ${notificationsUnreadCount} unread` : ''}`}
@@ -802,7 +802,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <Icons.Bell size={20} />
                 {notificationsUnreadCount > 0 && (
                   <span className="noti-bell-indicator" aria-hidden="true" title="Unread notifications">
-                    <span className="noti-bell-indicator__caret" />
+                    <span className="noti-bell-indicator__dot" />
                   </span>
                 )}
               </button>

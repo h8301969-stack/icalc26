@@ -143,10 +143,22 @@ export const useSupabaseDataSync = ({
         const activities = [...activityById.values()].sort(
           (a, b) => b.timestamp - a.timestamp
         );
+        const pickImage = () => {
+          const localImg = local?.image || '';
+          const remoteImg = remoteItem.image || '';
+          const isDurable = (v: string) =>
+            /^tgfile:/i.test(v) || /^https?:\/\//i.test(v);
+          // Prefer Telegram/http refs so photos sync across devices; ignore placeholders.
+          if (isDurable(remoteImg)) return remoteImg;
+          if (isDurable(localImg)) return localImg;
+          if (localImg && !/^data:image\//i.test(localImg) && !/^blob:/i.test(localImg)) {
+            return localImg;
+          }
+          return remoteImg || localImg || '';
+        };
         return {
           ...remoteItem,
-          // Prefer local image (data:/tgfile:) so photos survive cloud rows with null image_url.
-          image: local?.image || remoteItem.image || '',
+          image: pickImage(),
           stock: local && local.lastStocked >= remoteItem.lastStocked ? local.stock : remoteItem.stock,
           price: local && local.lastStocked >= remoteItem.lastStocked ? local.price : remoteItem.price,
           name: local?.name || remoteItem.name,

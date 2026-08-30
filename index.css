@@ -2882,39 +2882,46 @@ select.app-input--dark {
   transform-origin: center center;
 }
 
-/* Unread indicator on notification bells (red caret above) */
+/* Unread indicator on notification bells — blue glowing round badge */
 .noti-bell-indicator {
   position: absolute;
   top: 2px;
-  right: 4px;
+  right: 2px;
   width: 0.7rem;
   height: 0.7rem;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   pointer-events: none;
   z-index: 2;
 }
 
-.noti-bell-indicator__caret {
-  width: 0;
-  height: 0;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-bottom: 7px solid #ef4444;
-  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.85));
-  animation: noti-bell-caret-pulse 1.4s ease-in-out infinite;
+.noti-bell-indicator__dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 9999px;
+  background: #3b82f6;
+  box-shadow:
+    0 0 0 2px rgba(59, 130, 246, 0.25),
+    0 0 10px 2px rgba(59, 130, 246, 0.85);
+  animation: noti-bell-dot-pulse 1.6s ease-in-out infinite;
 }
 
-@keyframes noti-bell-caret-pulse {
+@keyframes noti-bell-dot-pulse {
   0%,
   100% {
-    transform: translateY(0);
+    transform: scale(1);
     opacity: 1;
+    box-shadow:
+      0 0 0 2px rgba(59, 130, 246, 0.25),
+      0 0 10px 2px rgba(59, 130, 246, 0.85);
   }
   50% {
-    transform: translateY(-1px);
-    opacity: 0.75;
+    transform: scale(1.12);
+    opacity: 0.85;
+    box-shadow:
+      0 0 0 3px rgba(59, 130, 246, 0.2),
+      0 0 16px 4px rgba(59, 130, 246, 0.95);
   }
 }
 
