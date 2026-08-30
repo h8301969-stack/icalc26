@@ -9,6 +9,7 @@ import {
   getPrinterCapabilities,
   normalizeBluetoothError,
 } from '../utils/bluetoothPrinter';
+import { pickPrintableImage } from '../utils/nativeCamera';
 import { MorphPresence } from './MorphCrossfade';
 
 interface PrinterConnectModalProps {
@@ -49,6 +50,9 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
   const [wifiName, setWifiName] = useState('');
   const [showWifiForm, setShowWifiForm] = useState(false);
   const [showReqs, setShowReqs] = useState(false);
+  const [noteTitle, setNoteTitle] = useState('Note');
+  const [noteBody, setNoteBody] = useState('');
+  const [mediaBusy, setMediaBusy] = useState(false);
 
   const capabilities = getPrinterCapabilities();
 
@@ -216,6 +220,50 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
     }
   };
 
+  const runMediaPrint = async (job: () => Promise<boolean>, emptyMessage?: string) => {
+    setErrorMessage(null);
+    setMediaBusy(true);
+    try {
+      const connected = printerInstance.isConnected || (await printerInstance.ensureConnected());
+      if (!connected) {
+        setErrorMessage('Connect a printer first.');
+        return;
+      }
+      const ok = await job();
+      if (!ok && emptyMessage) setErrorMessage(emptyMessage);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to print.';
+      if (!/cancel/i.test(message)) setErrorMessage(message);
+    } finally {
+      setMediaBusy(false);
+      await refreshPrinterState();
+    }
+  };
+
+  const handlePrintPhoto = (kind: 'photo' | 'sticker', source: 'camera' | 'photos') => {
+    void runMediaPrint(async () => {
+      const picked = await pickPrintableImage(source);
+      if (!picked.success || !picked.imageData) {
+        throw new Error(picked.error || 'No photo selected.');
+      }
+      return kind === 'sticker'
+        ? printerInstance.printSticker(picked.imageData)
+        : printerInstance.printPhoto(picked.imageData);
+    });
+  };
+
+  const handlePrintNote = () => {
+    const body = noteBody.trim();
+    if (!body) {
+      setErrorMessage('Type a note first.');
+      return;
+    }
+    void runMediaPrint(
+      () => printerInstance.printNote(noteTitle.trim() || 'Note', body),
+      'Could not print the note.'
+    );
+  };
+
   const panelBg = isLight ? 'bg-[#f2f2f7] text-zinc-900' : 'bg-[#1c1c1e] text-white';
   const rowBg = isLight ? 'bg-white border-zinc-200' : 'bg-white/5 border-white/5';
   const inputClass = isLight
@@ -261,7 +309,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             <div className="font-black mb-1">Auto-connect order</div>
             <div>1. USB · 2. Bluetooth (BLE) · 3. WiFi / network</div>
             <div className={`mt-1.5 font-medium ${isLight ? 'text-black/55' : 'text-white/55'}`}>
-              Print format: ESC/POS text + ESC/POS raster (GS v 0). Works with classic and modern ESC/POS thermals.
+              Print format: Fun Print (photos, stickers, notes) on pocket printers, plus ESC/POS text/raster on receipt printers. Dialect is detected from Bluetooth services — no name matching.
             </div>
             {isAutoScanning && (
               <div className="mt-2 text-blue-500">Scanning for known printers…</div>
@@ -419,7 +467,7 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
             }`}>
               <div>
                 <span className="font-black">Formats: </span>
-                {capabilities.formats.text.name}; {capabilities.formats.raster.name}
+                {capabilities.formats.funprint.name}; {capabilities.formats.text.name}; {capabilities.formats.raster.name}
               </div>
               <ul className="list-disc pl-4 space-y-1">
                 {capabilities.necessities.map((n) => (
@@ -449,11 +497,71 @@ const PrinterConnectModal: React.FC<PrinterConnectModalProps> = ({
 
           {/* When opened from invoice switcher print, autoPrintOnConnect handles the job.
               Only show a print button for manual connect-then-print flows. */}
+          {printerName && (
+            <div className={`space-y-2 p-3 rounded-xl border ${rowBg}`}>
+              <div className="text-sm font-black">Photos, stickers & notes</div>
+              <p className={`text-[10px] font-bold leading-normal ${isLight ? 'text-black/55' : 'text-white/55'}`}>
+                Same Fun Print jobs as the companion app. Receipts still print from the invoice drawer.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePrintPhoto('photo', 'photos')}
+                  disabled={mediaBusy || isPrinting}
+                  className="py-2.5 rounded-lg bg-blue-500 text-white text-[10px] font-black uppercase active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  <Icons.Image size={14} />
+                  Photo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePrintPhoto('sticker', 'photos')}
+                  disabled={mediaBusy || isPrinting}
+                  className="py-2.5 rounded-lg bg-violet-600 text-white text-[10px] font-black uppercase active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  <Icons.StickyNote size={14} />
+                  Sticker
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePrintPhoto('photo', 'camera')}
+                  disabled={mediaBusy || isPrinting}
+                  className="py-2.5 rounded-lg bg-zinc-700 text-white text-[10px] font-black uppercase active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5 col-span-2"
+                >
+                  <Icons.Camera size={14} />
+                  Camera
+                </button>
+              </div>
+              <input
+                type="text"
+                value={noteTitle}
+                onChange={(e) => setNoteTitle(e.target.value)}
+                placeholder="Note title"
+                className={`w-full px-3 py-2 rounded-lg border text-xs font-bold ${inputClass}`}
+              />
+              <textarea
+                value={noteBody}
+                onChange={(e) => setNoteBody(e.target.value)}
+                placeholder="Type a note, list, or sticker text…"
+                rows={3}
+                className={`w-full px-3 py-2 rounded-lg border text-xs font-bold resize-none ${inputClass}`}
+              />
+              <button
+                type="button"
+                onClick={handlePrintNote}
+                disabled={mediaBusy || isPrinting || !noteBody.trim()}
+                className="w-full py-2.5 rounded-lg bg-amber-500 text-black text-[10px] font-black uppercase active:scale-95 disabled:opacity-50"
+              >
+                {mediaBusy ? 'Printing…' : 'Print note'}
+              </button>
+            </div>
+          )}
+
           {printerName && !autoPrintOnConnect && (
             <button
               type="button"
               onClick={handlePrint}
-              disabled={isPrinting}
+              disabled={isPrinting || mediaBusy}
               className="w-full py-3.5 rounded-xl bg-green-500 text-white text-xs font-black uppercase shadow-[0_0_20px_rgba(48,209,88,0.4)] hover:bg-green-600 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
             >
               <Icons.Check size={16} />

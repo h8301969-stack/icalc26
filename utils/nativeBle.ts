@@ -1,16 +1,24 @@
 /**
  * Native BLE helpers for Capacitor Android/iOS via @capacitor-community/bluetooth-le.
- * Tuned for cheap ESC/POS mini thermal printers (many hide print services until connected).
+ * Tuned for ESC/POS receipt printers and Fun Print pocket printers (C9 / MX06 / MXW01).
+ * Dialect is chosen from GATT UUIDs, never from the Bluetooth advertised name.
  */
 
 import { Capacitor } from '@capacitor/core';
 import {
   BleClient,
   ConnectionPriority,
+  dataViewToNumbers,
   numbersToDataView,
   type BleDevice,
   type BleService,
 } from '@capacitor-community/bluetooth-le';
+import {
+  detectFunPrintFromServices,
+  FUN_PRINT_SERVICE_UUIDS,
+  isFunPrintDialect,
+  type BlePrintDialect,
+} from './funPrintProtocol';
 
 /**
  * Services commonly used by BLE thermal printers.
@@ -18,6 +26,7 @@ import {
  * (mini printers often omit service UUIDs from advertisements).
  */
 export const NATIVE_PRINTER_SERVICE_UUIDS = [
+  ...FUN_PRINT_SERVICE_UUIDS, // Fun Print pocket printers (C9 / MX06 / MXW01)
   '000018f0-0000-1000-8000-00805f9b34fb', // ESC/POS
   '0000ff00-0000-1000-8000-00805f9b34fb', // common Chinese modules
   '0000ffe0-0000-1000-8000-00805f9b34fb', // HM-10 / JDY style
@@ -28,11 +37,12 @@ export const NATIVE_PRINTER_SERVICE_UUIDS = [
   'e7810a71-73d3-4920-8c74-028eefded309', // some POS dongles
   '00001101-0000-1000-8000-00805f9b34fb', // serial port profile over GATT (rare)
   '0000fff0-0000-1000-8000-00805f9b34fb',
-  '0000ae30-0000-1000-8000-00805f9b34fb', // some 58mm modules
-  '0000af30-0000-1000-8000-00805f9b34fb',
 ];
 
 const KNOWN_WRITE_CHAR_UUIDS = [
+  '0000ae01-0000-1000-8000-00805f9b34fb', // Fun Print control
+  '0000ae03-0000-1000-8000-00805f9b34fb', // Fun Print MXW01 data
+  '0000ae10-0000-1000-8000-00805f9b34fb',
   '00002af1-0000-1000-8000-00805f9b34fb',
   '0000ff02-0000-1000-8000-00805f9b34fb',
   '0000ffe1-0000-1000-8000-00805f9b34fb',
@@ -41,7 +51,6 @@ const KNOWN_WRITE_CHAR_UUIDS = [
   '0000fee7-0000-1000-8000-00805f9b34fb',
   '0000ff01-0000-1000-8000-00805f9b34fb',
   '0000fff2-0000-1000-8000-00805f9b34fb',
-  '0000ae01-0000-1000-8000-00805f9b34fb',
   '0000af01-0000-1000-8000-00805f9b34fb',
   '0000ffe2-0000-1000-8000-00805f9b34fb',
 ];
@@ -65,6 +74,10 @@ export interface NativeWriteChannel {
   writeWithoutResponse: boolean;
   /** Preferred write chunk size (payload bytes). */
   chunkSize: number;
+  dialect: BlePrintDialect;
+  controlCharUuid: string;
+  dataCharUuid?: string;
+  notifyCharUuid?: string;
 }
 
 let initPromise: Promise<void> | null = null;
@@ -147,7 +160,8 @@ const pickWriteChannel = (
   const build = (
     serviceUuid: string,
     characteristicUuid: string,
-    writeWithoutResponse: boolean
+    writeWithoutResponse: boolean,
+    extra?: Partial<Pick<NativeWriteChannel, 'dialect' | 'controlCharUuid' | 'dataCharUuid' | 'notifyCharUuid'>>
   ): NativeWriteChannel => ({
     deviceId,
     deviceName,
@@ -155,7 +169,25 @@ const pickWriteChannel = (
     characteristicUuid,
     writeWithoutResponse,
     chunkSize,
+    dialect: extra?.dialect ?? 'escpos',
+    controlCharUuid: extra?.controlCharUuid ?? characteristicUuid,
+    dataCharUuid: extra?.dataCharUuid,
+    notifyCharUuid: extra?.notifyCharUuid,
   });
+
+  const fun = detectFunPrintFromServices(services);
+  if (fun && isFunPrintDialect(fun.dialect)) {
+    const service = services.find((s) => uuidEq(s.uuid, fun.serviceUuid));
+    const control = service?.characteristics.find((c) => uuidEq(c.uuid, fun.controlCharUuid));
+    if (control && isWritable(control.properties)) {
+      return build(service!.uuid, control.uuid, !!control.properties.writeWithoutResponse, {
+        dialect: fun.dialect,
+        controlCharUuid: control.uuid,
+        dataCharUuid: fun.dataCharUuid,
+        notifyCharUuid: fun.notifyCharUuid,
+      });
+    }
+  }
 
   // Prefer known printer service/char pairs
   for (const serviceUuid of NATIVE_PRINTER_SERVICE_UUIDS) {
@@ -381,10 +413,12 @@ export const nativeDisconnect = async (deviceId: string | null): Promise<void> =
 export const nativeWriteChunks = async (
   channel: NativeWriteChannel,
   data: Uint8Array,
-  chunkSizeOverride?: number
+  chunkSizeOverride?: number,
+  characteristicUuid?: string
 ): Promise<void> => {
   await ensureNativeBleInitialized();
 
+  const charUuid = characteristicUuid ?? channel.characteristicUuid;
   const chunkSize = Math.max(20, chunkSizeOverride ?? channel.chunkSize ?? 20);
   // Mini printers need a short inter-chunk gap; WWR can go slightly faster
   const interChunkMs = channel.writeWithoutResponse ? 12 : 22;
@@ -403,14 +437,14 @@ export const nativeWriteChunks = async (
           await BleClient.writeWithoutResponse(
             channel.deviceId,
             channel.serviceUuid,
-            channel.characteristicUuid,
+            charUuid,
             view
           );
         } else {
           await BleClient.write(
             channel.deviceId,
             channel.serviceUuid,
-            channel.characteristicUuid,
+            charUuid,
             view
           );
         }
@@ -432,6 +466,41 @@ export const nativeWriteChunks = async (
     }
 
     await delay(interChunkMs);
+  }
+};
+
+export const nativeStartNotifications = async (
+  channel: NativeWriteChannel,
+  onValue: (bytes: Uint8Array) => void
+): Promise<boolean> => {
+  if (!channel.notifyCharUuid) return false;
+  await ensureNativeBleInitialized();
+  try {
+    await BleClient.startNotifications(
+      channel.deviceId,
+      channel.serviceUuid,
+      channel.notifyCharUuid,
+      (value) => {
+        try {
+          const nums = dataViewToNumbers(value);
+          onValue(Uint8Array.from(nums));
+        } catch {
+          // ignore malformed notify
+        }
+      }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const nativeStopNotifications = async (channel: NativeWriteChannel | null): Promise<void> => {
+  if (!channel?.notifyCharUuid) return;
+  try {
+    await BleClient.stopNotifications(channel.deviceId, channel.serviceUuid, channel.notifyCharUuid);
+  } catch {
+    // ignore
   }
 };
 

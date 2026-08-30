@@ -28,10 +28,28 @@ import {
   nativeEnsureBluetoothOn,
   nativeGetBondedOrKnown,
   nativeRequestPrinterDevice,
+  nativeStartNotifications,
+  nativeStopNotifications,
   nativeWarmupBle,
   nativeWriteChunks,
   type NativeWriteChannel,
 } from './nativeBle';
+import {
+  buildCatKeepAlive,
+  buildCatPrintPackets,
+  buildMxw01KeepAlive,
+  buildMxw01PrintJob,
+  detectFunPrintFromServices,
+  dialectSummary,
+  FUN_PRINT_SERVICE_UUIDS,
+  FUN_PRINT_WIDTH_DOTS,
+  isFunPrintDialect,
+  parseFunPrintNotifyCommand,
+  rasterCanvasToRows,
+  type BlePrintDialect,
+  type FunPrintDither,
+  type FunPrintGattChars,
+} from './funPrintProtocol';
 
 export interface BLEDevice {
   id: string;
@@ -84,9 +102,11 @@ const PRINTER_TRANSPORT_KEY = 'printer_transport_mode';
 export { getUsbSupport };
 export { getNetworkPrinterSupport };
 export type { NetworkPrinterConfig };
+export type { BlePrintDialect };
 
 /** Common BLE thermal-printer GATT services (must be listed in optionalServices). */
 const PRINTER_SERVICE_UUIDS = [
+  ...FUN_PRINT_SERVICE_UUIDS,
   '000018f0-0000-1000-8000-00805f9b34fb',
   '0000ff00-0000-1000-8000-00805f9b34fb',
   '0000ffe0-0000-1000-8000-00805f9b34fb',
@@ -98,8 +118,11 @@ const PRINTER_SERVICE_UUIDS = [
   '00001101-0000-1000-8000-00805f9b34fb',
 ];
 
-/** Known write characteristics for ESC/POS over BLE. */
+/** Known write characteristics for Fun Print + ESC/POS over BLE. */
 const KNOWN_WRITE_CHAR_UUIDS = [
+  '0000ae01-0000-1000-8000-00805f9b34fb',
+  '0000ae03-0000-1000-8000-00805f9b34fb',
+  '0000ae10-0000-1000-8000-00805f9b34fb',
   '00002af1-0000-1000-8000-00805f9b34fb',
   '0000ff02-0000-1000-8000-00805f9b34fb',
   '0000ffe1-0000-1000-8000-00805f9b34fb',
@@ -166,7 +189,7 @@ export function getBluetoothSupport(): BluetoothSupportInfo {
       supported: true,
       secureContext: true,
       message:
-        'Native Bluetooth ready. Power on your mini thermal printer (BLE), tap Search, pick it from the list, then print. Classic-only Bluetooth printers are not supported.',
+        'Native Bluetooth ready. Works with Fun Print pocket printers (photos, stickers, notes) and ESC/POS receipt printers. Classic-only Bluetooth printers are not supported.',
     };
   }
 
@@ -209,6 +232,12 @@ export class BLEPrinter {
   /** Native BLE (Capacitor) session — used when Web Bluetooth is unavailable. */
   private nativeChannel: NativeWriteChannel | null = null;
   private nativeDeviceName: string | null = null;
+  private bleDialect: BlePrintDialect = 'escpos';
+  private funPrintChars: FunPrintGattChars | null = null;
+  private webDataChar: BluetoothRemoteGATTCharacteristic | null = null;
+  private webNotifyChar: BluetoothRemoteGATTCharacteristic | null = null;
+  private notifyWaiters: Array<{ commandId: number; resolve: (bytes: Uint8Array) => void }> = [];
+  private nativeNotifyOn = false;
   private usb = new UsbPrinterTransport();
   private network = new NetworkPrinterTransport();
   private connectionListeners = new Set<() => void>();
@@ -275,6 +304,11 @@ export class BLEPrinter {
     return this.device?.name ?? null;
   }
 
+  getBleDialect(): BlePrintDialect {
+    if (this.transport !== 'ble') return 'escpos';
+    return this.bleDialect;
+  }
+
   /** Active print format for the current transport (shown in UI). */
   getActivePrintFormat(): {
     transport: PrinterTransport;
@@ -283,6 +317,16 @@ export class BLEPrinter {
     paperWidth: PaperWidth;
     summary: string;
   } {
+    if (this.transport === 'ble' && isFunPrintDialect(this.bleDialect)) {
+      const protocol = dialectSummary(this.bleDialect);
+      return {
+        transport: this.transport,
+        protocol,
+        modes: ['funprint_raster', 'photo', 'sticker', 'note', 'receipt'],
+        paperWidth: this.paperWidth,
+        summary: `${protocol} · ${this.paperWidth}`,
+      };
+    }
     const protocol =
       this.transport === 'network'
         ? 'ESC/POS over TCP (raw port 9100)'
@@ -292,7 +336,7 @@ export class BLEPrinter {
     return {
       transport: this.transport,
       protocol,
-      modes: ['escpos_text', 'raster_image (GS v 0)'],
+      modes: ['escpos_text', 'raster_image (GS v 0)', 'photo', 'sticker', 'note'],
       paperWidth: this.paperWidth,
       summary: `${protocol} · paper ${this.paperWidth} · text + raster bitmap`,
     };
@@ -336,26 +380,33 @@ export class BLEPrinter {
   private async sendBleKeepAlive(): Promise<void> {
     if (this.transport !== 'ble' || this.isBluetoothBusy || !this.bleConnected) return;
     try {
-      const tick = new Uint8Array([0x1b, 0x40]); // ESC @ soft wake
-      if (this.usesNativeBle) {
-        if (!this.nativeChannel) return;
-        await nativeWriteChunks(this.nativeChannel, tick);
-        return;
-      }
-      if (!this.device?.gatt?.connected || !this.characteristic) return;
-      await this.writeDataInChunks(this.characteristic, tick);
+      const tick = this.keepAliveBytes();
+      await this.writeBleBytes(tick, this.funPrintChars?.controlCharUuid);
     } catch {
       // Ignore — next print/ensureConnected will recover
     }
   }
 
+  private keepAliveBytes(): Uint8Array {
+    if (this.bleDialect === 'funprint_mxw01') return buildMxw01KeepAlive();
+    if (this.bleDialect === 'funprint_cat') return buildCatKeepAlive();
+    return new Uint8Array([0x1b, 0x40]); // ESC @ — ESC/POS only. Fun Print clicks on this.
+  }
+
   private disconnectBleOnly() {
     this.stopKeepAlive();
     if (this.usesNativeBle && this.nativeChannel) {
+      if (this.nativeNotifyOn) void nativeStopNotifications(this.nativeChannel);
       void nativeDisconnect(this.nativeChannel.deviceId);
     }
     this.nativeChannel = null;
     this.nativeDeviceName = null;
+    this.bleDialect = 'escpos';
+    this.funPrintChars = null;
+    this.webDataChar = null;
+    this.webNotifyChar = null;
+    this.notifyWaiters = [];
+    this.nativeNotifyOn = false;
 
     if (this.device) {
       this.detachDisconnectHandler(this.device);
@@ -411,6 +462,8 @@ export class BLEPrinter {
     // Never bounce the same device — disconnect powers many mini printers off.
     if (this.nativeChannel && this.nativeChannel.deviceId !== deviceId) {
       this.stopKeepAlive();
+      if (this.nativeNotifyOn) await nativeStopNotifications(this.nativeChannel);
+      this.nativeNotifyOn = false;
       await nativeDisconnect(this.nativeChannel.deviceId);
       this.nativeChannel = null;
       this.bleConnected = false;
@@ -431,17 +484,99 @@ export class BLEPrinter {
     this.nativeDeviceName = this.nativeChannel.deviceName || name;
     this.serviceUUID = this.nativeChannel.serviceUuid;
     this.charUUID = this.nativeChannel.characteristicUuid;
+    this.applyFunPrintChannel({
+      serviceUuid: this.nativeChannel.serviceUuid,
+      controlCharUuid: this.nativeChannel.controlCharUuid,
+      dataCharUuid: this.nativeChannel.dataCharUuid,
+      notifyCharUuid: this.nativeChannel.notifyCharUuid,
+      dialect: this.nativeChannel.dialect,
+    });
     this.bleConnected = true;
     this.savePairedDeviceById(deviceId, this.nativeDeviceName);
     this.startKeepAlive();
-    // Claim the link gently so the head stays awake after pairing
+    await this.attachFunPrintNotifications();
+    await this.claimBleLink();
+    this.notifyConnectionChange();
+    return this.nativeDeviceName;
+  }
+
+  private applyFunPrintChannel(chars: FunPrintGattChars | null) {
+    if (chars && isFunPrintDialect(chars.dialect)) {
+      this.funPrintChars = chars;
+      this.bleDialect = chars.dialect;
+      this.paperWidth = '58mm';
+      storage.set(DEFAULT_PAPER_WIDTH_KEY, '58mm');
+    } else {
+      this.funPrintChars = null;
+      this.bleDialect = 'escpos';
+    }
+  }
+
+  private async claimBleLink(): Promise<void> {
     try {
-      await this.writeEscPosData(new Uint8Array([0x1b, 0x40]));
+      await this.writeBleBytes(this.keepAliveBytes(), this.funPrintChars?.controlCharUuid);
     } catch {
       // Some heads reject wake before first real print — connection can still be fine
     }
-    this.notifyConnectionChange();
-    return this.nativeDeviceName;
+  }
+
+  private onFunPrintNotify = (bytes: Uint8Array) => {
+    const commandId = parseFunPrintNotifyCommand(bytes);
+    if (commandId == null) return;
+    const idx = this.notifyWaiters.findIndex((w) => w.commandId === commandId);
+    if (idx >= 0) {
+      const waiter = this.notifyWaiters.splice(idx, 1)[0];
+      waiter.resolve(bytes);
+    }
+  };
+
+  private async attachFunPrintNotifications(): Promise<void> {
+    if (!isFunPrintDialect(this.bleDialect)) return;
+    if (this.usesNativeBle) {
+      if (!this.nativeChannel) return;
+      this.nativeNotifyOn = await nativeStartNotifications(this.nativeChannel, this.onFunPrintNotify);
+      return;
+    }
+    if (!this.webNotifyChar) return;
+    try {
+      await this.webNotifyChar.startNotifications();
+      this.webNotifyChar.addEventListener('characteristicvaluechanged', (event) => {
+        const target = event.target as BluetoothRemoteGATTCharacteristic;
+        const value = target.value;
+        if (!value) return;
+        this.onFunPrintNotify(new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength)));
+      });
+    } catch {
+      // MXW01 still prints with timed waits if notify is unavailable
+    }
+  }
+
+  private waitFunPrintNotify(commandId: number, timeoutMs: number): Promise<Uint8Array | null> {
+    return new Promise((resolve) => {
+      const waiter = { commandId, resolve: (bytes: Uint8Array) => resolve(bytes) };
+      this.notifyWaiters.push(waiter);
+      window.setTimeout(() => {
+        const i = this.notifyWaiters.indexOf(waiter);
+        if (i >= 0) this.notifyWaiters.splice(i, 1);
+        resolve(null);
+      }, timeoutMs);
+    });
+  }
+
+  private async writeBleBytes(data: Uint8Array, characteristicUuid?: string): Promise<void> {
+    if (this.usesNativeBle) {
+      if (!this.nativeChannel) throw new Error('Printer is not connected.');
+      await nativeWriteChunks(this.nativeChannel, data, undefined, characteristicUuid);
+      return;
+    }
+    const funChunk = isFunPrintDialect(this.bleDialect) ? 180 : 20;
+    const funGap = isFunPrintDialect(this.bleDialect) ? 10 : 30;
+    if (characteristicUuid && this.webDataChar && characteristicUuid.toLowerCase() === this.webDataChar.uuid.toLowerCase()) {
+      await this.writeDataInChunks(this.webDataChar, data, funChunk, funGap);
+      return;
+    }
+    const characteristic = await this.getWriteCharacteristic();
+    await this.writeDataInChunks(characteristic, data, funChunk, funGap);
   }
 
   private applyAutoPaperWidth(deviceId: string, deviceName: string) {
@@ -521,9 +656,72 @@ export class BLEPrinter {
     return characteristics.find((c) => this.isWritableCharacteristic(c)) ?? null;
   }
 
+  private async discoverFunPrintWeb(
+    server: BluetoothRemoteGATTServer
+  ): Promise<BluetoothRemoteGATTCharacteristic | null> {
+    let services: BluetoothRemoteGATTService[] = [];
+    try {
+      services = await server.getPrimaryServices();
+    } catch {
+      services = [];
+      for (const uuid of FUN_PRINT_SERVICE_UUIDS) {
+        try {
+          services.push(await server.getPrimaryService(uuid));
+        } catch {
+          // next
+        }
+      }
+    }
+
+    const mapped = [];
+    for (const service of services) {
+      try {
+        const chars = await service.getCharacteristics();
+        mapped.push({
+          uuid: service.uuid,
+          characteristics: chars.map((c) => ({ uuid: c.uuid })),
+          service,
+          chars,
+        });
+      } catch {
+        // skip
+      }
+    }
+
+    const found = detectFunPrintFromServices(
+      mapped.map((s) => ({ uuid: s.uuid, characteristics: s.characteristics }))
+    );
+    if (!found || !isFunPrintDialect(found.dialect)) {
+      this.applyFunPrintChannel(null);
+      this.webDataChar = null;
+      this.webNotifyChar = null;
+      return null;
+    }
+
+    const match = mapped.find((s) => s.uuid.toLowerCase() === found.serviceUuid.toLowerCase());
+    const control = match?.chars.find((c) => c.uuid.toLowerCase() === found.controlCharUuid.toLowerCase());
+    if (!control) return null;
+
+    this.applyFunPrintChannel(found);
+    this.webDataChar =
+      found.dataCharUuid
+        ? match?.chars.find((c) => c.uuid.toLowerCase() === found.dataCharUuid!.toLowerCase()) ?? null
+        : null;
+    this.webNotifyChar =
+      found.notifyCharUuid
+        ? match?.chars.find((c) => c.uuid.toLowerCase() === found.notifyCharUuid!.toLowerCase()) ?? null
+        : null;
+    this.serviceUUID = found.serviceUuid;
+    this.charUUID = control.uuid;
+    return control;
+  }
+
   private async findWriteCharacteristic(
     server: BluetoothRemoteGATTServer
   ): Promise<BluetoothRemoteGATTCharacteristic> {
+    const funChar = await this.discoverFunPrintWeb(server);
+    if (funChar) return funChar;
+
     for (const serviceUuid of PRINTER_SERVICE_UUIDS) {
       try {
         const service = await server.getPrimaryService(serviceUuid);
@@ -678,6 +876,8 @@ export class BLEPrinter {
     this.bleConnected = true;
     this.savePairedDevice(device);
     this.startKeepAlive();
+    await this.attachFunPrintNotifications();
+    await this.claimBleLink();
     this.notifyConnectionChange();
 
     return device.name || 'Thermal Printer';
@@ -1276,11 +1476,13 @@ export class BLEPrinter {
 
   private async writeDataInChunks(
     characteristic: BluetoothRemoteGATTCharacteristic,
-    data: Uint8Array
+    data: Uint8Array,
+    chunkSize = 20,
+    interChunkMs = 30
   ): Promise<void> {
-    const chunkSize = 20;
-    for (let i = 0; i < data.length; i += chunkSize) {
-      const chunk = data.slice(i, i + chunkSize);
+    const size = Math.max(20, chunkSize);
+    for (let i = 0; i < data.length; i += size) {
+      const chunk = data.slice(i, i + size);
       if (characteristic.properties.writeWithoutResponse) {
         await characteristic.writeValueWithoutResponse(chunk);
       } else if (characteristic.properties.write) {
@@ -1288,7 +1490,7 @@ export class BLEPrinter {
       } else {
         await characteristic.writeValue(chunk);
       }
-      await delay(30);
+      await delay(interChunkMs);
     }
   }
 
@@ -1438,8 +1640,58 @@ export class BLEPrinter {
     );
   }
 
-  /** Scale any canvas to paper width (multiple of 8) and burn via GS v 0. */
-  private async sendCanvasAsGsV0(source: HTMLCanvasElement): Promise<void> {
+  /** Scale any canvas to paper width (multiple of 8) and burn via Fun Print or GS v 0. */
+  private async sendCanvasAsGsV0(
+    source: HTMLCanvasElement,
+    options?: { dither?: FunPrintDither }
+  ): Promise<void> {
+    await this.sendCanvasRaster(source, options);
+  }
+
+  private async sendCanvasRaster(
+    source: HTMLCanvasElement,
+    options?: { dither?: FunPrintDither }
+  ): Promise<void> {
+    if (this.transport === 'ble' && isFunPrintDialect(this.bleDialect)) {
+      await this.sendCanvasFunPrint(source, options?.dither ?? 'threshold');
+      return;
+    }
+    await this.sendCanvasEscPosGsV0(source);
+  }
+
+  private async sendCanvasFunPrint(source: HTMLCanvasElement, dither: FunPrintDither): Promise<void> {
+    const rows = rasterCanvasToRows(source, {
+      dither,
+      widthDots: FUN_PRINT_WIDTH_DOTS,
+    });
+    if (rows.length === 0) throw new Error('Nothing to print.');
+
+    if (this.bleDialect === 'funprint_mxw01') {
+      const job = buildMxw01PrintJob(rows);
+      await this.writeBleBytes(job.intensity, this.funPrintChars?.controlCharUuid);
+      await delay(40);
+      await this.writeBleBytes(job.status, this.funPrintChars?.controlCharUuid);
+      await this.waitFunPrintNotify(0xa1, 800);
+      await this.writeBleBytes(job.printRequest, this.funPrintChars?.controlCharUuid);
+      const ack = await this.waitFunPrintNotify(0xa9, 1500);
+      if (ack && ack.length > 6 && ack[6] !== 0x00) {
+        throw new Error('Fun Print printer rejected the job. Check paper and try again.');
+      }
+      const dataUuid = this.funPrintChars?.dataCharUuid ?? this.funPrintChars?.controlCharUuid;
+      await this.writeBleBytes(job.image, dataUuid);
+      await this.writeBleBytes(job.flush, this.funPrintChars?.controlCharUuid);
+      await this.waitFunPrintNotify(0xaa, Math.min(20000, 80 + job.lineCount * 18));
+      return;
+    }
+
+    const packets = buildCatPrintPackets(rows);
+    for (const packet of packets) {
+      await this.writeBleBytes(packet, this.funPrintChars?.controlCharUuid);
+      await delay(packet[2] === 0xa2 ? 18 : 12);
+    }
+  }
+
+  private async sendCanvasEscPosGsV0(source: HTMLCanvasElement): Promise<void> {
     const spec = getReceiptSpec(this.paperWidth);
     const targetWidth = spec.widthPx; // already multiple of 8 in RECEIPT_SPECS
     const scale = targetWidth / Math.max(1, source.width);
@@ -1653,7 +1905,7 @@ export class BLEPrinter {
           y += lineHeight;
         }
       }
-      await this.sendCanvasAsGsV0(canvas);
+      await this.sendCanvasAsGsV0(canvas, { dither: 'threshold' });
     });
 
     const ok = result !== null;
@@ -1665,6 +1917,108 @@ export class BLEPrinter {
     return ok;
   }
 
+  /** Fun Print-style photo (dithered bitmap). Works on Fun Print and ESC/POS heads. */
+  async printPhoto(imageDataUrl: string): Promise<boolean> {
+    return this.printImageDataUrl(imageDataUrl, 'photo');
+  }
+
+  /** Fun Print-style sticker: dithered photo with a tear-off border. */
+  async printSticker(imageDataUrl: string): Promise<boolean> {
+    return this.printImageDataUrl(imageDataUrl, 'sticker');
+  }
+
+  async printNote(title: string, body: string, attendantName?: string): Promise<boolean> {
+    return this.printNotepad(title, body, attendantName);
+  }
+
+  private async printImageDataUrl(
+    imageDataUrl: string,
+    kind: 'photo' | 'sticker'
+  ): Promise<boolean> {
+    logReceiptPrint('start', {
+      mode: kind === 'sticker' ? 'funprint_sticker' : 'funprint_photo',
+      paperWidth: this.paperWidth,
+    });
+    const result = await this.withBluetoothLock(async () => {
+      const canvas = await renderPrintableImageCanvas(imageDataUrl, {
+        widthDots: isFunPrintDialect(this.bleDialect)
+          ? FUN_PRINT_WIDTH_DOTS
+          : getReceiptSpec(this.paperWidth).widthPx,
+        sticker: kind === 'sticker',
+      });
+      await this.sendCanvasRaster(canvas, { dither: 'floyd-steinberg' });
+    });
+    const ok = result !== null;
+    logReceiptPrint(ok ? 'success' : 'failure', {
+      mode: kind === 'sticker' ? 'funprint_sticker' : 'funprint_photo',
+    });
+    return ok;
+  }
+
+}
+
+async function renderPrintableImageCanvas(
+  imageDataUrl: string,
+  options: { widthDots: number; sticker: boolean }
+): Promise<HTMLCanvasElement> {
+  const img = await loadHtmlImage(imageDataUrl);
+  const src = portraitSourceCanvas(img);
+  const drawW = src.width;
+  const drawH = src.height;
+  if (drawW < 1 || drawH < 1) throw new Error('Could not read the photo.');
+
+  const inset = options.sticker ? 10 : 0;
+  const width = options.widthDots;
+  const inner = Math.max(8, width - inset * 2);
+  const innerH = Math.max(8, Math.round((drawH * inner) / drawW));
+  const height = Math.min(2400, innerH + inset * 2);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not create photo canvas');
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, width, height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, inset, inset, inner, height - inset * 2);
+
+  if (options.sticker) {
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(2, 2, width - 4, height - 4);
+  }
+  return canvas;
+}
+
+function portraitSourceCanvas(img: HTMLImageElement): HTMLCanvasElement {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not create photo canvas');
+  if (w <= h) {
+    canvas.width = w;
+    canvas.height = h;
+    ctx.drawImage(img, 0, 0);
+    return canvas;
+  }
+  canvas.width = h;
+  canvas.height = w;
+  ctx.translate(h, 0);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(img, 0, 0);
+  return canvas;
+}
+
+function loadHtmlImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not load the photo.'));
+    img.src = src;
+  });
 }
 
 function wrapReceiptLine(text: string, maxCols: number): string[] {
@@ -1691,6 +2045,7 @@ function wrapReceiptLine(text: string, maxCols: number): string[] {
  * Formats, transports, and necessities for a successful print.
  *
  * Wire format (all transports):
+ * - Fun Print (BLE AE30): cat 0x5178 scanlines or MXW01 0x2221 + AE03 bulk — photos, stickers, notes, receipts
  * - ESC/POS text: ESC @ init, ESC a align, ESC E bold, plain UTF-8 lines, GS V partial cut
  * - ESC/POS raster: ESC @ + GS v 0 bit-image (1-bit monochrome from canvas)
  *
@@ -1709,6 +2064,13 @@ export function getPrinterCapabilities() {
 
   return {
     formats: {
+      funprint: {
+        id: 'funprint_raster',
+        name: 'Fun Print (photos, stickers, notes)',
+        description:
+          'Pocket-printer protocol used by Fun Print / C-series heads. Detected from BLE services (not the Bluetooth name).',
+        commands: ['0x5178 cat scanline', 'MXW01 0x2221 + AE03'],
+      },
       text: {
         id: 'escpos_text',
         name: 'ESC/POS text',
@@ -1736,9 +2098,9 @@ export function getPrinterCapabilities() {
         order: 2,
         id: 'ble',
         available: bt.supported,
-        protocol: 'ESC/POS over Bluetooth LE GATT',
+        protocol: 'Fun Print or ESC/POS over Bluetooth LE GATT',
         message: bt.message,
-        note: 'Bluetooth Classic (SPP) only devices are not supported. Use BLE thermal printers.',
+        note: 'Fun Print pocket printers and BLE ESC/POS thermals. Classic Bluetooth (SPP) only devices are not supported.',
       },
       network: {
         order: 3,
@@ -1763,6 +2125,7 @@ export function getPrinterCapabilities() {
     notes: [
       'Auto-scan while using the calculator tries USB, then Bluetooth, then saved WiFi printers — no picker dialogs.',
       'First-time pairing still needs Scan (Bluetooth) / Connect USB / enter WiFi IP once.',
+      'Fun Print pocket printers (C9 and similar) are detected from BLE services — no Bluetooth name required.',
       'Modern ESC/POS and older ESC/POS firmwares both accept the same command set used here.',
     ],
   };

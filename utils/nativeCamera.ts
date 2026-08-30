@@ -100,6 +100,14 @@ export const requestPhotoPermissions = async (): Promise<{
 /**
  * Pick existing photo from device gallery
  */
+/** Camera or gallery photo as a data URL for Fun Print / receipt raster jobs. */
+export const pickPrintableImage = async (
+  source: 'camera' | 'photos' = 'photos'
+): Promise<ReceiptPhotoResult> => {
+  if (source === 'camera') return captureReceiptPhoto();
+  return pickPhotoFromGallery();
+};
+
 export const pickPhotoFromGallery = async (): Promise<ReceiptPhotoResult> => {
   try {
     const permission = await requestPhotoPermissions();

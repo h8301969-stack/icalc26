@@ -4,6 +4,7 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { CartLineItem } from '../types';
 import { printerInstance } from '../utils/bluetoothPrinter';
 import { sendInvoiceImageToLinkedTelegram } from '../utils/invoiceShareImage';
+import { pickPrintableImage } from '../utils/nativeCamera';
 import InvoiceReceiptPreview from './InvoiceReceiptPreview';
 import PrinterConnectModal from './PrinterConnectModal';
 
@@ -103,6 +104,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
   const [printerConnected, setPrinterConnected] = useState(() => printerInstance.isConnected);
   const [reconnectPrompt, setReconnectPrompt] = useState(false);
   const [printSuccess, setPrintSuccess] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
 
   const dragStartY = useRef(0);
   const swipeStartX = useRef(0);
@@ -220,6 +222,39 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
       );
     },
     [attendantName, currency]
+  );
+
+  const runMediaPrint = useCallback(
+    async (kind: 'photo' | 'sticker', source: 'camera' | 'photos') => {
+      if (!printDrawerEnabled || isPrinting) return;
+      setIsPrinting(true);
+      setMediaError(null);
+      try {
+        const connected =
+          printerInstance.isConnected || (await printerInstance.ensureConnected());
+        if (!connected) {
+          showReconnectPrompt();
+          setPrinterModalOpen(true);
+          return;
+        }
+        const picked = await pickPrintableImage(source);
+        if (!picked.success || !picked.imageData) {
+          if (picked.error && !/cancel/i.test(picked.error)) setMediaError(picked.error);
+          return;
+        }
+        const ok =
+          kind === 'sticker'
+            ? await printerInstance.printSticker(picked.imageData)
+            : await printerInstance.printPhoto(picked.imageData);
+        if (ok) showPrintSuccess();
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Print failed.';
+        if (!/cancel/i.test(message)) setMediaError(message);
+      } finally {
+        setIsPrinting(false);
+      }
+    },
+    [isPrinting, printDrawerEnabled, showPrintSuccess, showReconnectPrompt]
   );
 
   const runNotepadPrint = useCallback(async () => {
@@ -438,6 +473,37 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
         onPointerDown={(e) => e.stopPropagation()}
       >
         {renderQueuedNotepadBlock()}
+        <div className="flex gap-2 mb-3" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            disabled={isPrinting}
+            onClick={() => void runMediaPrint('photo', 'photos')}
+            className="flex-1 py-2 rounded-full text-[10px] font-black uppercase active:scale-95 disabled:opacity-50 border border-current/15"
+          >
+            Photo
+          </button>
+          <button
+            type="button"
+            disabled={isPrinting}
+            onClick={() => void runMediaPrint('sticker', 'photos')}
+            className="flex-1 py-2 rounded-full text-[10px] font-black uppercase active:scale-95 disabled:opacity-50 border border-current/15"
+          >
+            Sticker
+          </button>
+          <button
+            type="button"
+            disabled={isPrinting}
+            onClick={() => void runMediaPrint('photo', 'camera')}
+            className="flex-1 py-2 rounded-full text-[10px] font-black uppercase active:scale-95 disabled:opacity-50 border border-current/15"
+          >
+            Camera
+          </button>
+        </div>
+        {mediaError && (
+          <p className="text-[10px] font-bold text-red-500 mb-2" role="alert">
+            {mediaError}
+          </p>
+        )}
         <div className="vision-hub-click-toolbar">
           {renderPrinterStatusButton()}
           {printSuccess ? (

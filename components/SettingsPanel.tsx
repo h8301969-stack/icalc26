@@ -1093,8 +1093,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <div className="font-black mb-1">Auto-connect while using calculator</div>
               <div>USB first → Bluetooth (BLE) → WiFi / network (saved IPs)</div>
               <div className={`mt-1.5 ${isLight ? 'text-black/55' : 'text-white/55'}`}>
-                Format: <span className="font-black">ESC/POS text</span> and{' '}
-                <span className="font-black">ESC/POS raster (GS v 0)</span> — classic and modern ESC/POS thermals.
+                Format: <span className="font-black">Fun Print</span> (photos, stickers, notes on pocket printers)
+                and <span className="font-black">ESC/POS</span> text + raster on receipt printers. Detected from
+                Bluetooth services, not the device name.
               </div>
               {printFormatSummary && (
                 <div className="mt-1.5 text-green-600">Active: {printFormatSummary}</div>
@@ -1116,7 +1117,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 Paper width: auto · {detectedPaperWidth}
               </span>
               <p className={`app-subtext mt-1 ${isLight ? 'text-black/55' : 'text-white/55'}`}>
-                Detected from printer name when you connect (58mm standard, 25mm mini).
+                Fun Print pocket printers use 57/58mm (384 dots). Receipt printers: 58mm standard or 25mm mini.
               </p>
             </div>
 
