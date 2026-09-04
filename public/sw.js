@@ -1,5 +1,5 @@
 /* iCalc PWA service worker. Cache name must change when the app version bumps. */
-const CACHE = 'icalc-pwa-0.0.33';
+const CACHE = 'icalc-pwa-0.0.34';
 const PRECACHE = ['/', '/index.html', '/manifest.webmanifest', '/favicon.ico'];
 
 self.addEventListener('install', (event) => {

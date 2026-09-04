@@ -97,7 +97,11 @@ export function useAppUpdate(enabled: boolean): AppUpdateState {
       }
 
       setPhase('available');
-      setMessage('Install iCalc on this phone.');
+      setMessage(
+        /Android/i.test(navigator.userAgent)
+          ? 'Install the home-screen app or download the APK.'
+          : 'Install iCalc on your Home Screen.'
+      );
     })();
 
     return () => {

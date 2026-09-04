@@ -1287,7 +1287,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               ? 'This phone app updates in place. When it finishes, Restart.'
               : runtime === 'pwa'
                 ? 'This home-screen app updates itself. When it finishes, Restart.'
-                : 'Install iCalc like any other app on this phone.';
+                : 'On Android, pick home-screen app or APK. On iPhone, add to Home Screen.';
           const actionLabel =
             runtime === 'web' ? 'Install' : runtime === 'pwa' ? 'Update' : 'Update app';
 

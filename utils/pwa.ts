@@ -38,6 +38,19 @@ export const isIosSafari = (): boolean => {
   return iOS && webkit && !crios;
 };
 
+export const isIosWeb = (): boolean => {
+  if (typeof navigator === 'undefined' || isNativeApp()) return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+};
+
+export const isAndroidWeb = (): boolean => {
+  if (typeof navigator === 'undefined' || isNativeApp()) return false;
+  return /Android/i.test(navigator.userAgent);
+};
+
 /** Browser tab that can become a PWA (not native, not already installed). */
 export const shouldOfferPwaInstall = (): boolean => !isNativeApp() && !isStandalonePwa();
 

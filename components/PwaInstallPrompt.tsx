@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { PHONE_APP_DOWNLOAD_URL } from '../utils/appRelease';
 import {
-  canNativePwaPrompt,
   consumeForcePwaInstallUi,
-  isIosSafari,
+  isAndroidWeb,
+  isIosWeb,
   promptPwaInstall,
   shouldOfferPwaInstall,
   subscribePwaInstall,
@@ -15,13 +16,16 @@ interface PwaInstallPromptProps {
 const SESSION_DISMISS_KEY = 'icalc_pwa_install_dismissed';
 
 /**
- * Default install sheet — same idea as a system “Install this app?” dialog.
- * Chrome/Android uses the native beforeinstallprompt; iOS shows Add to Home Screen.
+ * Browser-tab install:
+ * Android — choose PWA (home screen) or APK download.
+ * iOS — Install starts the Add to Home Screen PWA flow.
  */
 const PwaInstallPrompt: React.FC<PwaInstallPromptProps> = ({ isLight }) => {
   const [open, setOpen] = useState(false);
   const [iosHelp, setIosHelp] = useState(false);
   const [busy, setBusy] = useState(false);
+  const android = isAndroidWeb();
+  const ios = isIosWeb();
 
   useEffect(() => {
     if (!shouldOfferPwaInstall()) return;
@@ -54,7 +58,11 @@ const PwaInstallPrompt: React.FC<PwaInstallPromptProps> = ({ isLight }) => {
     setOpen(false);
   };
 
-  const install = async () => {
+  const installPwa = async () => {
+    if (ios) {
+      setIosHelp(true);
+      return;
+    }
     setBusy(true);
     const outcome = await promptPwaInstall();
     setBusy(false);
@@ -62,15 +70,24 @@ const PwaInstallPrompt: React.FC<PwaInstallPromptProps> = ({ isLight }) => {
       setOpen(false);
       return;
     }
-    if (outcome === 'unavailable' && isIosSafari()) {
+    if (outcome === 'unavailable') {
       setIosHelp(true);
-      return;
     }
-    if (isIosSafari()) setIosHelp(true);
+  };
+
+  const downloadApk = () => {
+    const link = document.createElement('a');
+    link.href = PHONE_APP_DOWNLOAD_URL;
+    link.rel = 'noopener';
+    link.download = 'icalc.apk';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const sheet = isLight ? 'bg-white text-zinc-900' : 'bg-[#1c1c1e] text-white';
   const muted = isLight ? 'text-black/55' : 'text-white/55';
+  const secondary = isLight ? 'bg-black/8 text-black' : 'bg-white/10 text-white';
 
   return (
     <div className="fixed inset-0 z-[1400] flex items-end sm:items-center justify-center p-4">
@@ -97,42 +114,73 @@ const PwaInstallPrompt: React.FC<PwaInstallPromptProps> = ({ isLight }) => {
               Install iCalc
             </p>
             <p className={`app-subtext text-[11px] mt-0.5 ${muted}`} style={{ letterSpacing: 0 }}>
-              Add it like any other app on this phone
+              {android
+                ? 'Choose home-screen app or Android APK'
+                : 'Add iCalc to your Home Screen'}
             </p>
           </div>
         </div>
 
         {iosHelp ? (
           <ol className={`mt-4 space-y-2 text-[13px] font-semibold ${muted}`} style={{ letterSpacing: 0 }}>
-            <li>1. Tap the Share button in Safari</li>
+            <li>1. Tap the Share button</li>
             <li>2. Choose Add to Home Screen</li>
             <li>3. Tap Add — iCalc opens as its own app</li>
           </ol>
+        ) : android ? (
+          <p className={`mt-4 text-[13px] font-medium leading-relaxed ${muted}`} style={{ letterSpacing: 0 }}>
+            Home screen app updates itself. The APK is the full Android build.
+          </p>
         ) : (
           <p className={`mt-4 text-[13px] font-medium leading-relaxed ${muted}`} style={{ letterSpacing: 0 }}>
-            Home-screen icon, full screen, and updates inside the app — same as the phone build.
+            Tap Install to add iCalc to your Home Screen.
           </p>
         )}
 
-        <div className="mt-5 flex gap-2">
-          <button
-            type="button"
-            onClick={dismiss}
-            className={`flex-1 py-3 rounded-2xl text-xs font-black uppercase ${
-              isLight ? 'bg-black/8 text-black' : 'bg-white/10 text-white'
-            }`}
-          >
-            Not now
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void (iosHelp ? dismiss() : install())}
-            className="flex-1 py-3 rounded-2xl bg-blue-500 text-white text-xs font-black uppercase disabled:opacity-70"
-          >
-            {iosHelp ? 'Got it' : busy ? 'Installing…' : canNativePwaPrompt() || !isIosSafari() ? 'Install' : 'Install'}
-          </button>
-        </div>
+        {android && !iosHelp ? (
+          <div className="mt-5 flex flex-col gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void installPwa()}
+              className="w-full py-3 rounded-2xl bg-blue-500 text-white text-xs font-black uppercase disabled:opacity-70"
+            >
+              {busy ? 'Installing…' : 'Home screen app'}
+            </button>
+            <button
+              type="button"
+              onClick={downloadApk}
+              className={`w-full py-3 rounded-2xl text-xs font-black uppercase ${secondary}`}
+            >
+              Download APK
+            </button>
+            <button
+              type="button"
+              onClick={dismiss}
+              className={`w-full py-2.5 rounded-2xl text-[10px] font-black uppercase opacity-70 ${secondary}`}
+            >
+              Not now
+            </button>
+          </div>
+        ) : (
+          <div className="mt-5 flex gap-2">
+            <button
+              type="button"
+              onClick={dismiss}
+              className={`flex-1 py-3 rounded-2xl text-xs font-black uppercase ${secondary}`}
+            >
+              {iosHelp ? 'Close' : 'Not now'}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void (iosHelp ? dismiss() : installPwa())}
+              className="flex-1 py-3 rounded-2xl bg-blue-500 text-white text-xs font-black uppercase disabled:opacity-70"
+            >
+              {iosHelp ? 'Got it' : busy ? 'Installing…' : 'Install'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
