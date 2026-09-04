@@ -18,6 +18,8 @@ export interface AccessCodeRow {
   business_name: string | null;
   business_phone: string | null;
   business_address: string | null;
+  telegram_bot_token?: string | null;
+  telegram_chat_id?: string | null;
   created_at: string | null;
   requested_at: string | null;
   approved_at: string | null;
@@ -256,6 +258,28 @@ export const adminSetAccessBusinessInfo = async (
   if (error) return { ok: false, error: error.message };
   if (!data?.ok) {
     return { ok: false, error: (data?.error as string) ?? 'Could not save business info.' };
+  }
+  return { ok: true };
+};
+
+export const adminSetAccessTelegram = async (
+  token: string,
+  code: string,
+  botToken: string,
+  chatId: string
+): Promise<{ ok: true } | { ok: false; error: string }> => {
+  if (!isAccessControlEnabled()) {
+    return { ok: false, error: 'Access control is not configured.' };
+  }
+  const { data, error } = await supabase.rpc('admin_set_access_telegram', {
+    p_token: token,
+    p_code: code.trim().toUpperCase(),
+    p_telegram_bot_token: botToken.trim(),
+    p_telegram_chat_id: chatId.trim(),
+  });
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) {
+    return { ok: false, error: (data?.error as string) ?? 'Could not save Telegram link.' };
   }
   return { ok: true };
 };

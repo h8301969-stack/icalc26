@@ -80,7 +80,7 @@ interface InvoiceCard {
   isCurrent: boolean;
 }
 
-const DRAG_FACTOR = 1.25;
+const DRAG_FACTOR = 1;
 const SWIPE_THRESHOLD = 22;
 /** Swipe up on the active card to remove it (undoable). */
 const SWIPE_UP_REMOVE_THRESHOLD = 72;
@@ -679,7 +679,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         }
         handleClose();
       }
-      if (renderMode === 'horizontal') {
+      if (renderMode === 'horizontal' && !focusZoomed) {
         if (e.key === 'ArrowRight') previewInvoice(Math.min(activeIdx + 1, cards.length - 1));
         if (e.key === 'ArrowLeft') previewInvoice(Math.max(activeIdx - 1, 0));
       }
@@ -692,7 +692,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const pendingDeltaRef = useRef(0);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
-    if (isBrowseMode) return;
+    if (isBrowseMode || focusZoomed) return;
     if ((e.target as HTMLElement).closest('input, button, textarea')) return;
     dragStartX.current = e.clientX;
     dragStartY.current = e.clientY;
@@ -702,10 +702,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     setIsDragging(true);
     setDragDelta(0);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, [isBrowseMode]);
+  }, [isBrowseMode, focusZoomed]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isDragging || isBrowseMode) return;
+    if (!isDragging || isBrowseMode || focusZoomed) return;
     const dx = e.clientX - dragStartX.current;
     const dy = e.clientY - dragStartY.current;
     if (dragAxis.current === 'none' && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
@@ -724,10 +724,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       dragRafRef.current = null;
       setDragDelta(pendingDeltaRef.current);
     });
-  }, [isDragging, isBrowseMode]);
+  }, [isDragging, isBrowseMode, focusZoomed]);
 
   const onPointerUp = useCallback(() => {
-    if (!isDragging || isBrowseMode) return;
+    if (!isDragging || isBrowseMode || focusZoomed) return;
     if (dragRafRef.current !== null) {
       window.cancelAnimationFrame(dragRafRef.current);
       dragRafRef.current = null;
@@ -761,20 +761,19 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     dragAxis.current = 'none';
     pendingDeltaRef.current = 0;
     setDragDelta(0);
-  }, [isDragging, isBrowseMode, cards.length, activeIdx, previewInvoice, onRemoveInvoice]);
+  }, [isDragging, isBrowseMode, focusZoomed, cards.length, activeIdx, previewInvoice, onRemoveInvoice]);
 
   const handleCardSelectClick = useCallback((idx: number) => {
     if (suppressClickSelectRef.current) {
       suppressClickSelectRef.current = false;
       return;
     }
-    // Side cards bring forward (Apple switcher); focused card loads into calculator.
     if (idx !== activeIdx) {
       previewInvoice(idx);
       return;
     }
-    beginInvoiceLoad(idx);
-  }, [activeIdx, beginInvoiceLoad, previewInvoice]);
+    openInvoiceFocus(idx);
+  }, [activeIdx, openInvoiceFocus, previewInvoice]);
 
   const handleSwitcherModeChange = useCallback(
     (mode: SwitcherMode) => {
@@ -810,15 +809,15 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   if (!mounted) return null;
 
-  /** Apple app-switcher stack: focused card front/center; neighbors recede with depth. */
+  /** Apple-style deck: cards follow the finger left/right (not inverted). */
   const getCardStyle = (idx: number) => {
     const relativePos = idx - activeIdx;
     const verticalDismiss = dragAxis.current === 'y';
-    // Normalize drag to ~[-1, 1] so cards interpolate toward the next stack slot.
+    // Finger right → positive dragDelta → cards move right with the finger.
     const dragProgress = verticalDismiss
       ? 0
-      : Math.max(-1.15, Math.min(1.15, dragDelta / 160));
-    const effectiveRel = relativePos - dragProgress;
+      : Math.max(-1.15, Math.min(1.15, dragDelta / 240));
+    const effectiveRel = relativePos + dragProgress;
 
     if (Math.abs(effectiveRel) > 2.35 && Math.abs(relativePos) > 2) {
       return {
@@ -837,38 +836,31 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     }
 
     const absRel = Math.abs(effectiveRel);
-    const sign = effectiveRel === 0 ? 0 : effectiveRel > 0 ? 1 : -1;
     let translateY = 0;
-    let scale = Math.max(0.72, 1 - absRel * 0.11);
-    let opacity = Math.max(0, 1 - absRel * 0.28);
+    let scale = Math.max(0.86, 1 - absRel * 0.08);
+    let opacity = Math.max(0, 1 - absRel * 0.22);
     let blurPx = 0;
-    let rotateY = -effectiveRel * 16;
-    let translateZ = -absRel * 72;
+    let rotateY = 0;
+    let translateZ = 0;
     let zIndex = Math.round(130 - absRel * 12);
     let transformOrigin = 'center center';
-    let translateXValue = `${effectiveRel * 34}%`;
+    let translateXValue = `${effectiveRel * 42}%`;
 
     if (relativePos === 0 && verticalDismiss) {
       translateY = dragDelta;
       opacity = Math.max(0.2, 1 + dragDelta / 160);
       scale = Math.max(0.88, 1 + dragDelta / 400);
-      rotateY = 0;
-      translateZ = 0;
       translateXValue = '0%';
       zIndex = 140;
     } else if (absRel < 0.08) {
       opacity = 1;
       scale = 1;
-      rotateY = 0;
-      translateZ = 0;
-      translateXValue = `${effectiveRel * 10}%`;
+      translateXValue = `${effectiveRel * 8}%`;
       zIndex = 140;
     } else {
-      // Soft side peek — cards sit under/behind the focused one.
-      translateY = absRel * 4;
-      transformOrigin = sign < 0 ? 'right center' : 'left center';
-      if (!isDragging && absRel > 0.55) {
-        blurPx = Math.min(1.6, (absRel - 0.55) * 1.2);
+      translateY = absRel * 6;
+      if (!isDragging && absRel > 0.7) {
+        blurPx = Math.min(0.8, (absRel - 0.7) * 0.8);
       }
     }
 
@@ -1054,7 +1046,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
       <button
         key={card.id}
         type="button"
-        onClick={() => beginInvoiceLoad(idx)}
+        onClick={() => openInvoiceFocus(idx)}
         disabled={loadingInvoiceIdx !== null}
         className={`relative text-left rounded-2xl flex flex-col transition-all duration-300 active:scale-[0.97] ${
           isSelected && !focusZoomed
@@ -1138,7 +1130,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
             listLongPressFired.current = false;
             return;
           }
-          beginInvoiceLoad(idx);
+          openInvoiceFocus(idx);
         }}
         disabled={loadingInvoiceIdx !== null}
         className={`relative w-full text-left rounded-2xl transition-all duration-200 active:scale-[0.99] ${
@@ -1197,43 +1189,61 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   };
 
   const renderFocusOverlay = () => {
-    if (!cards[activeIdx]) return null;
+    const card = cards[activeIdx];
+    if (!card) return null;
 
     return (
       <MorphPresence show={focusZoomed && isOpen} exitMs={MORPH_EXIT_MS}>
         {(visible) => (
           <div
-            className={`absolute inset-0 z-20 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`}
-            onClick={() => setFocusZoomed(false)}
-            role="presentation"
+            className={`invoice-switcher-focus ${
+              visible ? 'invoice-switcher-focus--in' : 'invoice-switcher-focus--out'
+            }`}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${card.name}. Continue or print.`}
           >
-            <div
-              className={`absolute inset-0 bg-black/35 backdrop-blur-md morph-scrim ${
-                visible ? 'morph-scrim--in' : 'morph-scrim--out'
-              }`}
-              aria-hidden="true"
-            />
-
-            <div className="relative z-10 flex items-center justify-center h-full p-4 pb-6 sm:pb-4 pt-[4.75rem] sm:pt-20 pointer-events-none">
-              <div
-                className={`relative ${receiptStageClass} select-none pointer-events-auto cursor-pointer morph-panel ${
-                  visible ? 'morph-panel--in' : 'morph-panel--out'
-                }`}
-                role="dialog"
-                aria-modal="true"
-                aria-label={`Invoice card: ${cards[activeIdx].name}. Tap to load in calculator.`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  beginInvoiceLoad(activeIdx);
-                }}
+            <div className="invoice-switcher-focus__sheet">
+              <button
+                type="button"
+                className="invoice-switcher-focus__back"
+                aria-label="Back to invoice switcher"
+                onClick={() => setFocusZoomed(false)}
               >
-                <div
-                  className={`absolute inset-0 flex flex-col ${INVOICE_SWITCHER_RADIUS} overflow-hidden bg-white text-black shadow-[0_32px_96px_rgba(0,0,0,0.65)] ring-1 ring-white/20`}
-                >
-                  {renderCardBody(cards[activeIdx], true)}
-                  {renderInvoiceLoadingOverlay(activeIdx)}
-                </div>
-              </div>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              {renderCardBody(card, true, { fullscreen: true })}
+              {renderInvoiceLoadingOverlay(activeIdx, 'rounded-none')}
+            </div>
+            <div className="invoice-switcher-focus__bar">
+              <button
+                type="button"
+                className="invoice-switcher-focus__btn invoice-switcher-focus__btn--continue"
+                onClick={() => beginInvoiceLoad(activeIdx)}
+                disabled={loadingInvoiceIdx !== null}
+              >
+                Continue
+              </button>
+              <button
+                type="button"
+                className={`invoice-switcher-focus__btn invoice-switcher-focus__btn--print ${
+                  copyFeedback === 'copied'
+                    ? 'invoice-switcher-focus__btn--copied'
+                    : copyFeedback === 'failed'
+                      ? 'invoice-switcher-focus__btn--failed'
+                      : ''
+                }`}
+                onClick={() => void handlePrintClick(card)}
+                disabled={isPrinting || !canPrintCard(card)}
+              >
+                {copyFeedback === 'copied'
+                  ? 'Copied'
+                  : copyFeedback === 'failed'
+                    ? 'Copy failed'
+                    : isPrinting
+                      ? 'Printing…'
+                      : 'Print'}
+              </button>
             </div>
           </div>
         )}
@@ -1336,14 +1346,19 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     );
   };
 
-  const renderCardBody = (card: InvoiceCard, isActive: boolean) => {
+  const renderCardBody = (
+    card: InvoiceCard,
+    isActive: boolean,
+    opts?: { fullscreen?: boolean }
+  ) => {
     const isPaid = printedNames.has(card.name);
     const rawTitle = card.isCurrent && isActive ? invoiceName : card.name;
     const statusLabel = card.isCurrent ? 'Current' : isPaid ? 'Paid' : 'Open';
     const headerStale = isHeaderStale(card);
+    const fullscreen = !!opts?.fullscreen;
 
     return (
-    <div className="invoice-switcher-shell flex flex-col h-full min-h-0">
+    <div className={`invoice-switcher-shell flex flex-col h-full min-h-0 ${fullscreen ? 'invoice-switcher-shell--focus' : ''}`}>
       <div className="invoice-switcher-shell__row flex flex-1 min-h-0">
         <div className="invoice-switcher-printable invoice-switcher-printable--full flex flex-col min-h-0 min-w-0 flex-1">
           <header
@@ -1407,19 +1422,9 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
               58mm · {card.items.length} items
             </p>
 
-            {isActive && (!isBrowseMode || focusZoomed) && (
+            {isActive && !fullscreen && !onSwitcherModeChange && (
               <div className="absolute top-3 right-3 flex items-center gap-2">
-                {isBrowseMode && focusZoomed && (
-                  <button
-                    type="button"
-                    onClick={() => setFocusZoomed(false)}
-                    aria-label="Back to invoice browse view"
-                    className="p-2 rounded-full text-white/80 hover:bg-white/10 transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-                  </button>
-                )}
-                {!onSwitcherModeChange && renderCloseButton()}
+                {renderCloseButton()}
               </div>
             )}
           </header>
@@ -1431,9 +1436,9 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
       </div>
 
-      {renderCardFooter(card, isActive)}
+      {!fullscreen && renderCardFooter(card, isActive)}
 
-      {isActive && renderMode === 'horizontal' && cards.length > 1 && (
+      {isActive && renderMode === 'horizontal' && cards.length > 1 && !focusZoomed && (
         <div
           className="invoice-switcher-shell__dots"
           style={{
@@ -1553,7 +1558,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                   Invoices
                 </div>
                 <p className="app-subtext text-[10px] opacity-45 text-white/50 mt-1">
-                  Tap to load · Hold to preview
+                  Tap to open · Continue or Print
                 </p>
               </div>
 
@@ -1571,15 +1576,18 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
           {renderFocusOverlay()}
         </>
       ) : (
+        <>
         <div
           ref={stageRef}
-          className={`relative z-20 invoice-switcher-stage--apple ${receiptStageClass} select-none overflow-visible ${sheetClass}`}
+          className={`relative z-20 invoice-switcher-stage--apple ${receiptStageClass} select-none overflow-visible ${sheetClass} ${
+            focusZoomed ? 'pointer-events-none opacity-0' : ''
+          }`}
           style={{ touchAction: 'none' }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
-          aria-label="Invoice switcher. Swipe sideways to browse stacked invoices, swipe up to remove."
+          aria-label="Invoice switcher. Swipe left or right to browse invoices, tap to open."
           role="region"
         >
           <div className={`absolute inset-0 invoice-switcher-stage__stack ${modeContentClass}`}>
@@ -1630,6 +1638,8 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 })}
           </div>
         </div>
+        {renderFocusOverlay()}
+        </>
       )}
 
       <InvoiceAttendantPicker

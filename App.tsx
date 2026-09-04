@@ -1027,68 +1027,133 @@ const AppContent: React.FC = () => {
     pasteExpression(raw);
   }, [pasteExpression]);
 
-  // Keyboard support for accessibility
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    const key = e.key;
-
-    if (key === 'Escape' && isSearchOpen) {
-      closeSearch();
-      e.preventDefault();
-      return;
-    }
-
-    if (!isUnlocked) return;
-
-    if (isAnyModalOpen) return;
-
-    if (e.ctrlKey || e.metaKey) {
-      if (key.toLowerCase() === 'c') {
-        void copyExpressionToClipboard();
-        e.preventDefault();
-        return;
-      }
-      if (key.toLowerCase() === 'v') {
-        e.preventDefault();
-        void navigator.clipboard.readText().then(pasteExpression).catch(() => {});
-        return;
-      }
-    }
-    
-    // Numbers
-    if (/^\d$/.test(key)) {
-      inputChar(key);
-      e.preventDefault();
-    }
-    // Operators
-    else if (key === '+' || key === '-' || key === '*' || key === '/') {
-      inputChar(key);
-      e.preventDefault();
-    }
-    // Decimal point
-    else if (key === '.') {
-      inputChar('.');
-      e.preventDefault();
-    }
-    // Enter or = for equals
-    else if (key === 'Enter' || key === '=') {
-      triggerUnidentifiedPriceBlink();
-      finalize();
-      e.preventDefault();
-    }
-    // Backspace for delete
-    else if (key === 'Backspace') {
-      deleteLast();
-      e.preventDefault();
-    }
-    else if (key === 'Escape') {
-      clearExpression();
-      e.preventDefault();
-    }
+  const isTypingField = (target: EventTarget | null): boolean => {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    return target.isContentEditable;
   };
+
+  const dismissTopOverlay = useCallback((): boolean => {
+    if (isSearchOpen) {
+      closeSearch();
+      return true;
+    }
+    if (isSettingsOpen) {
+      setIsSettingsOpen(false);
+      return true;
+    }
+    if (isPOSOpen) {
+      setIsPOSOpen(false);
+      return true;
+    }
+    if (isHistoryOpen) {
+      setIsHistoryOpen(false);
+      return true;
+    }
+    if (isAdminPortal) {
+      hideAdminPortal();
+      return true;
+    }
+    return false;
+  }, [hideAdminPortal, isAdminPortal, isHistoryOpen, isPOSOpen, isSearchOpen, isSettingsOpen]);
+
+  // Window-level keys so mobile hardware/IME backspace reaches the calculator.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const key = e.key;
+      const typing = isTypingField(e.target);
+
+      if (key === 'Escape' && isSearchOpen) {
+        closeSearch();
+        e.preventDefault();
+        return;
+      }
+
+      if (key === 'Backspace' || key === 'Delete') {
+        if (typing) return;
+        e.preventDefault();
+        if (dismissTopOverlay()) return;
+        if (!isUnlocked) return;
+        deleteLast();
+        return;
+      }
+
+      if (!isUnlocked || typing) return;
+      if (isAnyModalOpen) return;
+
+      if (e.ctrlKey || e.metaKey) {
+        if (key.toLowerCase() === 'c') {
+          void copyExpressionToClipboard();
+          e.preventDefault();
+          return;
+        }
+        if (key.toLowerCase() === 'v') {
+          e.preventDefault();
+          void navigator.clipboard.readText().then(pasteExpression).catch(() => {});
+          return;
+        }
+      }
+
+      if (/^\d$/.test(key)) {
+        inputChar(key);
+        e.preventDefault();
+      } else if (key === '+' || key === '-' || key === '*' || key === '/') {
+        inputChar(key);
+        e.preventDefault();
+      } else if (key === '.') {
+        inputChar('.');
+        e.preventDefault();
+      } else if (key === 'Enter' || key === '=') {
+        triggerUnidentifiedPriceBlink();
+        finalize();
+        e.preventDefault();
+      } else if (key === 'Escape') {
+        clearExpression();
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    clearExpression,
+    copyExpressionToClipboard,
+    deleteLast,
+    dismissTopOverlay,
+    finalize,
+    inputChar,
+    isAnyModalOpen,
+    isSearchOpen,
+    isUnlocked,
+    pasteExpression,
+    triggerUnidentifiedPriceBlink,
+  ]);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let remove: (() => void) | undefined;
+    void CapApp.addListener('backButton', () => {
+      if (isTypingField(document.activeElement)) {
+        (document.activeElement as HTMLElement | null)?.blur();
+        return;
+      }
+      if (dismissTopOverlay()) return;
+      if (isUnlocked) {
+        deleteLast();
+        return;
+      }
+      void CapApp.exitApp();
+    }).then((handle) => {
+      remove = () => {
+        void handle.remove();
+      };
+    });
+    return () => remove?.();
+  }, [deleteLast, dismissTopOverlay, isUnlocked]);
 
   return (
     <div className={`relative flex items-center justify-center h-dvh w-full overflow-hidden font-sans transition-colors duration-200 ${isLight ? 'bg-[#f2f2f7]' : 'bg-black'}`}
-         onKeyDown={handleKeyDown}
          role="main">
       <BlurredBackground isLight={isLight} wallpapers={settings.customWallpapers} isUnlocked={isUnlocked} />
       {authOverlayMounted && !(account && isUnlocked) ? (

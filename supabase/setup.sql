@@ -1033,6 +1033,8 @@ begin
       'business_name', ac.business_name,
       'business_phone', ac.business_phone,
       'business_address', ac.business_address,
+      'telegram_bot_token', coalesce(ac.telegram_bot_token, ''),
+      'telegram_chat_id', coalesce(ac.telegram_chat_id, ''),
       'created_at', ac.created_at,
       'requested_at', ac.requested_at,
       'approved_at', ac.approved_at,

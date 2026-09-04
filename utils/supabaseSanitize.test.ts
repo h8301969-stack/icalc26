@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { sanitizeImageRefForDb } from './supabaseSanitize';
 
 describe('sanitizeImageRefForDb', () => {
-  it('keeps Telegram file refs and short http urls', () => {
+  it('keeps local item refs, Telegram file refs, and short http urls', () => {
+    expect(sanitizeImageRefForDb('itemimg:item-1')).toBe('itemimg:item-1');
     expect(sanitizeImageRefForDb('tgfile:ABC123')).toBe('tgfile:ABC123');
     expect(sanitizeImageRefForDb('https://example.com/a.jpg')).toBe('https://example.com/a.jpg');
   });

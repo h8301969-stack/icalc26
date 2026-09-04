@@ -3,6 +3,7 @@ import { HistoryItem, InvoiceActionLog, InvoicePrintLog, POSRequest, RestockNote
 import { InventoryItem, PurchaseRecord } from './usePOS';
 import { isCloudBackendEnabled } from '../utils/supabase';
 import { isTelegramDbConnected, telegramSaveSnapshot } from '../utils/telegramDb';
+import { hydrateItemImagesForAccount } from '../utils/itemImageSync';
 
 import {
   fetchCalcHistoryFromSupabase,
@@ -117,6 +118,7 @@ export const useSupabaseDataSync = ({
       void telegramSaveSnapshot(userId, 'inventory', inventoryRef.current).catch((error) =>
         console.warn('[iCalc telegram] inventory snapshot failed', error)
       );
+      void hydrateItemImagesForAccount(userId, inventoryRef.current);
     }, SYNC_DEBOUNCE_MS);
     return () => {
       if (inventorySyncTimerRef.current) window.clearTimeout(inventorySyncTimerRef.current);
@@ -147,7 +149,7 @@ export const useSupabaseDataSync = ({
           const localImg = local?.image || '';
           const remoteImg = remoteItem.image || '';
           const isDurable = (v: string) =>
-            /^tgfile:/i.test(v) || /^https?:\/\//i.test(v);
+            /^itemimg:/i.test(v) || /^tgfile:/i.test(v) || /^https?:\/\//i.test(v);
           // Prefer Telegram/http refs so photos sync across devices; ignore placeholders.
           if (isDurable(remoteImg)) return remoteImg;
           if (isDurable(localImg)) return localImg;
@@ -208,7 +210,11 @@ export const useSupabaseDataSync = ({
 
         // Never replace local data with empty remote — that wiped overnight inventory/invoices.
         if (remoteInventory?.length) {
-          setInventory(mergeInventory(remoteInventory));
+          const merged = mergeInventory(remoteInventory);
+          setInventory(merged);
+          void hydrateItemImagesForAccount(userId, merged);
+        } else {
+          void hydrateItemImagesForAccount(userId, inventoryRef.current);
         }
 
         if (remoteHistory?.length) {

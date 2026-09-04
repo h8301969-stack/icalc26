@@ -9,6 +9,7 @@ import {
   adminGrantAccess,
   adminIssueAccessCode,
   adminSetAccessBusinessInfo,
+  adminSetAccessTelegram,
   adminSetTelegramDefaults,
   adminGetTelegramDefaults,
   adminListCodes,
@@ -221,7 +222,10 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const [grantTarget, setGrantTarget] = useState<AccessCodeRow | null>(null);
   const [detailRow, setDetailRow] = useState<AccessCodeRow | null>(null);
   const [detailMemo, setDetailMemo] = useState('');
+  const [detailTelegramBotToken, setDetailTelegramBotToken] = useState('');
+  const [detailTelegramChatId, setDetailTelegramChatId] = useState('');
   const [savingMemo, setSavingMemo] = useState(false);
+  const [savingTelegram, setSavingTelegram] = useState(false);
   const [passwordHistory, setPasswordHistory] = useState<PasswordHistoryRow[]>([]);
   const [passwordHistoryLoading, setPasswordHistoryLoading] = useState(false);
   const [revealedPasswordIds, setRevealedPasswordIds] = useState<Set<string>>(() => new Set());
@@ -553,6 +557,8 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
   const openDetail = (row: AccessCodeRow) => {
     setDetailRow(row);
     setDetailMemo(row.admin_memo ?? '');
+    setDetailTelegramBotToken(row.telegram_bot_token ?? '');
+    setDetailTelegramChatId(row.telegram_chat_id ?? '');
     setPasswordHistory([]);
     setRevealedPasswordIds(new Set());
     setError(null);
@@ -593,6 +599,41 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
     }
     await loadCodes();
     setDetailRow((prev) => (prev ? { ...prev, admin_memo: detailMemo.trim() || null } : prev));
+  };
+
+  const saveDetailTelegram = async () => {
+    if (!detailRow) return;
+    if (!looksLikeBotToken(detailTelegramBotToken) || !detailTelegramChatId.trim()) {
+      setError('Paste Bot API token and Telegram user / chat ID.');
+      return;
+    }
+    setSavingTelegram(true);
+    setError(null);
+    const result = await adminSetAccessTelegram(
+      adminToken,
+      detailRow.code,
+      detailTelegramBotToken,
+      detailTelegramChatId
+    );
+    setSavingTelegram(false);
+    if (result.ok === false) {
+      setError(result.error ?? 'Could not save Telegram link.');
+      return;
+    }
+    const token = detailTelegramBotToken.trim();
+    const chatId = detailTelegramChatId.trim();
+    setDetailRow((prev) =>
+      prev ? { ...prev, telegram_bot_token: token, telegram_chat_id: chatId } : prev
+    );
+    setCodes((prev) =>
+      prev.map((row) =>
+        row.code === detailRow.code
+          ? { ...row, telegram_bot_token: token, telegram_chat_id: chatId }
+          : row
+      )
+    );
+    setSuccessNotice('Telegram Bot API and chat ID saved for this account.');
+    window.setTimeout(() => setSuccessNotice(null), 3500);
   };
 
   const clearLongPressTimer = () => {
@@ -819,6 +860,12 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                         {row.business_name && <p className="truncate">Business: {row.business_name}</p>}
                         {row.business_phone && <p className="truncate">Phone: {row.business_phone}</p>}
                         {row.business_address && <p className="truncate">Address: {row.business_address}</p>}
+                        <p className="truncate">
+                          Telegram:{' '}
+                          {row.telegram_bot_token && row.telegram_chat_id
+                            ? `linked · ${row.telegram_chat_id}`
+                            : 'not set'}
+                        </p>
                         {row.requested_at && <p>Requested: {formatWhen(row.requested_at)}</p>}
                         {row.approved_at && <p>Approved: {formatWhen(row.approved_at)}</p>}
                         {row.paused_at && <p>Paused: {formatWhen(row.paused_at)}</p>}
@@ -1262,6 +1309,39 @@ const AdminCodeDashboard: React.FC<AdminCodeDashboardProps> = ({
                 <dd className="font-mono text-[10px] text-right break-all">{detailRow.user_id ?? '—'}</dd>
               </div>
             </dl>
+
+            <div className={`admin-section-enter mt-4 rounded-xl border px-4 py-3 space-y-3 ${isLight ? 'bg-sky-50 border-sky-200/80' : 'bg-sky-500/10 border-sky-400/25'}`}>
+              <p className="text-[10px] font-black uppercase opacity-55">Telegram (this account)</p>
+              <label className="block">
+                <span className={FORM_FIELD_LABEL}>Bot API token</span>
+                <PasswordField
+                  isLight={isLight}
+                  value={detailTelegramBotToken}
+                  onChange={setDetailTelegramBotToken}
+                  placeholder="From BotFather"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="block">
+                <span className={FORM_FIELD_LABEL}>User / chat ID</span>
+                <input
+                  type="text"
+                  value={detailTelegramChatId}
+                  onChange={(e) => setDetailTelegramChatId(e.target.value)}
+                  className={formInputClass(isLight)}
+                  placeholder="e.g. 123456789"
+                  autoComplete="off"
+                />
+              </label>
+              <button
+                type="button"
+                disabled={savingTelegram}
+                onClick={() => void saveDetailTelegram()}
+                className="admin-interactive w-full py-2.5 rounded-xl bg-sky-500 text-white text-xs font-black uppercase disabled:opacity-50"
+              >
+                {savingTelegram ? 'Saving…' : 'Save Telegram'}
+              </button>
+            </div>
 
             <label className="block mt-4">
               <span className={`${FORM_FIELD_LABEL} opacity-50 mb-0`}>Admin memo</span>

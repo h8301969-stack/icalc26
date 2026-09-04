@@ -81,7 +81,7 @@ export const defaultWholesaleId = (lists: WholesaleList[]): string =>
 const INLINE_IMAGE_RE = /^data:image\//i;
 const BLOB_IMAGE_RE = /^blob:/i;
 
-/** Drop huge local image payloads — inventory must only keep tgfile:/http/default. */
+/** Drop huge local image payloads — inventory must only keep itemimg:/tgfile:/http/default. */
 export const stripInlineInventoryImage = (image: string | undefined, fallback: string): string => {
   if (!image) return fallback;
   if (INLINE_IMAGE_RE.test(image) || BLOB_IMAGE_RE.test(image) || image.length > 512) {
@@ -151,7 +151,7 @@ export const usePOS = (_history: HistoryItem[]) => {
   }, [archivedWholesales]);
 
   useEffect(() => {
-    // Persist only durable image refs (tgfile:/http/default) — strip any leftover data: payloads.
+    // Persist only durable image refs (itemimg:/tgfile:/http/default) — strip leftover data: payloads.
     storage.set(
       'pos_inventory',
       items.map((item) => ({

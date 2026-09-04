@@ -6,7 +6,12 @@
 
 import { Capacitor } from '@capacitor/core';
 import { storage } from '../hooks/storage';
-import { cacheItemImageBlob, readCachedItemImageUrl } from './itemImageCache';
+import {
+  cacheItemImageBlob,
+  peekCachedItemImageUrl,
+  readCachedItemImageUrl,
+  rememberItemImageUrl,
+} from './itemImageCache';
 
 export interface TelegramDbConfig {
   botToken: string;
@@ -454,8 +459,6 @@ export const parseTelegramItemImageRef = (value: string | null | undefined): str
   return id || null;
 };
 
-const itemImageUrlCache = new Map<string, string>();
-
 const dataUrlToBlob = async (dataUrl: string): Promise<Blob | null> => {
   try {
     const res = await fetch(dataUrl);
@@ -465,7 +468,7 @@ const dataUrlToBlob = async (dataUrl: string): Promise<Blob | null> => {
   }
 };
 
-/** Upload an item photo to Telegram; returns a durable `tgfile:` ref for inventory. */
+/** Step 3 — upload an item photo to Telegram; returns a durable `tgfile:` ref. */
 export async function telegramUploadItemImage(input: {
   accountId: string;
   itemId: string;
@@ -507,9 +510,9 @@ export async function telegramUploadItemImage(input: {
     const fileId = photos[photos.length - 1]?.file_id?.trim();
     if (!fileId) return { ok: false, error: 'Telegram did not return a file_id.' };
 
-    // Memory + durable offline cache (inventory itself only keeps tgfile: ref).
+    // Memory + durable offline cache (inventory itself only keeps a short ref).
     const objectUrl = URL.createObjectURL(blob);
-    itemImageUrlCache.set(fileId, objectUrl);
+    rememberItemImageUrl(fileId, objectUrl);
     void cacheItemImageBlob(fileId, blob);
 
     return { ok: true, imageRef: encodeTelegramItemImageRef(fileId), fileId };
@@ -519,19 +522,19 @@ export async function telegramUploadItemImage(input: {
   }
 }
 
-/** Resolve a `tgfile:` inventory ref to a displayable URL (memory → IDB → Telegram). */
+/** Last-step resolve for a `tgfile:` ref (memory → IDB/phone → Telegram getFile). */
 export async function telegramResolveItemImageUrl(
   accountId: string | null | undefined,
   imageRef: string | null | undefined
 ): Promise<string | null> {
   const fileId = parseTelegramItemImageRef(imageRef);
   if (!fileId) return null;
-  const mem = itemImageUrlCache.get(fileId);
+  const mem = peekCachedItemImageUrl(fileId);
   if (mem) return mem;
 
   const offlineUrl = await readCachedItemImageUrl(fileId);
   if (offlineUrl) {
-    itemImageUrlCache.set(fileId, offlineUrl);
+    rememberItemImageUrl(fileId, offlineUrl);
     return offlineUrl;
   }
 
@@ -551,7 +554,7 @@ export async function telegramResolveItemImageUrl(
     if (!fileRes.ok) return null;
     const blob = await fileRes.blob();
     const url = URL.createObjectURL(blob);
-    itemImageUrlCache.set(fileId, url);
+    rememberItemImageUrl(fileId, url);
     void cacheItemImageBlob(fileId, blob);
     return url;
   } catch {

@@ -33,9 +33,10 @@ import InventoryItemImage from './InventoryItemImage';
 import { Capacitor } from '@capacitor/core';
 import { pickPhotoFromGallery } from '../utils/nativeCamera';
 import {
-  isTelegramDbConnected,
-  telegramUploadItemImage,
-} from '../utils/telegramDb';
+  encodeItemImageRef,
+  persistItemImage,
+  useItemImageHydrate,
+} from '../utils/itemImageSync';
 
 interface POSDashboardProps {
   history: HistoryItem[];
@@ -330,9 +331,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const itemLongPressFired = useRef(false);
   const imageMigrateRunning = useRef(false);
 
-  // Move any leftover local data: photos to Telegram so every device can resolve tgfile: refs.
+  useItemImageHydrate(accountId, items);
+
+  // Leftover data: photos → local cache, then Supabase, then Telegram.
   useEffect(() => {
-    if (!accountId || !isTelegramDbConnected(accountId) || imageMigrateRunning.current) return;
+    if (imageMigrateRunning.current) return;
     const pending = storage.get<Record<string, string>>(PENDING_ITEM_IMAGE_UPLOADS_KEY, {});
     const entries = Object.entries(pending).filter(([, url]) => /^data:image\//i.test(url));
     if (entries.length === 0) return;
@@ -345,20 +348,26 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       for (const [itemId, dataUrl] of entries) {
         if (cancelled) break;
         const item = items.find((row) => row.id === itemId);
-        const uploaded = await telegramUploadItemImage({
+        const saved = await persistItemImage({
           accountId,
           itemId,
           image: dataUrl,
           itemName: item?.name,
+          onDurableRef: (durableRef) => {
+            if (cancelled) return;
+            setItems((prev) =>
+              prev.map((row) => (row.id === itemId ? { ...row, image: durableRef } : row))
+            );
+          },
         });
-        if (uploaded.ok === false) {
-          console.warn('[iCalc] migrate item image failed', itemId, uploaded.error);
+        if (saved.ok === false) {
+          console.warn('[iCalc] migrate item image failed', itemId, saved.error);
           continue;
         }
         delete nextPending[itemId];
         if (!cancelled) {
           setItems((prev) =>
-            prev.map((row) => (row.id === itemId ? { ...row, image: uploaded.imageRef } : row))
+            prev.map((row) => (row.id === itemId ? { ...row, image: saved.imageRef } : row))
           );
         }
       }
@@ -369,7 +378,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     return () => {
       cancelled = true;
     };
-    // Intentionally once per account connection — items lookup is best-effort for captions.
+    // Intentionally once per mount — items lookup is best-effort for captions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
 
@@ -1189,9 +1198,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     const grams = Math.max(0, parseFloat(newItemGrams) || 0);
     const pendingPhoto =
       /^data:image\//i.test(newItemImage) || /^blob:/i.test(newItemImage) ? newItemImage : '';
-    // Never persist base64 photos in inventory — Telegram stores bytes; we keep tgfile: only.
+    const newItemId = crypto.randomUUID();
+    // Show the photo immediately; persist() caches locally then Supabase + Telegram.
     const newItem: InventoryItem = {
-      id: crypto.randomUUID(),
+      id: newItemId,
       name: newItemName.trim(),
       stock,
       price: parseFloat(newItemPrice) || 0,
@@ -1200,7 +1210,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       dateAdded: now.toLocaleDateString(),
       supplier: 'Generic Systems',
       lastStocked: now.toISOString(),
-      image: DEFAULT_INVENTORY_IMAGE,
+      image: pendingPhoto || DEFAULT_INVENTORY_IMAGE,
       grams,
       wholesaleId: activeWholesaleId || fallbackWholesaleId,
       activities: [{
@@ -1216,26 +1226,30 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
     let photoNote = '';
     if (pendingPhoto) {
-      if (!accountId || !isTelegramDbConnected(accountId)) {
-        photoNote = ' · photo skipped (link Telegram to sync photos)';
-        console.warn('[iCalc] item photo not stored locally — Telegram link required for cross-device photos');
-      } else {
-        photoNote = ' · uploading photo…';
-        void telegramUploadItemImage({
-          accountId,
-          itemId: newItem.id,
-          image: pendingPhoto,
-          itemName: newItem.name,
-        }).then((uploaded) => {
-          if (uploaded.ok === false) {
-            console.warn('[iCalc] new item image Telegram upload failed', uploaded.error);
-            return;
-          }
+      photoNote = ' · saving photo…';
+      void persistItemImage({
+        accountId,
+        itemId: newItem.id,
+        image: pendingPhoto,
+        itemName: newItem.name,
+        onDurableRef: (durableRef) => {
           setItems((prev) =>
-            prev.map((row) => (row.id === newItem.id ? { ...row, image: uploaded.imageRef } : row))
+            prev.map((row) => (row.id === newItem.id ? { ...row, image: durableRef } : row))
           );
-        });
-      }
+        },
+      }).then((saved) => {
+        if (saved.ok === false) {
+          console.warn('[iCalc] new item image cache failed', saved.error);
+          return;
+        }
+        setItems((prev) =>
+          prev.map((row) =>
+            row.id === newItem.id && !row.image.startsWith('tgfile:')
+              ? { ...row, image: saved.imageRef }
+              : row
+          )
+        );
+      });
     }
 
     onAccountNotify?.({
@@ -1525,19 +1539,16 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   const commitImageUpdate = useCallback(
     (item: InventoryItem, imageDataUrl: string) => {
       if (!imageDataUrl || imageDataUrl === item.image) return;
-      if (!accountId || !isTelegramDbConnected(accountId)) {
-        alert('Link Telegram (set by admin on approve) to sync item photos across devices. Photos are not stored as large local files.');
-        return;
-      }
 
       const now = Date.now();
       const action = `${item.name} photo updated`;
-      // Activity first; image stays until Telegram returns tgfile: (no base64 in inventory).
+      const localRef = encodeItemImageRef(item.id);
       setItems((prev) =>
         prev.map((row) => {
           if (row.id !== item.id) return row;
           return {
             ...row,
+            image: imageDataUrl,
             activities: [
               {
                 id: crypto.randomUUID(),
@@ -1553,19 +1564,27 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         })
       );
 
-      void telegramUploadItemImage({
+      void persistItemImage({
         accountId,
         itemId: item.id,
         image: imageDataUrl,
         itemName: item.name,
-      }).then((uploaded) => {
-        if (uploaded.ok === false) {
-          console.warn('[iCalc] item image Telegram upload failed', uploaded.error);
-          alert(uploaded.error || 'Could not upload photo to Telegram.');
+        onDurableRef: (durableRef) => {
+          setItems((prev) =>
+            prev.map((row) => (row.id === item.id ? { ...row, image: durableRef } : row))
+          );
+        },
+      }).then((saved) => {
+        if (saved.ok === false) {
+          console.warn('[iCalc] item image cache failed', saved.error);
           return;
         }
         setItems((prev) =>
-          prev.map((row) => (row.id === item.id ? { ...row, image: uploaded.imageRef } : row))
+          prev.map((row) =>
+            row.id === item.id && !row.image.startsWith('tgfile:')
+              ? { ...row, image: saved.imageRef || localRef }
+              : row
+          )
         );
         onAccountNotify?.({
           kind: 'image_updated',
@@ -1925,6 +1944,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           image={item.image}
           alt={item.name}
           accountId={accountId}
+          itemId={item.id}
           className="w-full h-full object-cover"
         />
       </div>
@@ -1959,7 +1979,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         className={`group rounded-xl overflow-hidden cursor-pointer ${levitateClass} relative focus:outline-none focus:ring-2 focus:ring-white/40`}
       >
         <div className="relative aspect-square overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-          <InventoryItemImage image={item.image} alt={item.name} accountId={accountId} className="w-full h-full object-cover" />
+          <InventoryItemImage image={item.image} alt={item.name} accountId={accountId} itemId={item.id} className="w-full h-full object-cover" />
           <div className="absolute top-2 right-2 flex flex-col items-end gap-1" aria-hidden="true">
             <div
               className={`pos-subtext px-2 py-1 rounded-lg text-[9px] font-black backdrop-blur-3xl shadow-xl ${
@@ -2014,7 +2034,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
         <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
           <div className="relative h-56 sm:h-72">
-            <InventoryItemImage image={item.image} alt={item.name} accountId={accountId} className="w-full h-full object-cover" />
+            <InventoryItemImage image={item.image} alt={item.name} accountId={accountId} itemId={item.id} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent" aria-hidden="true" />
             {(canEditStock || canEditPrice) && (
               <button
@@ -2708,7 +2728,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
                     className={`group rounded-xl overflow-hidden cursor-pointer ${levitateClass} relative focus:outline-none focus:ring-2 focus:ring-white/40`}
                   >
                     <div className="relative aspect-square overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-                      <InventoryItemImage image={item.image} alt={item.name} accountId={accountId} className="w-full h-full object-cover" />
+                      <InventoryItemImage image={item.image} alt={item.name} accountId={accountId} itemId={item.id} className="w-full h-full object-cover" />
                       <div className="absolute inset-x-0 bottom-0 h-[42%] bg-linear-to-t from-black/95 via-black/40 to-transparent pointer-events-none" aria-hidden="true" />
                       <div className="absolute bottom-3 left-3 right-3 flex flex-col pointer-events-none" aria-hidden="true">
                          <div className="flex flex-col items-start gap-0.5">

@@ -28,15 +28,7 @@ import { MorphPresence } from './MorphCrossfade';
 import SettingsNotificationsInbox from './SettingsNotificationsInbox';
 import type { AccountNotification } from '../types/accountNotifications';
 import { pickPhotoFromGallery } from '../utils/nativeCamera';
-import {
-  PHONE_APP_DOWNLOAD_URL,
-  fetchLatestPhoneRelease,
-  formatReleaseElapsed,
-  getInstalledAppVersion,
-  buildPhoneUpdateStatus,
-  type AppReleaseInfo,
-  type PhoneUpdateStatus,
-} from '../utils/appRelease';
+import { useAppUpdate } from '../hooks/useAppUpdate';
 import { heartbeatProfilePresence, touchProfilePresence } from '../utils/profilePresence';
 
 
@@ -186,11 +178,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showNotificationsInbox, setShowNotificationsInbox] = useState(false);
   const wasOpenRef = useRef(false);
-  const [phoneRelease, setPhoneRelease] = useState<AppReleaseInfo | null>(null);
-  const [phoneReleaseLoading, setPhoneReleaseLoading] = useState(false);
-  const [phoneReleaseNow, setPhoneReleaseNow] = useState(() => Date.now());
-  const [installedAppVersion, setInstalledAppVersion] = useState<string | null>(null);
   const isNativeApp = Capacitor.isNativePlatform();
+  const appUpdate = useAppUpdate(isOpen);
 
   // Snapshot committed settings into draft when panel opens
   useEffect(() => {
@@ -216,26 +205,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     return () => window.clearInterval(tick);
   }, [isOpen, draft.activeProfileId, settings.activeProfileId]);
 
-  // Load latest phone release metadata whenever Settings opens (web + native)
-  useEffect(() => {
-    if (!isOpen) return;
-    let cancelled = false;
-    setPhoneReleaseLoading(true);
-    setPhoneReleaseNow(Date.now());
-    void Promise.all([fetchLatestPhoneRelease(), getInstalledAppVersion()]).then(
-      ([info, installed]) => {
-        if (cancelled) return;
-        setPhoneRelease(info);
-        setInstalledAppVersion(installed);
-        setPhoneReleaseLoading(false);
-      }
-    );
-    const tick = window.setInterval(() => setPhoneReleaseNow(Date.now()), 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(tick);
-    };
-  }, [isOpen]);
+
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1304,24 +1274,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
 
-        {/* Phone install / update — web download + native version status */}
+        {/* In-app update — stays on screen with progress, then green Restart */}
         {(() => {
-          const updateStatus: PhoneUpdateStatus = phoneReleaseLoading
-            ? { kind: 'loading' }
-            : isNativeApp
-              ? buildPhoneUpdateStatus(installedAppVersion || '0.0.0', phoneRelease, phoneReleaseNow)
-              : phoneRelease
-                ? {
-                    kind: 'unknown',
-                    message: `Updated ${formatReleaseElapsed(phoneRelease.publishedAt, phoneReleaseNow)} ago`,
-                  }
-                : { kind: 'unknown', message: 'Ready to download' };
-          const statusMessage =
-            updateStatus.kind === 'loading'
-              ? 'Checking for updates…'
-              : updateStatus.message;
-          const canDownloadUpdate = !isNativeApp || updateStatus.kind === 'update' || updateStatus.kind === 'unknown';
-          const buttonDisabled = isNativeApp && updateStatus.kind === 'current';
+          const { phase, progress, message, error: updateError, startUpdate, restart } = appUpdate;
+          const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100);
+          const isReady = phase === 'ready';
+          const isBusy = phase === 'downloading' || phase === 'checking';
+          const isCurrent = phase === 'current';
 
           return (
             <div className="settings-card p-6 shadow-2xl">
@@ -1331,26 +1290,42 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               )}
               <p className={`app-subtext text-[11px] font-medium mb-2 ${isLight ? 'text-black/60' : 'text-white/60'}`} style={{ letterSpacing: 0 }}>
                 {isNativeApp
-                  ? 'See whether this install is current, or grab the newest APK.'
-                  : 'Download the latest phone app.'}
+                  ? 'Updates download inside the app. When it finishes, Restart.'
+                  : 'Install as a home-screen app, or download the phone build. Updates stay in this screen.'}
               </p>
               <p
-                className={`text-[11px] font-semibold mb-4 ${
-                  updateStatus.kind === 'update'
-                    ? 'text-amber-500'
-                    : updateStatus.kind === 'current'
-                      ? isLight
-                        ? 'text-emerald-600'
-                        : 'text-emerald-400'
+                className={`text-[11px] font-semibold mb-3 ${
+                  isReady || isCurrent
+                    ? isLight
+                      ? 'text-emerald-600'
+                      : 'text-emerald-400'
+                    : phase === 'error'
+                      ? 'text-red-500'
                       : isLight
                         ? 'text-black/45'
                         : 'text-white/45'
                 }`}
                 style={{ letterSpacing: 0 }}
               >
-                {statusMessage}
+                {updateError || message}
               </p>
-              {buttonDisabled ? (
+              {(phase === 'downloading' || isReady) && (
+                <div
+                  className={`h-2 rounded-full overflow-hidden mb-4 ${isLight ? 'bg-black/10' : 'bg-white/10'}`}
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={pct}
+                >
+                  <div
+                    className={`h-full rounded-full transition-[width] duration-200 ${
+                      isReady ? 'bg-emerald-500' : 'bg-blue-500'
+                    }`}
+                    style={{ width: `${isReady ? 100 : pct}%` }}
+                  />
+                </div>
+              )}
+              {isCurrent ? (
                 <div
                   className={`w-full py-3.5 px-4 rounded-xl font-semibold text-[12px] flex items-center justify-center gap-2 opacity-70 ${
                     isLight ? 'bg-black/8 text-black/70' : 'bg-white/10 text-white/70'
@@ -1362,20 +1337,30 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   You’re up to date
                 </div>
               ) : (
-                <a
-                  href={PHONE_APP_DOWNLOAD_URL}
-                  className={`w-full py-3.5 px-4 rounded-xl font-semibold text-[12px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
-                    isLight ? 'bg-blue-500 text-white' : 'bg-blue-500/90 text-white'
-                  } ${canDownloadUpdate ? '' : 'pointer-events-none opacity-50'}`}
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => (isReady ? restart() : startUpdate())}
+                  className={`w-full py-3.5 px-4 rounded-xl font-semibold text-[12px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-70 ${
+                    isReady
+                      ? 'bg-emerald-500 text-white'
+                      : isLight
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-blue-500/90 text-white'
+                  }`}
                   style={{ letterSpacing: 0 }}
                 >
-                  <Icons.Download size={16} />
-                  {isNativeApp
-                    ? updateStatus.kind === 'update'
-                      ? `Download ${updateStatus.latestVersion}`
-                      : 'Download latest APK'
-                    : 'Download for phone'}
-                </a>
+                  {isReady ? (
+                    <>Restart</>
+                  ) : isBusy ? (
+                    <>Updating… {phase === 'downloading' ? `${pct}%` : ''}</>
+                  ) : (
+                    <>
+                      <Icons.Download size={16} />
+                      {isNativeApp ? 'Update in app' : 'Update / install'}
+                    </>
+                  )}
+                </button>
               )}
             </div>
           );

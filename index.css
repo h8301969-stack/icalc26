@@ -1971,17 +1971,115 @@ select.app-input--dark {
   height: min(calc(var(--invoice-receipt-width) * 13 / 6), calc(100dvh - 7.5rem));
   aspect-ratio: 6 / 13;
 }
-/* Apple-style stacked app switcher (horizontal depth) */
+/* Apple-style stacked app switcher (horizontal deck, cards follow the finger) */
 .invoice-switcher-stage--apple {
-  perspective: 1400px;
-  perspective-origin: 50% 42%;
+  perspective: none;
 }
 .invoice-switcher-stage__stack {
-  transform-style: preserve-3d;
+  transform-style: flat;
 }
 .invoice-switcher-stage__card {
-  transform-style: preserve-3d;
-  backface-visibility: hidden;
+  transform-style: flat;
+}
+.invoice-switcher-focus {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  color: #0a0a0a;
+  transition: opacity 0.2s cubic-bezier(0.32, 0.72, 0, 1), transform 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.invoice-switcher-focus--in {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  pointer-events: auto;
+}
+.invoice-switcher-focus--out {
+  opacity: 0;
+  transform: translate3d(0, 12px, 0);
+  pointer-events: none;
+}
+.invoice-switcher-focus__sheet {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.invoice-switcher-focus__back {
+  position: absolute;
+  top: max(0.7rem, env(safe-area-inset-top));
+  left: 0.7rem;
+  z-index: 5;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  cursor: pointer;
+}
+.invoice-switcher-shell--focus .invoice-switcher-card__header {
+  padding-left: 3.6rem;
+}
+.invoice-switcher-focus__back:active {
+  transform: scale(0.94);
+}
+.invoice-switcher-focus:has(.invoice-switcher-card__header--stale) .invoice-switcher-focus__back {
+  background: rgba(0, 0, 0, 0.12);
+  color: #111;
+}
+.invoice-switcher-focus__bar {
+  flex-shrink: 0;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  padding-bottom: max(0.85rem, env(safe-area-inset-bottom));
+  background: #ffffff;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+.invoice-switcher-focus__btn {
+  flex: 1;
+  min-height: 3rem;
+  border: none;
+  border-radius: 1rem;
+  font-size: 0.95rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  cursor: pointer;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.invoice-switcher-focus__btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.invoice-switcher-focus__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.invoice-switcher-focus__btn--continue {
+  background: #111111;
+  color: #ffffff;
+}
+.invoice-switcher-focus__btn--print {
+  background: #10b981;
+  color: #ffffff;
+}
+.invoice-switcher-focus__btn--copied {
+  background: #059669;
+}
+.invoice-switcher-focus__btn--failed {
+  background: #dc2626;
+}
+.invoice-switcher-shell--focus {
+  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 .invoice-switcher-printable--full {
   width: 100%;
@@ -2007,6 +2105,13 @@ select.app-input--dark {
   max-width: 100%;
   flex-shrink: 0;
   min-height: 0;
+}
+.invoice-switcher-printable.invoice-switcher-printable--full,
+.invoice-switcher-shell--focus .invoice-switcher-printable {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  flex: 1;
 }
 .invoice-switcher-action-rail {
   width: var(--invoice-action-rail-width);
