@@ -14,7 +14,7 @@ import App from './App';
 import './index.css';
 import { nativeWarmupBle } from './utils/nativeBle';
 import { Capacitor } from '@capacitor/core';
-import { registerPwa, unregisterServiceWorkers } from './utils/pwa';
+import { capturePwaInstallPrompt, registerPwa, unregisterServiceWorkers } from './utils/pwa';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -34,5 +34,6 @@ void nativeWarmupBle();
 if (Capacitor.isNativePlatform()) {
   void unregisterServiceWorkers();
 } else {
+  capturePwaInstallPrompt();
   void registerPwa();
 }

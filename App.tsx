@@ -45,6 +45,7 @@ import {
 } from './utils/auth';
 import { SyncStatusIndicator } from './components/SyncStatusIndicator';
 import AccountToastHost from './components/AccountToastHost';
+import PwaInstallPrompt from './components/PwaInstallPrompt';
 import { useAccountNotifications } from './hooks/useAccountNotifications';
 
 import { usePOS, InventoryItem } from './hooks/usePOS';
@@ -1734,6 +1735,7 @@ const AppContent: React.FC = () => {
       />
       </>
       )}
+      <PwaInstallPrompt isLight={isLight} />
       {isAdminPortal && adminSessionToken && (
         <AdminCodeDashboard
           isLight={isLight}

@@ -178,7 +178,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showNotificationsInbox, setShowNotificationsInbox] = useState(false);
   const wasOpenRef = useRef(false);
-  const isNativeApp = Capacitor.isNativePlatform();
   const appUpdate = useAppUpdate(isOpen);
 
   // Snapshot committed settings into draft when panel opens
@@ -1276,22 +1275,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         {/* In-app update — stays on screen with progress, then green Restart */}
         {(() => {
-          const { phase, progress, message, error: updateError, startUpdate, restart } = appUpdate;
+          const { phase, progress, message, error: updateError, runtime, startUpdate, restart } = appUpdate;
           const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100);
           const isReady = phase === 'ready';
           const isBusy = phase === 'downloading' || phase === 'checking';
           const isCurrent = phase === 'current';
+          const title =
+            runtime === 'native' ? 'App updates' : runtime === 'pwa' ? 'App updates' : 'Install iCalc';
+          const hint =
+            runtime === 'native'
+              ? 'This phone app updates in place. When it finishes, Restart.'
+              : runtime === 'pwa'
+                ? 'This home-screen app updates itself. When it finishes, Restart.'
+                : 'Install iCalc like any other app on this phone.';
+          const actionLabel =
+            runtime === 'web' ? 'Install' : runtime === 'pwa' ? 'Update' : 'Update app';
 
           return (
             <div className="settings-card p-6 shadow-2xl">
-              {renderSettingsCardHeader(
-                isNativeApp ? 'App updates' : 'Get iCalc on your phone',
-                <Icons.Download size={22} />
-              )}
+              {renderSettingsCardHeader(title, <Icons.Download size={22} />)}
               <p className={`app-subtext text-[11px] font-medium mb-2 ${isLight ? 'text-black/60' : 'text-white/60'}`} style={{ letterSpacing: 0 }}>
-                {isNativeApp
-                  ? 'Updates download inside the app. When it finishes, Restart.'
-                  : 'Install as a home-screen app, or download the phone build. Updates stay in this screen.'}
+                {hint}
               </p>
               <p
                 className={`text-[11px] font-semibold mb-3 ${
@@ -1357,7 +1361,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   ) : (
                     <>
                       <Icons.Download size={16} />
-                      {isNativeApp ? 'Update in app' : 'Update / install'}
+                      {actionLabel}
                     </>
                   )}
                 </button>

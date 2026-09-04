@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   downloadWithProgress,
-  isNativeApp,
-  isPwaRuntime,
   PHONE_APP_DOWNLOAD_URL,
   restartNativeApp,
   restartPwa,
@@ -10,7 +8,14 @@ import {
   shareDownloadedApk,
   startPwaUpdate,
 } from '../utils/appUpdate';
-import { checkForPwaUpdate, getWaitingWorker } from '../utils/pwa';
+import {
+  checkForPwaUpdate,
+  getAppRuntimeKind,
+  getWaitingWorker,
+  promptPwaInstall,
+  requestPwaInstallUi,
+  type AppRuntimeKind,
+} from '../utils/pwa';
 import {
   buildPhoneUpdateStatus,
   fetchLatestPhoneRelease,
@@ -18,7 +23,14 @@ import {
   type PhoneUpdateStatus,
 } from '../utils/appRelease';
 
-export type AppUpdateUiPhase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'current' | 'error';
+export type AppUpdateUiPhase =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'ready'
+  | 'current'
+  | 'error';
 
 export interface AppUpdateState {
   phase: AppUpdateUiPhase;
@@ -26,11 +38,13 @@ export interface AppUpdateState {
   message: string;
   error: string | null;
   status: PhoneUpdateStatus | null;
+  runtime: AppRuntimeKind;
   startUpdate: () => void;
   restart: () => void;
 }
 
 export function useAppUpdate(enabled: boolean): AppUpdateState {
+  const runtime = getAppRuntimeKind();
   const [phase, setPhase] = useState<AppUpdateUiPhase>('idle');
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState('Checking for updates…');
@@ -53,48 +67,66 @@ export function useAppUpdate(enabled: boolean): AppUpdateState {
       const next = buildPhoneUpdateStatus(installed, release);
       setStatus(next);
 
-      const waiting = isPwaRuntime() ? await getWaitingWorker() : null;
-      if (cancelled) return;
-      if (waiting) {
+      if (runtime === 'pwa') {
+        const waiting = await getWaitingWorker();
+        if (cancelled) return;
+        if (waiting) {
+          setPhase('available');
+          setMessage('A new iCalc update is ready.');
+          return;
+        }
+        if (next.kind === 'current') {
+          setPhase('current');
+          setMessage(next.message);
+          return;
+        }
         setPhase('available');
-        setMessage('A new web build is ready.');
+        setMessage(next.kind === 'update' ? next.message : 'Check for a new iCalc update.');
         return;
       }
 
-      if (next.kind === 'current' && isNativeApp()) {
-        setPhase('current');
-        setMessage(next.message);
-        return;
-      }
-      if (next.kind === 'update') {
+      if (runtime === 'native') {
+        if (next.kind === 'current') {
+          setPhase('current');
+          setMessage(next.message);
+          return;
+        }
         setPhase('available');
-        setMessage(next.message);
+        setMessage(next.kind === 'update' ? next.message : 'Download the latest iCalc app.');
         return;
       }
-      if (isPwaRuntime()) {
-        setPhase('available');
-        setMessage(next.kind === 'unknown' ? 'Check for a new web build, or install on your phone.' : next.message);
-        return;
-      }
+
       setPhase('available');
-      setMessage(next.message);
+      setMessage('Install iCalc on this phone.');
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, runtime]);
 
   const startUpdate = useCallback(() => {
     if (phase === 'downloading' || phase === 'ready') return;
     setError(null);
+
+    if (runtime === 'web') {
+      requestPwaInstallUi();
+      void promptPwaInstall().then((outcome) => {
+        if (outcome === 'accepted') {
+          setPhase('current');
+          setMessage('iCalc is installed.');
+        }
+      });
+      return;
+    }
+
     setPhase('downloading');
     setProgress(0.02);
     setMessage('Updating… stay in the app.');
 
     void (async () => {
       try {
-        if (isNativeApp()) {
+        if (runtime === 'native') {
           const blob = await downloadWithProgress(PHONE_APP_DOWNLOAD_URL, (ratio) => {
             setProgress(ratio);
           });
@@ -107,46 +139,27 @@ export function useAppUpdate(enabled: boolean): AppUpdateState {
           return;
         }
 
-        if (isPwaRuntime()) {
-          await startPwaUpdate((ratio) => setProgress(ratio));
-          await checkForPwaUpdate();
-          setProgress(1);
-          setPhase('ready');
-          setMessage('Update downloaded. Tap Restart to apply.');
-          return;
-        }
-
-        const blob = await downloadWithProgress(PHONE_APP_DOWNLOAD_URL, (ratio) => {
-          setProgress(ratio);
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'icalc.apk';
-        a.click();
+        await startPwaUpdate((ratio) => setProgress(ratio));
+        await checkForPwaUpdate();
         setProgress(1);
         setPhase('ready');
-        setMessage('Download finished. Tap Restart when the install completes.');
+        setMessage('Update downloaded. Tap Restart to apply.');
       } catch (err) {
         setPhase('error');
         setError(err instanceof Error ? err.message : 'Update failed.');
         setMessage('Could not finish the update.');
       }
     })();
-  }, [phase]);
+  }, [phase, runtime]);
 
   const restart = useCallback(() => {
-    if (isNativeApp()) {
+    if (runtime === 'native') {
       if (apkUri) void shareDownloadedApk(apkUri);
       void restartNativeApp();
       return;
     }
-    if (isPwaRuntime()) {
-      restartPwa();
-      return;
-    }
-    window.location.reload();
-  }, [apkUri]);
+    restartPwa();
+  }, [apkUri, runtime]);
 
-  return { phase, progress, message, error, status, startUpdate, restart };
+  return { phase, progress, message, error, status, runtime, startUpdate, restart };
 }
