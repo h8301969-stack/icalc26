@@ -1289,47 +1289,73 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
 
-        {/* In-app update — stays on screen with progress, then green Restart */}
+        {/* PWA + APK, with timeslapse update check */}
         {(() => {
-          const { phase, progress, message, error: updateError, runtime, startUpdate, restart } = appUpdate;
+          const {
+            phase,
+            target,
+            progress,
+            message,
+            error: updateError,
+            status,
+            statusLoading,
+            startPwa,
+            startApk,
+            restart,
+          } = appUpdate;
           const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100);
           const isReady = phase === 'ready';
-          const isBusy = phase === 'downloading' || phase === 'checking';
-          const isCurrent = phase === 'current';
-          const title =
-            runtime === 'native' ? 'App updates' : runtime === 'pwa' ? 'App updates' : 'Install iCalc';
-          const hint =
-            runtime === 'native'
-              ? 'This phone app updates in place. When it finishes, Restart.'
-              : runtime === 'pwa'
-                ? 'This home-screen app updates itself. When it finishes, Restart.'
-                : 'On Android, pick home-screen app or APK. On iPhone, add to Home Screen.';
-          const actionLabel =
-            runtime === 'web' ? 'Install' : runtime === 'pwa' ? 'Update' : 'Update app';
+          const isBusy = phase === 'downloading';
+          const statusKind = statusLoading ? 'loading' : status?.kind ?? 'unknown';
+          const statusText = statusLoading
+            ? 'Checking for updates…'
+            : status?.message ?? '';
+          const btnBase =
+            'w-full py-3.5 px-4 rounded-xl font-semibold text-[12px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-70';
 
           return (
             <div className="settings-card p-6 shadow-2xl">
-              {renderSettingsCardHeader(title, <Icons.Download size={22} />)}
+              {renderSettingsCardHeader('Get iCalc', <Icons.Download size={22} />)}
               <p className={`app-subtext text-[11px] font-medium mb-2 ${isLight ? 'text-black/60' : 'text-white/60'}`} style={{ letterSpacing: 0 }}>
-                {hint}
+                Home screen app (PWA) or Android APK.
               </p>
-              <p
-                className={`text-[11px] font-semibold mb-3 ${
-                  isReady || isCurrent
-                    ? isLight
-                      ? 'text-emerald-600'
-                      : 'text-emerald-400'
-                    : phase === 'error'
-                      ? 'text-red-500'
-                      : isLight
-                        ? 'text-black/45'
-                        : 'text-white/45'
-                }`}
-                style={{ letterSpacing: 0 }}
-              >
-                {updateError || message}
-              </p>
-              {(phase === 'downloading' || isReady) && (
+              {statusText && (
+                <p
+                  className={`text-[11px] font-semibold mb-3 ${
+                    statusKind === 'update'
+                      ? 'text-amber-500'
+                      : statusKind === 'current'
+                        ? isLight
+                          ? 'text-emerald-600'
+                          : 'text-emerald-400'
+                        : isLight
+                          ? 'text-black/45'
+                          : 'text-white/45'
+                  }`}
+                  style={{ letterSpacing: 0 }}
+                >
+                  {statusText}
+                </p>
+              )}
+              {(message || updateError) && (
+                <p
+                  className={`text-[11px] font-semibold mb-3 ${
+                    isReady
+                      ? isLight
+                        ? 'text-emerald-600'
+                        : 'text-emerald-400'
+                      : phase === 'error'
+                        ? 'text-red-500'
+                        : isLight
+                          ? 'text-black/45'
+                          : 'text-white/45'
+                  }`}
+                  style={{ letterSpacing: 0 }}
+                >
+                  {updateError || message}
+                </p>
+              )}
+              {isBusy && (
                 <div
                   className={`h-2 rounded-full overflow-hidden mb-4 ${isLight ? 'bg-black/10' : 'bg-white/10'}`}
                   role="progressbar"
@@ -1337,50 +1363,40 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   aria-valuemax={100}
                   aria-valuenow={pct}
                 >
-                  <div
-                    className={`h-full rounded-full transition-[width] duration-200 ${
-                      isReady ? 'bg-emerald-500' : 'bg-blue-500'
-                    }`}
-                    style={{ width: `${isReady ? 100 : pct}%` }}
-                  />
+                  <div className="h-full rounded-full bg-blue-500 transition-[width] duration-200" style={{ width: `${pct}%` }} />
                 </div>
               )}
-              {isCurrent ? (
-                <div
-                  className={`w-full py-3.5 px-4 rounded-xl font-semibold text-[12px] flex items-center justify-center gap-2 opacity-70 ${
-                    isLight ? 'bg-black/8 text-black/70' : 'bg-white/10 text-white/70'
-                  }`}
-                  style={{ letterSpacing: 0 }}
-                  aria-disabled="true"
-                >
-                  <Icons.Check size={16} />
-                  You’re up to date
-                </div>
-              ) : (
+              {isReady ? (
                 <button
                   type="button"
-                  disabled={isBusy}
-                  onClick={() => (isReady ? restart() : startUpdate())}
-                  className={`w-full py-3.5 px-4 rounded-xl font-semibold text-[12px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-70 ${
-                    isReady
-                      ? 'bg-emerald-500 text-white'
-                      : isLight
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-blue-500/90 text-white'
-                  }`}
+                  onClick={restart}
+                  className={`${btnBase} bg-emerald-500 text-white`}
                   style={{ letterSpacing: 0 }}
                 >
-                  {isReady ? (
-                    <>Restart</>
-                  ) : isBusy ? (
-                    <>Updating… {phase === 'downloading' ? `${pct}%` : ''}</>
-                  ) : (
-                    <>
-                      <Icons.Download size={16} />
-                      {actionLabel}
-                    </>
-                  )}
+                  Restart
                 </button>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={startPwa}
+                    className={`${btnBase} ${isLight ? 'bg-blue-500 text-white' : 'bg-blue-500/90 text-white'}`}
+                    style={{ letterSpacing: 0 }}
+                  >
+                    {isBusy && target === 'pwa' ? `PWA… ${pct}%` : 'Home screen (PWA)'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={startApk}
+                    className={`${btnBase} ${isLight ? 'bg-black text-white' : 'bg-white text-zinc-900'}`}
+                    style={{ letterSpacing: 0 }}
+                  >
+                    <Icons.Download size={16} />
+                    {isBusy && target === 'apk' ? `APK… ${pct}%` : 'Download APK'}
+                  </button>
+                </div>
               )}
             </div>
           );
