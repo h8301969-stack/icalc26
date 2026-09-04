@@ -949,10 +949,24 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 
 .calc-expression-scroll {
   overflow-y: auto;
-  overflow-x: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   touch-action: pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 128, 0.45) transparent;
+}
+.calc-expression-scroll::-webkit-scrollbar {
+  display: block;
+  width: 5px;
+  height: 5px;
+}
+.calc-expression-scroll::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.45);
+  border-radius: 30px;
+}
+.calc-expression-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .calc-expression-display {

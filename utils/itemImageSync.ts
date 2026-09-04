@@ -140,6 +140,14 @@ export async function syncItemImageRemotes(input: {
     const uploaded = await uploadItemImageToSupabase(accountId, itemId, input.blob);
     if (uploaded.ok) {
       markRemotePending(itemId, { supabase: false });
+      const { error: rowError } = await supabase
+        .from('inventory_items')
+        .update({ image_url: encodeItemImageRef(itemId) })
+        .eq('id', itemId)
+        .eq('user_id', accountId);
+      if (rowError) {
+        console.warn('[iCalc] item image_url stamp failed', itemId, rowError.message);
+      }
     } else {
       console.warn('[iCalc] item image Supabase upload failed', itemId, uploaded.error);
     }

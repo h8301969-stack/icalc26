@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { resolveWallpaperUrl } from '../utils/accountMedia';
 import { resolveWallpaperImage } from '../utils/wallpapers';
 
 interface BlurredBackgroundProps {
@@ -13,7 +14,20 @@ const BlurredBackground: React.FC<BlurredBackgroundProps> = ({
   isUnlocked = true,
 }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [resolved, setResolved] = useState<string[]>([]);
   const slides = wallpapers.length > 0 ? wallpapers : [{ image: '' }];
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(slides.map((slide, index) => resolveWallpaperUrl(slide.image, index))).then(
+      (urls) => {
+        if (!cancelled) setResolved(urls);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [wallpapers]);
 
   useEffect(() => {
     if (slides.length <= 1) return;
@@ -29,7 +43,7 @@ const BlurredBackground: React.FC<BlurredBackgroundProps> = ({
       aria-hidden="true"
     >
       {slides.map((slide, index) => {
-        const imageUrl = resolveWallpaperImage(slide.image);
+        const imageUrl = resolved[index] || resolveWallpaperImage(slide.image);
         if (!imageUrl) return null;
 
         return (

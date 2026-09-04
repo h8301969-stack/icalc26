@@ -12,6 +12,7 @@ import {
   readCachedItemImageUrl,
   rememberItemImageUrl,
 } from './itemImageCache';
+import { isCloudBackendEnabled, supabase } from './supabase';
 
 export interface TelegramDbConfig {
   botToken: string;
@@ -312,15 +313,149 @@ export async function telegramUpsertEntity<T>(
   return { ok: true, messageId: sent.result.message_id };
 }
 
-/** Persist a full JSON collection as one message (settings / inventory snapshot). */
+async function stampTelegramSnapshotFile(
+  accountId: string,
+  snapshotKind: string,
+  fileId: string
+): Promise<void> {
+  if (!isCloudBackendEnabled() || !accountId || !fileId) return;
+  try {
+    const { data } = await supabase
+      .from('user_settings')
+      .select('telegram_snapshot_files')
+      .eq('user_id', accountId)
+      .maybeSingle();
+    const files = {
+      ...((data?.telegram_snapshot_files as Record<string, string> | null) ?? {}),
+      [snapshotKind]: fileId,
+    };
+    await supabase
+      .from('user_settings')
+      .update({ telegram_snapshot_files: files })
+      .eq('user_id', accountId);
+  } catch (error) {
+    console.warn('[iCalc telegram] could not stamp snapshot file id', error);
+  }
+}
+
+export async function telegramSendSnapshotDocument(
+  accountId: string,
+  snapshotKind: string,
+  payload: unknown
+): Promise<{ ok: true; fileId: string } | { ok: false; error: string }> {
+  const config = getTelegramDbConfig(accountId);
+  if (!config) return { ok: false, error: 'Telegram database is not connected.' };
+
+  const row: TelegramDbRow = {
+    v: 1,
+    kind: 'snapshot',
+    id: snapshotKind,
+    user_id: accountId,
+    payload,
+    updated_at: new Date().toISOString(),
+  };
+  const blob = new Blob([JSON.stringify(row)], { type: 'application/json' });
+
+  try {
+    const form = new FormData();
+    form.append('chat_id', config.chatId);
+    form.append('caption', `icalc snapshot ${snapshotKind}`.slice(0, 1024));
+    form.append('document', blob, `icalc-snapshot-${snapshotKind}.json`);
+    const res = await fetch(`${apiBase(config.botToken)}/sendDocument`, {
+      method: 'POST',
+      body: form,
+    });
+    const data = (await res.json()) as {
+      ok?: boolean;
+      description?: string;
+      result?: { document?: { file_id?: string } };
+    };
+    if (!data.ok || !data.result?.document?.file_id) {
+      return { ok: false, error: data.description || 'Telegram snapshot upload failed' };
+    }
+    const fileId = data.result.document.file_id;
+    void stampTelegramSnapshotFile(accountId, snapshotKind, fileId);
+    return { ok: true, fileId };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Network error';
+    return { ok: false, error: corsHint(message) };
+  }
+}
+
+/** Persist a JSON snapshot: short rows as chat messages, always as a retrievable document. */
 export async function telegramSaveSnapshot(
   accountId: string,
   snapshotKind: string,
   data: unknown
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  return telegramUpsertEntity(accountId, 'snapshot', snapshotKind, data).then((r) =>
-    r.ok ? { ok: true as const } : r
-  );
+  const probe = JSON.stringify({
+    v: 1,
+    kind: 'snapshot',
+    id: snapshotKind,
+    user_id: accountId,
+    payload: data,
+    updated_at: new Date().toISOString(),
+  });
+  if (probe.length <= 4000) {
+    await telegramUpsertEntity(accountId, 'snapshot', snapshotKind, data);
+  }
+  const doc = await telegramSendSnapshotDocument(accountId, snapshotKind, data);
+  return doc.ok ? { ok: true as const } : doc;
+}
+
+export async function telegramRestoreSnapshots(
+  accountId: string
+): Promise<Record<string, unknown>> {
+  const restored: Record<string, unknown> = {};
+  if (!accountId) return restored;
+
+  let files: Record<string, string> = {};
+  if (isCloudBackendEnabled()) {
+    const { data } = await supabase
+      .from('user_settings')
+      .select('telegram_snapshot_files')
+      .eq('user_id', accountId)
+      .maybeSingle();
+    files = (data?.telegram_snapshot_files as Record<string, string> | null) ?? {};
+  }
+
+  const kinds = ['inventory', 'settings', 'profiles', 'wholesales', 'invoice_recent'];
+  for (const kind of kinds) {
+    const fileId = files[kind];
+    if (!fileId) continue;
+    const fetched = await telegramFetchArchiveDocument(accountId, fileId);
+    if (fetched.ok) restored[kind] = fetched.row.payload;
+  }
+
+  if (Object.keys(restored).length > 0) return restored;
+
+  const config = getTelegramDbConfig(accountId);
+  if (!config) return restored;
+  const updates = await telegramCall<
+    Array<{ message?: { text?: string; document?: { file_id?: string }; caption?: string } }>
+  >(config.botToken, 'getUpdates', { limit: 100, timeout: 0 });
+  if (updates.ok === false) return restored;
+  for (const update of updates.result) {
+    const text = update.message?.text;
+    if (text) {
+      try {
+        const parsed = JSON.parse(text) as TelegramDbRow;
+        if (parsed?.v === 1 && parsed.kind === 'snapshot' && parsed.id) {
+          restored[parsed.id] = parsed.payload;
+        }
+      } catch {
+        /* not a row */
+      }
+    }
+    const caption = update.message?.caption || '';
+    const snapKind = caption.replace(/^icalc snapshot\s+/i, '').trim();
+    const fileId = update.message?.document?.file_id;
+    if (fileId && snapKind && kinds.includes(snapKind) && restored[snapKind] == null) {
+      const fetched = await telegramFetchArchiveDocument(accountId, fileId);
+      if (fetched.ok) restored[snapKind] = fetched.row.payload;
+    }
+  }
+  return restored;
 }
 
 const corsHint = (message: string): string => {

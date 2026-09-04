@@ -144,6 +144,12 @@ const AppContent: React.FC = () => {
   }, [displayResult, formatCurrency, settings.currency, settings.ghsCalculatorStyle]);
   const showLiveResult = displayResult !== '0' && displayResult !== '0.00';
   const isDraggingCursor = useRef(false);
+  const expressionPointerRef = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    mode: 'pending' | 'scroll' | 'cursor';
+  } | null>(null);
   const activeProfileName = useMemo(() => activeProfile?.name ?? 'Staff', [activeProfile]);
   const canViewTransactions = isAdminProfile(activeProfile);
   const {
@@ -1427,7 +1433,7 @@ const AppContent: React.FC = () => {
                 >
                   <div
                   ref={expressionScrollRef}
-                  className={`calc-expression-scroll no-scrollbar w-full max-w-full flex-1 min-h-0 cursor-text select-text pointer-events-auto flex flex-col ${expressionBreakAtPlus ? 'text-left' : 'text-right'}`}
+                  className={`calc-expression-scroll w-full max-w-full flex-1 min-h-0 cursor-text select-text pointer-events-auto flex flex-col ${expressionBreakAtPlus ? 'text-left' : 'text-right'}`}
                   onCopy={handleExpressionCopy}
                   onPaste={handleExpressionPaste}
                   tabIndex={0}
@@ -1445,23 +1451,49 @@ const AppContent: React.FC = () => {
                   aria-label={`Expression: ${expression}`}
                   onPointerDown={(e) => {
                     if (expression === '0') return;
-                    isDraggingCursor.current = true;
-                    expressionScrollRef.current?.setPointerCapture(e.pointerId);
-                    updateCursorFromPointer(e.clientX, e.clientY);
+                    expressionPointerRef.current = {
+                      id: e.pointerId,
+                      x: e.clientX,
+                      y: e.clientY,
+                      mode: 'pending',
+                    };
                   }}
                   onPointerMove={(e) => {
                     if (expression === '0') return;
-                    if (!isDraggingCursor.current && e.buttons === 0) return;
-                    isDraggingCursor.current = true;
+                    const start = expressionPointerRef.current;
+                    if (!start || start.id !== e.pointerId) return;
+                    const dx = e.clientX - start.x;
+                    const dy = e.clientY - start.y;
+                    if (start.mode === 'pending') {
+                      if (Math.hypot(dx, dy) < 8) return;
+                      const el = expressionScrollRef.current;
+                      const canScrollY = !!el && el.scrollHeight > el.clientHeight + 2;
+                      if (canScrollY && Math.abs(dy) >= Math.abs(dx)) {
+                        start.mode = 'scroll';
+                        return;
+                      }
+                      start.mode = 'cursor';
+                      isDraggingCursor.current = true;
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      updateCursorFromPointer(e.clientX, e.clientY);
+                      return;
+                    }
+                    if (start.mode === 'scroll') return;
                     updateCursorFromPointer(e.clientX, e.clientY);
                   }}
                   onPointerUp={(e) => {
+                    const start = expressionPointerRef.current;
+                    expressionPointerRef.current = null;
+                    if (start?.mode === 'pending') {
+                      updateCursorFromPointer(e.clientX, e.clientY);
+                    }
                     isDraggingCursor.current = false;
                     if (expressionScrollRef.current?.hasPointerCapture(e.pointerId)) {
                       expressionScrollRef.current.releasePointerCapture(e.pointerId);
                     }
                   }}
                   onPointerCancel={(e) => {
+                    expressionPointerRef.current = null;
                     isDraggingCursor.current = false;
                     if (expressionScrollRef.current?.hasPointerCapture(e.pointerId)) {
                       expressionScrollRef.current.releasePointerCapture(e.pointerId);

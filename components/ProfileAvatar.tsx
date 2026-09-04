@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { UserProfile } from '../types';
+import { isAvatarRef, resolveProfileAvatarUrl } from '../utils/accountMedia';
 
 interface ProfileAvatarProps {
   profile: UserProfile | null;
@@ -19,14 +20,33 @@ const ProfileAvatar: React.FC<ProfileAvatarProps> = ({
   ariaLabel,
 }) => {
   const initial = (profile?.name || 'U').charAt(0).toUpperCase();
-  const hasImage = !!profile?.avatarUrl;
+  const raw = profile?.avatarUrl || '';
+  const [src, setSrc] = useState(raw.startsWith('data:') || raw.startsWith('blob:') || raw.startsWith('http') ? raw : '');
+
+  useEffect(() => {
+    let cancelled = false;
+    const value = profile?.avatarUrl || '';
+    if (!value) {
+      setSrc('');
+      return;
+    }
+    if (/^data:image\//i.test(value) || /^blob:/i.test(value) || /^https?:\/\//i.test(value)) {
+      setSrc(value);
+      return;
+    }
+    if (!isAvatarRef(value) && !profile?.id) return;
+    void resolveProfileAvatarUrl(value, profile?.id).then((url) => {
+      if (!cancelled && url) setSrc(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.avatarUrl, profile?.id]);
+
+  const hasImage = !!src;
 
   const inner = hasImage ? (
-    <img
-      src={profile!.avatarUrl}
-      alt=""
-      className="w-full h-full object-cover"
-    />
+    <img src={src} alt="" className="w-full h-full object-cover" />
   ) : (
     <span className="font-black" style={{ fontSize: size * 0.38 }}>
       {initial}

@@ -9,7 +9,8 @@ import { ExpressionViewMode, normalizeExpressionViewMode } from '../utils/expres
 import { ReceiptLayoutMode } from '../utils/receiptLayout';
 import { isCloudBackendEnabled } from '../utils/supabase';
 import { fetchSettingsFromSupabase, syncSettingsToSupabase } from '../utils/supabaseDataSync';
-import { isTelegramDbConnected, telegramSaveSnapshot } from '../utils/telegramDb';
+import { isTelegramDbConnected, telegramRestoreSnapshots, telegramSaveSnapshot } from '../utils/telegramDb';
+import { hydrateProfileAvatars, persistWallpaperSet } from '../utils/accountMedia';
 
 const SETTINGS_KEY = 'calc_settings';
 const SETTINGS_SYNC_DEBOUNCE_MS = 1200;
@@ -129,24 +130,39 @@ export const useSettings = (options: UseSettingsOptions = {}) => {
 
   useEffect(() => {
     if (!authReady || !userId || !isCloudBackendEnabled()) return;
-    // Per-account Telegram DB: keep settings local (+ Telegram snapshot), skip Supabase.
-    if (isTelegramDbConnected(userId)) {
-      settingsHydratedRef.current = true;
-      settingsHydratingRef.current = false;
-      return;
-    }
 
     let cancelled = false;
     settingsHydratingRef.current = true;
 
     void fetchSettingsFromSupabase(userId)
-      .then((remote) => {
+      .then(async (remote) => {
         if (cancelled) return;
         if (remote) {
           setSettings((prev) => migrateStoredSettings({ ...prev, ...remote }));
-        } else {
-          return syncSettingsToSupabase(userId, settingsRef.current);
+          void hydrateProfileAvatars(settingsRef.current.profiles);
+          return;
         }
+        if (isTelegramDbConnected(userId)) {
+          try {
+            const restored = await telegramRestoreSnapshots(userId);
+            const snap = restored.settings as Partial<AppSettings> | undefined;
+            const profilesSnap = restored.profiles as { profiles?: UserProfile[]; activeProfileId?: string } | undefined;
+            if (snap || profilesSnap?.profiles?.length) {
+              setSettings((prev) =>
+                migrateStoredSettings({
+                  ...prev,
+                  ...snap,
+                  profiles: profilesSnap?.profiles?.length ? profilesSnap.profiles : prev.profiles,
+                  activeProfileId: profilesSnap?.activeProfileId || prev.activeProfileId,
+                })
+              );
+              return;
+            }
+          } catch (error) {
+            console.warn('[iCalc sync] settings telegram restore failed', error);
+          }
+        }
+        return syncSettingsToSupabase(userId, settingsRef.current);
       })
       .catch((error) => console.error('[iCalc sync] settings hydrate failed', error))
       .finally(() => {
@@ -167,6 +183,15 @@ export const useSettings = (options: UseSettingsOptions = {}) => {
   }, [settings]);
 
   useEffect(() => {
+    if (!authReady || !userId || !settingsHydratedRef.current) return;
+    void persistWallpaperSet(settings.customWallpapers).then((next) => {
+      if (!next) return;
+      setSettings((prev) => ({ ...prev, customWallpapers: next }));
+    });
+    void hydrateProfileAvatars(settings.profiles);
+  }, [authReady, userId, settings.customWallpapers, settings.profiles]);
+
+  useEffect(() => {
     if (!authReady || !userId || !isCloudBackendEnabled()) return;
     if (!settingsHydratedRef.current || settingsHydratingRef.current) return;
 
@@ -176,7 +201,6 @@ export const useSettings = (options: UseSettingsOptions = {}) => {
         void telegramSaveSnapshot(userId, 'settings', settingsRef.current).catch((error) =>
           console.warn('[iCalc telegram] settings snapshot failed', error)
         );
-        return;
       }
       void syncSettingsToSupabase(userId, settingsRef.current).catch((error) =>
         console.error('[iCalc sync] settings save failed', error)

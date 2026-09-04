@@ -452,6 +452,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       phone: phone.trim(),
       sellerType,
     };
+    if (avatarUrl && (/^data:image\//i.test(avatarUrl) || /^blob:/i.test(avatarUrl))) {
+      const saved = await import('../utils/accountMedia').then(({ persistProfileAvatar }) =>
+        persistProfileAvatar({ profileId: profile.id, image: avatarUrl })
+      );
+      if (saved.ok) profile.avatarUrl = saved.imageRef;
+    }
     patchDraft({
       profiles: ensureAdminProfile([...profiles, profile]),
       activeProfileId: profile.id,
@@ -489,6 +495,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const handleUpdateProfileAvatar = (profileId: string, avatarUrl: string) => {
     patchDraft({
       profiles: profiles.map((p) => (p.id === profileId ? { ...p, avatarUrl } : p)),
+    });
+    void import('../utils/accountMedia').then(({ persistProfileAvatar }) => {
+      void persistProfileAvatar({ profileId, image: avatarUrl }).then((saved) => {
+        if (saved.ok === false) return;
+        patchDraft({
+          profiles: (draft.profiles ?? profiles).map((p) =>
+            p.id === profileId ? { ...p, avatarUrl: saved.imageRef } : p
+          ),
+        });
+      });
     });
   };
 

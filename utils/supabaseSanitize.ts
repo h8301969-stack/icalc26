@@ -4,6 +4,8 @@ const INLINE_IMAGE_RE = /^data:image\//i;
 const MAX_PERSISTABLE_URL_LEN = 512;
 const TG_FILE_RE = /^tgfile:/i;
 const ITEM_IMG_RE = /^itemimg:/i;
+const AVATAR_RE = /^avatar:/i;
+const WALL_RE = /^wall:/i;
 const HTTP_URL_RE = /^https?:\/\//i;
 
 export const isInlineImageData = (value: string | null | undefined): boolean => {
@@ -20,7 +22,14 @@ export const sanitizeImageRefForDb = (value: string | null | undefined): string 
   if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (ITEM_IMG_RE.test(trimmed) || TG_FILE_RE.test(trimmed)) return trimmed;
+  if (
+    ITEM_IMG_RE.test(trimmed) ||
+    TG_FILE_RE.test(trimmed) ||
+    AVATAR_RE.test(trimmed) ||
+    WALL_RE.test(trimmed)
+  ) {
+    return trimmed;
+  }
   if (HTTP_URL_RE.test(trimmed) && trimmed.length <= MAX_PERSISTABLE_URL_LEN) return trimmed;
   // data: / huge payloads stay on-device only
   return null;

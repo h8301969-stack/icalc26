@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { HistoryItem, InvoiceActionLog, InvoicePrintLog, POSRequest, RestockNote, SavedInvoice, SupplierRecord, SyncState } from '../types';
 import { InventoryItem, PurchaseRecord } from './usePOS';
-import { isCloudBackendEnabled } from '../utils/supabase';
-import { isTelegramDbConnected, telegramSaveSnapshot } from '../utils/telegramDb';
+import { isCloudBackendEnabled, supabase } from '../utils/supabase';
+import {
+  isTelegramDbConnected,
+  telegramRestoreSnapshots,
+  telegramSaveSnapshot,
+} from '../utils/telegramDb';
 import { hydrateItemImagesForAccount } from '../utils/itemImageSync';
 
 import {
@@ -80,10 +84,12 @@ export const useSupabaseDataSync = ({
   /** Bumps after a successful hydrate so sync effects re-subscribe (refs alone don't re-render). */
   const [hydrateEpoch, setHydrateEpoch] = useState(0);
   const inventorySyncTimerRef = useRef<number | null>(null);
+  const telegramInventoryTimerRef = useRef<number | null>(null);
   const invoiceSyncTimerRef = useRef<number | null>(null);
   const historySyncTimerRef = useRef<number | null>(null);
   const purchasesSyncTimerRef = useRef<number | null>(null);
   const dashboardSyncTimerRef = useRef<number | null>(null);
+  const lastLocalInvoiceWriteAt = useRef(0);
 
   const historyRef = useRef(history);
   const inventoryRef = useRef(inventory);
@@ -109,25 +115,23 @@ export const useSupabaseDataSync = ({
     setHydrateEpoch(0);
   }, [userId]);
 
-  // Telegram DB: keep local device state; snapshot inventory to the linked bot (no Supabase writes).
+  // Telegram is the long-term archive. Supabase is the live copy for other devices.
   useEffect(() => {
     if (!authReady || !userId || !isTelegramDbConnected(userId)) return;
-    hydratedRef.current = true;
-    if (inventorySyncTimerRef.current) window.clearTimeout(inventorySyncTimerRef.current);
-    inventorySyncTimerRef.current = window.setTimeout(() => {
+    if (telegramInventoryTimerRef.current) window.clearTimeout(telegramInventoryTimerRef.current);
+    telegramInventoryTimerRef.current = window.setTimeout(() => {
       void telegramSaveSnapshot(userId, 'inventory', inventoryRef.current).catch((error) =>
         console.warn('[iCalc telegram] inventory snapshot failed', error)
       );
       void hydrateItemImagesForAccount(userId, inventoryRef.current);
     }, SYNC_DEBOUNCE_MS);
     return () => {
-      if (inventorySyncTimerRef.current) window.clearTimeout(inventorySyncTimerRef.current);
+      if (telegramInventoryTimerRef.current) window.clearTimeout(telegramInventoryTimerRef.current);
     };
   }, [authReady, userId, inventory]);
 
   useEffect(() => {
-    // Telegram-linked accounts keep POS data off Supabase.
-    if (!authReady || !userId || !isCloudBackendEnabled() || isTelegramDbConnected(userId)) return;
+    if (!authReady || !userId || !isCloudBackendEnabled()) return;
 
     let cancelled = false;
 
@@ -237,6 +241,40 @@ export const useSupabaseDataSync = ({
           setRestocks(mergeById(remoteRestocks, restocksRef.current));
         }
 
+        const localEmpty =
+          inventoryRef.current.length === 0 &&
+          historyRef.current.length === 0 &&
+          (invoiceRef.current.getSavedInvoices?.() ?? []).length === 0;
+        const cloudEmpty = !remoteInventory?.length && !remoteHistory?.length && !remoteInvoice;
+        if (cloudEmpty && localEmpty && isTelegramDbConnected(userId)) {
+          try {
+            const restored = await telegramRestoreSnapshots(userId);
+            const inv = restored.inventory;
+            if (Array.isArray(inv) && inv.length) {
+              setInventory(inv as InventoryItem[]);
+              void hydrateItemImagesForAccount(userId, inv as InventoryItem[]);
+            }
+            const recent = restored.invoice_recent as {
+              pastLogs?: InvoiceActionLog[];
+              printLogs?: InvoicePrintLog[];
+              savedInvoices?: SavedInvoice[];
+            } | undefined;
+            if (recent && (recent.pastLogs?.length || recent.savedInvoices?.length)) {
+              const saved = recent.savedInvoices ?? [];
+              const current = saved.find((row) => row.isCurrent) ?? saved[0];
+              onInvoiceHydratedRef.current({
+                invoiceName: current?.name ?? invoiceRef.current.invoiceName,
+                expression: current?.expression ?? invoiceRef.current.expression,
+                pastLogs: recent.pastLogs ?? [],
+                printLogs: recent.printLogs ?? [],
+                savedInvoices: saved,
+              });
+            }
+          } catch (error) {
+            console.warn('[iCalc sync] telegram restore failed', error);
+          }
+        }
+
         if (remoteInvoice) {
           // Merge invoice action/print logs by id so other-device entries aren't dropped
           const localPast = invoiceRef.current.pastLogs;
@@ -271,8 +309,10 @@ export const useSupabaseDataSync = ({
         }
       } catch (error) {
         console.error('[iCalc sync] hydrate failed', error);
-        if (reason === 'mount') {
-          hydratedRef.current = false;
+        // Still allow local edits to retry push (images + calculator) if cloud was down.
+        if (!cancelled && reason === 'mount') {
+          hydratedRef.current = true;
+          setHydrateEpoch((n) => n + 1);
         }
       } finally {
         hydratingRef.current = false;
@@ -301,7 +341,7 @@ export const useSupabaseDataSync = ({
   }, [authReady, userId, setHistory, setInventory, setPurchases, setSuppliers, setRequests, setRestocks]);
 
   useEffect(() => {
-    if (!authReady || !userId || !isCloudBackendEnabled() || isTelegramDbConnected(userId) || !hydratedRef.current || hydratingRef.current) return;
+    if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
 
     if (inventorySyncTimerRef.current) window.clearTimeout(inventorySyncTimerRef.current);
     inventorySyncTimerRef.current = window.setTimeout(() => {
@@ -318,7 +358,7 @@ export const useSupabaseDataSync = ({
   }, [authReady, userId, inventory, setInventory, hydrateEpoch]);
 
   useEffect(() => {
-    if (!authReady || !userId || !isCloudBackendEnabled() || isTelegramDbConnected(userId) || !hydratedRef.current || hydratingRef.current) return;
+    if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
 
     if (historySyncTimerRef.current) window.clearTimeout(historySyncTimerRef.current);
     historySyncTimerRef.current = window.setTimeout(() => {
@@ -335,7 +375,7 @@ export const useSupabaseDataSync = ({
   }, [authReady, userId, history, setHistory, hydrateEpoch]);
 
   useEffect(() => {
-    if (!authReady || !userId || !isCloudBackendEnabled() || isTelegramDbConnected(userId) || !hydratedRef.current || hydratingRef.current) return;
+    if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
 
     if (purchasesSyncTimerRef.current) window.clearTimeout(purchasesSyncTimerRef.current);
     purchasesSyncTimerRef.current = window.setTimeout(() => {
@@ -352,7 +392,7 @@ export const useSupabaseDataSync = ({
   }, [authReady, userId, purchases, setPurchases, hydrateEpoch]);
 
   useEffect(() => {
-    if (!authReady || !userId || !isCloudBackendEnabled() || isTelegramDbConnected(userId) || !hydratedRef.current || hydratingRef.current) return;
+    if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
 
     if (dashboardSyncTimerRef.current) window.clearTimeout(dashboardSyncTimerRef.current);
     dashboardSyncTimerRef.current = window.setTimeout(() => {
@@ -381,18 +421,99 @@ export const useSupabaseDataSync = ({
   }, [authReady, userId, suppliers, requests, restocks, setSuppliers, setRequests, setRestocks, hydrateEpoch]);
 
   useEffect(() => {
-    if (!authReady || !userId || !isCloudBackendEnabled() || isTelegramDbConnected(userId) || !hydratedRef.current || hydratingRef.current) return;
+    if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current || hydratingRef.current) return;
 
     if (invoiceSyncTimerRef.current) window.clearTimeout(invoiceSyncTimerRef.current);
     invoiceSyncTimerRef.current = window.setTimeout(() => {
       void syncInvoiceDataToSupabase(userId, {
         ...invoiceRef.current,
         savedInvoices: invoiceRef.current.getSavedInvoices(),
-      }).catch((error) => console.error('[iCalc sync] invoice save failed', error));
+      })
+        .then(() => {
+          lastLocalInvoiceWriteAt.current = Date.now();
+        })
+        .catch((error) => console.error('[iCalc sync] invoice save failed', error));
     }, SYNC_DEBOUNCE_MS);
 
     return () => {
       if (invoiceSyncTimerRef.current) window.clearTimeout(invoiceSyncTimerRef.current);
     };
   }, [authReady, userId, invoiceName, expression, pastLogs, printLogs, getSavedInvoices, hydrateEpoch]);
+
+  useEffect(() => {
+    if (!authReady || !userId || !isCloudBackendEnabled() || !hydratedRef.current) return;
+
+    const channel = supabase
+      .channel(`live-calc-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'invoices', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          const row = payload.new as {
+            expression?: string;
+            name?: string;
+            is_current?: boolean;
+            updated_at?: string;
+          } | null;
+          if (!row?.is_current) return;
+          const remoteAt = Date.parse(row.updated_at ?? '') || 0;
+          if (remoteAt && remoteAt < lastLocalInvoiceWriteAt.current - 1500) return;
+          if (
+            row.expression === invoiceRef.current.expression &&
+            row.name === invoiceRef.current.invoiceName
+          ) {
+            return;
+          }
+          const saved = invoiceRef.current.getSavedInvoices?.() ?? [];
+          onInvoiceHydratedRef.current({
+            invoiceName: row.name || invoiceRef.current.invoiceName,
+            expression: row.expression || invoiceRef.current.expression,
+            pastLogs: invoiceRef.current.pastLogs,
+            printLogs: invoiceRef.current.printLogs,
+            savedInvoices: saved,
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'calc_history', filter: `user_id=eq.${userId}` },
+        () => {
+          void fetchCalcHistoryFromSupabase(userId)
+            .then((remote) => {
+              if (!remote?.length) return;
+              const byId = new Map(historyRef.current.map((row) => [row.id, row]));
+              for (const row of remote) byId.set(row.id, row);
+              setHistory([...byId.values()].sort((a, b) => b.timestamp - a.timestamp).slice(0, 50));
+            })
+            .catch((error) => console.warn('[iCalc sync] live history pull failed', error));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'inventory_items', filter: `user_id=eq.${userId}` },
+        () => {
+          void fetchInventoryFromSupabase(userId)
+            .then((remote) => {
+              if (!remote?.length) return;
+              setInventory((prev) => {
+                const localById = new Map(prev.map((item) => [item.id, item]));
+                return remote.map((item) => {
+                  const local = localById.get(item.id);
+                  return {
+                    ...item,
+                    image: item.image || local?.image || '',
+                    activities: item.activities?.length ? item.activities : local?.activities ?? [],
+                  };
+                });
+              });
+            })
+            .catch((error) => console.warn('[iCalc sync] live inventory pull failed', error));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [authReady, userId, hydrateEpoch, setHistory, setInventory]);
 };

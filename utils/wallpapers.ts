@@ -40,8 +40,18 @@ export const WALLPAPER_SLIDES: WallpaperSlide[] = [
   },
 ];
 
-export const resolveWallpaperImage = (image: string): string =>
-  LEGACY_WALLPAPER_MAP[image] ?? image;
+export const resolveWallpaperImage = (image: string): string => {
+  if (!image) return '';
+  if (
+    image.startsWith('wall:') ||
+    image.startsWith('avatar:') ||
+    image.startsWith('itemimg:') ||
+    image.startsWith('tgfile:')
+  ) {
+    return '';
+  }
+  return LEGACY_WALLPAPER_MAP[image] ?? image;
+};
 
 /** Bundled placeholder for inventory tiles when an item has no photo yet. */
 export const DEFAULT_INVENTORY_IMAGE = pos3;

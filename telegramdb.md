@@ -27,7 +27,7 @@ supabase functions deploy telegram-bot
 Admin portal / dev-skip users enter the app without pasting a token.  
 Approved shop accounts still connect **their** bot on first login after the 7-char code is approved.
 
-Supabase must **not** store end-user POS data once a Telegram bot is linked.
+Telegram is the long-term archive. **Supabase is the live copy** so the same account can restore calculator work, inventory, and item photos on a new device.
 
 ```
 Signup with 7-char code → pending
@@ -45,8 +45,8 @@ App reads/writes JSON rows via that bot (device-held token)
 3. App listens (realtime / poll). On `approved`, show **Admin info** popup.
 4. Required field: **Telegram Bot API** from BotFather.
 5. Token is verified (`getMe`), storage chat resolved (`/start` once or chat id).
-6. Config is saved **only on device** (`icalc_telegram_db_<accountId>`). Never commit tokens. Never upsert tokens to Supabase.
-7. Inventory / settings sync to Telegram messages; Supabase data sync is skipped while connected.
+6. The shop bot token is set by **admin** on approve and stored on the shop’s access row / `user_settings` so any device can call `get_my_shop_telegram` after login. The running client also caches it on-device. Staff never paste a token, and tokens are not stuffed into inventory/settings JSON blobs.
+7. Inventory / settings still snapshot to Telegram (now as retrievable documents too). Calculator, invoices, inventory, photos, avatars, and wallpapers also sync through Supabase so other devices on this account stay in sync. An empty new device can restore Telegram snapshots if Supabase has no rows yet.
 
 ## Row format
 

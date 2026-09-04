@@ -12,6 +12,7 @@ import {
 import { InvoiceSwitcherProductLine, InvoiceSwitcherTotalRow } from './InvoiceSwitcherLine';
 import { storage } from '../hooks/storage';
 import { resolveWallpaperImage } from '../utils/wallpapers';
+import { resolveWallpaperUrl } from '../utils/accountMedia';
 import InvoiceAttendantPicker from './InvoiceAttendantPicker';
 import InvoiceReceiptPreview from './InvoiceReceiptPreview';
 import BusinessReceiptIdentity from './BusinessReceiptIdentity';
@@ -135,6 +136,19 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const [receiptPaperWidth, setReceiptPaperWidth] = useState<PaperWidth>(() => printerInstance.paperWidth);
   const [wallpaperSlide, setWallpaperSlide] = useState(0);
   const wallpaperSlides = wallpapers.length > 0 ? wallpapers : [{ image: '' }];
+  const [resolvedWallpapers, setResolvedWallpapers] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(
+      wallpaperSlides.map((slide, index) => resolveWallpaperUrl(slide.image, index))
+    ).then((urls) => {
+      if (!cancelled) setResolvedWallpapers(urls);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [wallpapers]);
   const INACTIVITY_STALE_MS = 10 * 60 * 1000;
   const [invoiceActivityAt, setInvoiceActivityAt] = useState<Record<string, number>>({});
 
@@ -1511,7 +1525,7 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
         aria-hidden="true"
       >
         {wallpaperSlides.map((slide, index) => {
-          const imageUrl = resolveWallpaperImage(slide.image);
+          const imageUrl = resolvedWallpapers[index] || resolveWallpaperImage(slide.image);
           if (!imageUrl) return null;
 
           return (
