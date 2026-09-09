@@ -953,6 +953,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   touch-action: pan-y;
+  -webkit-touch-callout: none;
   scrollbar-width: thin;
   scrollbar-color: rgba(128, 128, 128, 0.45) transparent;
 }
@@ -971,6 +972,126 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 
 .calc-expression-display {
   overflow: visible;
+}
+
+.calc-expression-loupe {
+  position: fixed;
+  z-index: 5000;
+  pointer-events: none;
+  border-radius: 50%;
+  overflow: visible;
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.34));
+}
+.calc-expression-loupe__glass {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55);
+}
+.calc-expression-loupe--light .calc-expression-loupe__glass {
+  background: #f4f4f5;
+  border: 2.5px solid rgba(255, 255, 255, 0.95);
+}
+.calc-expression-loupe--dark .calc-expression-loupe__glass {
+  background: #1c1c1e;
+  border: 2.5px solid rgba(255, 255, 255, 0.32);
+}
+.calc-expression-loupe__content {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.calc-expression-loupe__content [data-expression-cursor] {
+  visibility: hidden;
+}
+.calc-expression-loupe__caret {
+  position: absolute;
+  left: 50%;
+  top: 18%;
+  height: 64%;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: #007aff;
+  z-index: 2;
+  pointer-events: none;
+}
+.calc-expression-loupe--dark .calc-expression-loupe__caret {
+  background: #64d2ff;
+}
+
+.price-item-picker-row {
+  display: flex;
+  gap: 0.7rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.55rem 0.75rem 0.7rem;
+  scrollbar-width: none;
+}
+.price-item-picker-row::-webkit-scrollbar {
+  display: none;
+}
+.price-item-picker-tile {
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+  width: 6.6rem;
+  border: 1px solid;
+  border-radius: 1.1rem;
+  padding: 0.4rem 0.4rem 0.55rem;
+  text-align: left;
+  transition: transform 0.12s ease;
+}
+.price-item-picker-tile:active {
+  transform: scale(0.96);
+}
+.price-item-picker-tile__image {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 0.8rem;
+  overflow: hidden;
+  background: rgba(128, 128, 128, 0.16);
+}
+.price-item-picker-tile--selected {
+  box-shadow: 0 0 0 2px #22c55e;
+}
+.price-item-picker-tile__check {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #22c55e;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+.price-item-picker-tile__name {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.price-item-picker-tile__meta {
+  display: block;
+  margin-top: 0.12rem;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+  opacity: 0.5;
 }
 
 .calc-expression-display [data-expression-cursor] {
@@ -1169,6 +1290,9 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 }
 .vision-hub-shell--drawer-open {
   overflow: hidden;
+}
+.vision-hub-shell--plus-open {
+  overflow: visible !important;
 }
 .vision-hub-panel {
   isolation: isolate;
@@ -2373,6 +2497,46 @@ select.app-input--dark {
   text-shadow:
     0 4px 16px rgba(0, 0, 0, 0.24),
     0 2px 6px rgba(0, 0, 0, 0.14);
+}
+
+.vision-hub-plus-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 90;
+  min-width: 11.75rem;
+  border-radius: 1rem;
+  overflow: hidden;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+}
+.vision-hub-plus-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.85rem 1rem;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+  background: transparent;
+}
+.vision-hub-plus-menu button + button {
+  border-top: 1px solid rgba(128, 128, 128, 0.18);
+}
+.vision-hub-plus-menu--light {
+  background: #f4f4f5;
+  color: #111;
+}
+.vision-hub-plus-menu--light button:active,
+.vision-hub-plus-menu--light button:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+.vision-hub-plus-menu--dark {
+  background: #1c1c1e;
+  color: #fff;
+}
+.vision-hub-plus-menu--dark button:active,
+.vision-hub-plus-menu--dark button:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 @keyframes vision-hub-wifi-pulse {
   0%, 100% {

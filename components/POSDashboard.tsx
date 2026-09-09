@@ -323,6 +323,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
   
   const [sortOption, setSortOption] = useState<SortOption>('a-z');
   const [inventoryLayout, setInventoryLayout] = useState<'grid' | 'list'>('grid');
+  const [invoiceComposerOpen, setInvoiceComposerOpen] = useState(false);
+  const [invoiceItemLayout, setInvoiceItemLayout] = useState<'list' | 'grid' | 'none'>('grid');
+  const [showInvoiceSearch, setShowInvoiceSearch] = useState(false);
+  const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
+  const invoiceSearchInputRef = useRef<HTMLInputElement>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -446,6 +451,10 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
           setCartOpen(false);
         } else if (namingUnidentified) {
           setNamingUnidentified(null);
+        } else if (invoiceComposerOpen) {
+          setInvoiceComposerOpen(false);
+          setShowInvoiceSearch(false);
+          setInvoiceSearchQuery('');
         } else if (actionLogsExpanded) {
           setActionLogsExpanded(false);
           setShowActionLogSearch(false);
@@ -474,7 +483,7 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     return () => window.removeEventListener('keydown', onKey);
     // closeAssetAction defined later; Escape closes form via setState
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, onClose, showAssetMenu, cartOpen, namingUnidentified, actionLogsExpanded, selectedItem, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded, wholesaleDeleteConfirmId, wholesaleHoldMenuId, showWholesaleArchive]);
+  }, [isOpen, onClose, showAssetMenu, cartOpen, namingUnidentified, invoiceComposerOpen, actionLogsExpanded, selectedItem, inventoryExpanded, purchasesExpanded, avgCustomerExpanded, invoicesTodayExpanded, monthlyRevExpanded, dailySalesExpanded, wholesaleDeleteConfirmId, wholesaleHoldMenuId, showWholesaleArchive]);
 
   useEffect(() => {
     if (!canViewTransactions) {
@@ -498,6 +507,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       setMonthlyRevExpanded(false);
       setDailySalesExpanded(false);
       setVisionHubFocus(false);
+      setInvoiceComposerOpen(false);
+      setShowInvoiceSearch(false);
+      setInvoiceSearchQuery('');
     }
   }, [isOpen]);
 
@@ -674,7 +686,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
   const hubCollapsed = !inventoryExpanded && !purchasesExpanded
     && !avgCustomerExpanded && !invoicesTodayExpanded
-    && !monthlyRevExpanded && !dailySalesExpanded && !actionLogsExpanded && !namingUnidentified;
+    && !monthlyRevExpanded && !dailySalesExpanded && !actionLogsExpanded && !namingUnidentified
+    && !invoiceComposerOpen;
 
   const printedInvoiceNames = useMemo(
     () => new Set(printLogs.map((log) => log.invoiceName)),
@@ -854,6 +867,22 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     });
     return result;
   }, [items, searchQuery, sortOption, activeWholesaleId, fallbackWholesaleId]);
+
+  const invoiceCatalogItems = useMemo(() => {
+    let result = items.filter(
+      (item) => (item.wholesaleId || fallbackWholesaleId) === activeWholesaleId
+    );
+    const q = invoiceSearchQuery.trim().toLowerCase();
+    if (q) {
+      result = result.filter(
+        (item) =>
+          item.name.toLowerCase().includes(q) ||
+          item.category.toLowerCase().includes(q) ||
+          String(item.price).includes(q)
+      );
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }, [items, invoiceSearchQuery, activeWholesaleId, fallbackWholesaleId]);
 
   const beginRenameWholesale = useCallback(
     (id: string) => {
@@ -1887,9 +1916,9 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
         return;
       }
       onAddProductToCart(item.price);
-      setCartOpen(true);
+      if (!invoiceComposerOpen) setCartOpen(true);
     },
-    [onAddProductToCart, openInventoryItem]
+    [onAddProductToCart, openInventoryItem, invoiceComposerOpen]
   );
 
   const clearItemLongPress = useCallback(() => {
@@ -1921,6 +1950,40 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
     },
     [addProductToCart]
   );
+
+  const closeInvoiceComposer = useCallback(() => {
+    setInvoiceComposerOpen(false);
+    setShowInvoiceSearch(false);
+    setInvoiceSearchQuery('');
+    setCartOpen(false);
+  }, []);
+
+  const openNewInvoiceComposer = useCallback(() => {
+    onStartNewInvoice?.();
+    setInventoryExpanded(false);
+    setPurchasesExpanded(false);
+    setAvgCustomerExpanded(false);
+    setInvoicesTodayExpanded(false);
+    setMonthlyRevExpanded(false);
+    setDailySalesExpanded(false);
+    setActionLogsExpanded(false);
+    setNamingUnidentified(null);
+    setSelectedItem(null);
+    setShowInvoiceSearch(false);
+    setInvoiceSearchQuery('');
+    setCartOpen(false);
+    setInvoiceComposerOpen(true);
+  }, [onStartNewInvoice]);
+
+  const handleNewICalc = useCallback(() => {
+    onStartNewInvoice?.();
+    onClose();
+  }, [onStartNewInvoice, onClose]);
+
+  useEffect(() => {
+    if (!showInvoiceSearch) return;
+    invoiceSearchInputRef.current?.focus();
+  }, [showInvoiceSearch]);
 
   const cartLineCount = cartItems.reduce((sum, line) => sum + (line.quantity || 0), 0);
 
@@ -2009,6 +2072,207 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
       </div>
     </div>
   );
+
+  const renderNewInvoicePage = () => {
+    const layout = invoiceItemLayout;
+    const showCatalog = layout === 'list' || layout === 'grid';
+    const showSearchHits = layout === 'none' && showInvoiceSearch && invoiceSearchQuery.trim().length > 0;
+    const catalog = invoiceCatalogItems;
+    const layoutBtn = (id: 'list' | 'grid' | 'none', label: string, icon: React.ReactNode) => (
+      <button
+        type="button"
+        role="radio"
+        aria-checked={layout === id}
+        onClick={() => setInvoiceItemLayout(id)}
+        className={`h-9 min-w-11 px-2.5 rounded-xl inline-flex items-center justify-center gap-1 transition-all active:scale-95 ${
+          layout === id
+            ? isLight
+              ? 'bg-zinc-900 text-white shadow'
+              : 'bg-white text-black shadow'
+            : isLight
+              ? 'text-black/45 hover:bg-black/5'
+              : 'text-white/45 hover:bg-white/8'
+        }`}
+        aria-label={label}
+      >
+        {icon}
+      </button>
+    );
+
+    return (
+      <div
+        className="morph-panel-content morph-panel-content--in space-y-5"
+        role="tabpanel"
+        aria-label="New invoice"
+      >
+        <div className={`sticky top-0 z-50 -mx-4 px-4 pt-2 pb-3 backdrop-blur-3xl ${isLight ? 'bg-[#f2f2f7]/92' : 'bg-black/70'}`}>
+          <div className="flex items-center gap-2 mb-3 min-h-11">
+            <button
+              type="button"
+              onClick={closeInvoiceComposer}
+              aria-label="Back to Vision Hub"
+              className={`relative z-10 shrink-0 ${HUB_BACK_BTN} ${isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'}`}
+            >
+              <HubBackChevron /> Hub
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowInvoiceSearch((open) => {
+                  if (open) setInvoiceSearchQuery('');
+                  return !open;
+                });
+              }}
+              className={`relative z-10 shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-full active:scale-90 transition-all ${
+                showInvoiceSearch
+                  ? isLight
+                    ? 'bg-zinc-900 text-white'
+                    : 'bg-white text-black'
+                  : isLight
+                    ? 'bg-white shadow-md text-zinc-900'
+                    : 'bg-white/10 text-zinc-100'
+              }`}
+              aria-label="Search items to add"
+              aria-pressed={showInvoiceSearch}
+            >
+              <Icons.Search size={16} />
+            </button>
+            {cartLineCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setCartOpen(true)}
+                className={`relative z-10 ml-auto shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-full active:scale-90 transition-all ${
+                  isLight ? 'bg-white shadow-md text-zinc-900' : 'bg-white/10 text-zinc-100'
+                }`}
+                aria-label={`Open cart, ${cartLineCount} items`}
+              >
+                <Icons.Cart size={16} />
+                <span
+                  className="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full text-[9px] font-black text-white flex items-center justify-center"
+                  style={{ backgroundColor: accentColor }}
+                >
+                  {cartLineCount > 99 ? '99+' : cartLineCount}
+                </span>
+              </button>
+            )}
+          </div>
+
+          <h3 className={`text-center pos-dashboard-section-title text-[1.35rem] sm:text-[1.6rem] leading-none mb-2 ${textColorClass}`}>
+            New invoice
+          </h3>
+          <p className={`text-center text-[12px] font-black truncate ${textColorClass}`}>{invoiceName || 'Untitled'}</p>
+          <p className="text-center text-[13px] font-black tabular-nums" style={{ color: accentColor }}>
+            {formatCurrency(runningTotal)}
+          </p>
+
+          {showInvoiceSearch && (
+            <label className="relative block mt-3">
+              <span className="sr-only">Search items to add</span>
+              <span
+                className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${
+                  isLight ? 'text-black/35' : 'text-white/40'
+                }`}
+                aria-hidden
+              >
+                <Icons.Search size={14} />
+              </span>
+              <input
+                ref={invoiceSearchInputRef}
+                type="search"
+                value={invoiceSearchQuery}
+                onChange={(e) => setInvoiceSearchQuery(e.target.value)}
+                placeholder="Search items to add…"
+                className={`w-full h-10 rounded-full pl-9 pr-3 text-sm font-semibold outline-none border ${
+                  isLight
+                    ? 'bg-white text-black border-black/8 placeholder:text-black/35 shadow-sm'
+                    : 'bg-white/10 text-white border-white/12 placeholder:text-white/35'
+                }`}
+                style={{ letterSpacing: 0 }}
+                aria-label="Search items to add to invoice"
+              />
+            </label>
+          )}
+
+          <div
+            role="radiogroup"
+            aria-label="Item display"
+            className={`mt-3 inline-flex items-center gap-1 p-1 rounded-2xl border ${
+              isLight ? 'bg-white border-black/8 shadow-sm' : 'bg-white/8 border-white/12'
+            }`}
+          >
+            {layoutBtn('list', 'List view', <Icons.List size={16} />)}
+            {layoutBtn('grid', 'Grid view', <Icons.Grid size={16} />)}
+            {layoutBtn('none', 'Hide items', <Icons.EyeOff size={16} />)}
+          </div>
+        </div>
+
+        {cartItems.length > 0 && (
+          <div className={`rounded-2xl overflow-hidden ${levitateClass}`}>
+            <div className={`px-4 py-3 border-b ${isLight ? 'border-black/6' : 'border-white/8'}`}>
+              <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>On this invoice</p>
+            </div>
+            <div className="px-4 py-2 space-y-1.5">
+              {cartItems.map((line, idx) => (
+                <div
+                  key={`${line.name ?? line.price}-${idx}`}
+                  className={`flex items-center justify-between gap-3 text-sm font-semibold ${textColorClass}`}
+                >
+                  <span className="min-w-0 truncate">{formatPosLineItemDisplay(line, currency, line.name)}</span>
+                  <span className="tabular-nums shrink-0">¢{(line.price * line.quantity).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {showCatalog && catalog.length > 0 && (
+          layout === 'list' ? (
+            <div className="flex flex-col gap-2.5 pb-20" role="list" aria-label="Items to add">
+              {catalog.map((item, idx) => renderInventoryListRow(item, idx))}
+            </div>
+          ) : (
+            <div
+              className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 pb-20"
+              role="list"
+              aria-label="Items to add"
+            >
+              {catalog.map((item, idx) => renderInventoryProductTile(item, idx))}
+            </div>
+          )
+        )}
+
+        {showCatalog && catalog.length === 0 && (
+          <div className={`p-12 text-center rounded-2xl ${isLight ? 'bg-white/70' : 'bg-white/5'}`}>
+            <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>
+              {invoiceSearchQuery.trim()
+                ? `No items match “${invoiceSearchQuery.trim()}”.`
+                : 'Tap search to find items, or add stock in Assets Hub.'}
+            </p>
+          </div>
+        )}
+
+        {showSearchHits && catalog.length > 0 && (
+          <div className="flex flex-col gap-2.5 pb-20" role="list" aria-label="Search results">
+            {catalog.map((item, idx) => renderInventoryListRow(item, idx))}
+          </div>
+        )}
+
+        {layout === 'none' && (
+          !(showSearchHits && catalog.length > 0)
+        ) && (
+          <div className={`p-12 text-center rounded-2xl ${isLight ? 'bg-white/70' : 'bg-white/5'}`}>
+            <p className={`pos-subtext text-[10px] font-black ${cardSubtextMutedClass}`}>
+              {invoiceSearchQuery.trim()
+                ? `No items match “${invoiceSearchQuery.trim()}”.`
+                : showInvoiceSearch
+                  ? 'Type a name or price, then tap an item to add it.'
+                  : 'Tap search to add items to this invoice.'}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderInventoryItemPage = () => {
     const item = items.find((i) => i.id === selectedItem!.id) ?? selectedItem!;
@@ -2173,6 +2437,8 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
             onThemeToggle={() => { updateSettings('themeMode', isLight ? 'dark' : 'light'); setIsThemeAnimating(true); }}
             onSettingsOpen={() => { setIsSettingsOpen(true); setIsSettingsAnimating(true); }}
             onCloseDashboard={() => { onClose(); setIsCloseAnimating(true); }}
+            onNewICalc={handleNewICalc}
+            onNewInvoice={openNewInvoiceComposer}
             isThemeAnimating={isThemeAnimating}
             isSettingsAnimating={isSettingsAnimating}
             isCloseAnimating={isCloseAnimating}
@@ -2188,7 +2454,11 @@ const POSDashboard: React.FC<POSDashboardProps> = ({
 
         {/* MAIN SCROLLABLE CONTENT */}
         <div className={`pos-dashboard-hub-blur-target flex-1 overflow-y-auto px-6 space-y-10 custom-scrollbar pb-16 scroll-smooth`}>
-          {hubCollapsed ? (
+          {invoiceComposerOpen ? (
+            <div key="new-invoice" className="pos-dashboard-panel-enter">
+              {renderNewInvoicePage()}
+            </div>
+          ) : hubCollapsed ? (
             <div className="grid grid-cols-2 gap-6 pt-4">
               
               {/* PERFORMANCE MICRO CARDS — real values for @admin, masked for mini-profiles */}

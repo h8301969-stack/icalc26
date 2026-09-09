@@ -50,7 +50,15 @@ import { useAccountNotifications } from './hooks/useAccountNotifications';
 
 import { usePOS, InventoryItem } from './hooks/usePOS';
 import { useInvoice } from './hooks/useInvoice';
-import { buildPosExpressionFromItems } from './utils/posExpression';
+import {
+  countCompletedPriceOccurrences,
+  getPosPriceSpans,
+  getTrailingMultiplyPrice,
+  pricesMatch,
+  resolveInvoiceContinueExpression,
+} from './utils/posExpression';
+import ExpressionMagnifier from './components/ExpressionMagnifier';
+import PriceItemPicker from './components/PriceItemPicker';
 import {
   buildExpressionRenderSlices,
   getExpressionViewPreset,
@@ -125,7 +133,8 @@ const AppContent: React.FC = () => {
   const {
     expression, calcError, inputChar,
     toggleSign, finalize, handleUndo, handleRedo, clearExpression, deleteLast,
-    addInventoryItem, addPosCartItem, pasteExpression, cursorPos, setCursorPos, setExpression
+    addInventoryItem, addPosCartItem, pasteExpression, cursorPos, setCursorPos,
+    loadExpression,
   } = useCalculator(saveResult, triggerHaptic);
 
   const syncStatus = useSyncStatus();
@@ -148,8 +157,16 @@ const AppContent: React.FC = () => {
     id: number;
     x: number;
     y: number;
-    mode: 'pending' | 'scroll' | 'cursor';
+    lastX: number;
+    lastY: number;
+    mode: 'pending' | 'scroll' | 'cursor' | 'magnify';
   } | null>(null);
+  const loupeHoldTimerRef = useRef<number | null>(null);
+  const [expressionLoupe, setExpressionLoupe] = useState<{
+    clientX: number;
+    clientY: number;
+  } | null>(null);
+  const EXPRESSION_LOUPE_HOLD_MS = 370;
   const activeProfileName = useMemo(() => activeProfile?.name ?? 'Staff', [activeProfile]);
   const canViewTransactions = isAdminProfile(activeProfile);
   const {
@@ -165,6 +182,8 @@ const AppContent: React.FC = () => {
     pastLogs,
     recordPrint,
     resolveUnidentifiedPrice,
+    pinInvoiceItemChoice,
+    getPinnedItemId,
     hydrateInvoiceState,
     replaceInvoiceHistory,
     getInvoiceExpression,
@@ -197,23 +216,26 @@ const AppContent: React.FC = () => {
   );
 
   const handleInvoiceHydrated = useCallback(
-    (data: {
-      invoiceName: string;
-      expression: string;
-      pastLogs: InvoiceActionLog[];
-      printLogs: InvoicePrintLog[];
-      savedInvoices: SavedInvoice[];
-    }) => {
+    (
+      data: {
+        invoiceName: string;
+        expression: string;
+        pastLogs: InvoiceActionLog[];
+        printLogs: InvoicePrintLog[];
+        savedInvoices: SavedInvoice[];
+      },
+      options?: { applyExpression?: boolean }
+    ) => {
       hydrateInvoiceState({
         invoiceName: data.invoiceName,
         pastLogs: data.pastLogs,
         printLogs: data.printLogs,
         savedInvoices: data.savedInvoices,
       });
-      setExpression(data.expression);
-      setCursorPos(data.expression === '0' ? 0 : data.expression.length);
+      if (options?.applyExpression === false) return;
+      loadExpression(data.expression);
     },
-    [hydrateInvoiceState, setExpression, setCursorPos]
+    [hydrateInvoiceState, loadExpression]
   );
 
   useSupabaseDataSync({
@@ -623,6 +645,14 @@ const AppContent: React.FC = () => {
   const [settingsSectionIndex, setSettingsSectionIndex] = useState(0);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [priceAmbiguity, setPriceAmbiguity] = useState<{
+    price: number;
+    items: InventoryItem[];
+    occurrence: number;
+    token: string;
+    source: 'auto' | 'tap';
+  } | null>(null);
+  const dismissedPriceAmbiguityRef = useRef<string | null>(null);
   const searchAnchorRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const plusNewInvoicePendingRef = useRef(false);
@@ -745,15 +775,60 @@ const AppContent: React.FC = () => {
     );
   }, [expression, mapPointerFallback]);
 
-  const updateCursorFromPointer = useCallback((clientX: number, clientY: number) => {
+  const updateCursorFromPointer = useCallback((
+    clientX: number,
+    clientY: number,
+    options?: { scrollIntoView?: boolean }
+  ) => {
     const nextPos = mapPointerToCursorPos(clientX, clientY);
     setCursorPos(nextPos);
+    if (options?.scrollIntoView === false) return;
     const scrollEl = expressionScrollRef.current;
     const pre = displayContentRef.current;
     if (scrollEl && pre) {
       scrollCursorIntoView(scrollEl, pre, nextPos);
     }
   }, [mapPointerToCursorPos, setCursorPos]);
+
+  const clearLoupeHoldTimer = useCallback(() => {
+    if (loupeHoldTimerRef.current != null) {
+      window.clearTimeout(loupeHoldTimerRef.current);
+      loupeHoldTimerRef.current = null;
+    }
+  }, []);
+
+  const hideExpressionLoupe = useCallback(() => {
+    clearLoupeHoldTimer();
+    setExpressionLoupe(null);
+  }, [clearLoupeHoldTimer]);
+
+  const captureExpressionPointer = useCallback((pointerId: number) => {
+    const el = expressionScrollRef.current;
+    if (!el) return;
+    try {
+      if (!el.hasPointerCapture(pointerId)) el.setPointerCapture(pointerId);
+    } catch {
+      /* pointer already released */
+    }
+  }, []);
+
+  const beginExpressionLoupe = useCallback((clientX: number, clientY: number) => {
+    setExpressionLoupe({ clientX, clientY });
+    updateCursorFromPointer(clientX, clientY, { scrollIntoView: false });
+    triggerHaptic();
+  }, [updateCursorFromPointer, triggerHaptic]);
+
+  useEffect(() => () => {
+    if (loupeHoldTimerRef.current != null) {
+      window.clearTimeout(loupeHoldTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isHistoryOpen || isSettingsOpen || isPOSOpen || isSearchOpen || priceAmbiguity) {
+      hideExpressionLoupe();
+    }
+  }, [isHistoryOpen, isSettingsOpen, isPOSOpen, isSearchOpen, priceAmbiguity, hideExpressionLoupe]);
 
   const inventoryPrices = useMemo(
     () => items.map((item) => item.price),
@@ -875,7 +950,105 @@ const AppContent: React.FC = () => {
   }, [isLandscape, disableCard, expressionViewPreset]);
   
   const isCalculatorActive = isUnlocked && !isPOSOpen && !isSettingsOpen;
+  const isPricePickerOpen = !!priceAmbiguity;
   const isAnyModalOpen = isHistoryOpen || isPOSOpen || isSearchOpen || isSettingsOpen;
+
+  useEffect(() => {
+    if (!isUnlocked || isHistoryOpen || isPOSOpen || isSettingsOpen || isSearchOpen) {
+      setPriceAmbiguity(null);
+      return;
+    }
+    if (expression === '0') {
+      dismissedPriceAmbiguityRef.current = null;
+      setPriceAmbiguity(null);
+      return;
+    }
+    const keepTapPicker = (prev: typeof priceAmbiguity) =>
+      prev?.source === 'tap' && prev.token === expression ? prev : null;
+    const price = getTrailingMultiplyPrice(expression);
+    if (price == null) {
+      dismissedPriceAmbiguityRef.current = null;
+      setPriceAmbiguity(keepTapPicker);
+      return;
+    }
+    if (dismissedPriceAmbiguityRef.current === expression) {
+      setPriceAmbiguity(keepTapPicker);
+      return;
+    }
+    const matches = items
+      .filter((item) => pricesMatch(item.price, price))
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (matches.length < 2) {
+      setPriceAmbiguity(keepTapPicker);
+      return;
+    }
+    const occurrence = countCompletedPriceOccurrences(expression, price);
+    setPriceAmbiguity((prev) => {
+      if (prev?.source === 'tap' && prev.token === expression) return prev;
+      if (
+        prev &&
+        prev.token === expression &&
+        prev.price === price &&
+        prev.occurrence === occurrence &&
+        prev.items.length === matches.length &&
+        prev.items.every((item, i) => item.id === matches[i]?.id)
+      ) {
+        return prev;
+      }
+      return { price, items: matches, occurrence, token: expression, source: 'auto' };
+    });
+  }, [
+    expression,
+    items,
+    isUnlocked,
+    isHistoryOpen,
+    isPOSOpen,
+    isSettingsOpen,
+    isSearchOpen,
+  ]);
+
+  const closePriceAmbiguity = useCallback(() => {
+    setPriceAmbiguity((prev) => {
+      if (prev) dismissedPriceAmbiguityRef.current = prev.token;
+      return null;
+    });
+  }, []);
+
+  const handlePickPriceItem = useCallback(
+    (item: InventoryItem) => {
+      if (!priceAmbiguity) return;
+      pinInvoiceItemChoice(priceAmbiguity.price, priceAmbiguity.occurrence, item);
+      dismissedPriceAmbiguityRef.current = priceAmbiguity.token;
+      setPriceAmbiguity(null);
+      triggerHaptic();
+    },
+    [priceAmbiguity, pinInvoiceItemChoice, triggerHaptic]
+  );
+
+  const openAmbiguousPricePickerAt = useCallback(
+    (index: number) => {
+      const span = getPosPriceSpans(expression).find(
+        (entry) => index >= entry.start && index < entry.end
+      );
+      if (!span) return false;
+      const matches = items
+        .filter((item) => pricesMatch(item.price, span.price))
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if (matches.length < 2) return false;
+      setPriceAmbiguity({
+        price: span.price,
+        items: matches,
+        occurrence: span.occurrence,
+        token: expression,
+        source: 'tap',
+      });
+      triggerHaptic();
+      return true;
+    },
+    [expression, items, triggerHaptic]
+  );
   // Settings sits on the blurred autoswipe wallpaper — hide the calculator chrome.
   const isCalculatorHidden = isHistoryPanelActive || isPOSOpen || isSettingsOpen;
 
@@ -943,14 +1116,13 @@ const AppContent: React.FC = () => {
       saveCurrentToPast();
     }
     switchToInvoice(name);
-    const expr = getInvoiceExpression(name) || buildPosExpressionFromItems(items);
-    setExpression(expr);
-    setCursorPos(expr === '0' ? 0 : expr.length);
+    const expr = resolveInvoiceContinueExpression(getInvoiceExpression(name), items);
+    loadExpression(expr);
     if (!options?.keepOpen) {
       setIsHistoryOpen(false);
     }
     triggerHaptic();
-  }, [invoiceName, saveCurrentToPast, switchToInvoice, getInvoiceExpression, setExpression, setCursorPos, triggerHaptic]);
+  }, [invoiceName, saveCurrentToPast, switchToInvoice, getInvoiceExpression, loadExpression, triggerHaptic]);
 
   useEffect(() => {
     if (!isCalculatorActive || isSearchOpen) {
@@ -994,7 +1166,10 @@ const AppContent: React.FC = () => {
   ];
 
   const handleKeypad = (action: string) => {
-    if (action === 'AC') return clearExpression();
+    if (action === 'AC') {
+      closePriceAmbiguity();
+      return clearExpression();
+    }
     if (action === '±') return toggleSign();
     if (action === '=') {
       triggerUnidentifiedPriceBlink();
@@ -1042,6 +1217,10 @@ const AppContent: React.FC = () => {
   };
 
   const dismissTopOverlay = useCallback((): boolean => {
+    if (priceAmbiguity) {
+      closePriceAmbiguity();
+      return true;
+    }
     if (isSearchOpen) {
       closeSearch();
       return true;
@@ -1063,7 +1242,16 @@ const AppContent: React.FC = () => {
       return true;
     }
     return false;
-  }, [hideAdminPortal, isAdminPortal, isHistoryOpen, isPOSOpen, isSearchOpen, isSettingsOpen]);
+  }, [
+    closePriceAmbiguity,
+    hideAdminPortal,
+    isAdminPortal,
+    isHistoryOpen,
+    isPOSOpen,
+    isSearchOpen,
+    isSettingsOpen,
+    priceAmbiguity,
+  ]);
 
   // Window-level keys so mobile hardware/IME backspace reaches the calculator.
   useEffect(() => {
@@ -1433,9 +1621,10 @@ const AppContent: React.FC = () => {
                 >
                   <div
                   ref={expressionScrollRef}
-                  className={`calc-expression-scroll w-full max-w-full flex-1 min-h-0 cursor-text select-text pointer-events-auto flex flex-col ${expressionBreakAtPlus ? 'text-left' : 'text-right'}`}
+                  className={`calc-expression-scroll w-full max-w-full flex-1 min-h-0 cursor-text pointer-events-auto flex flex-col ${expressionLoupe ? 'select-none' : 'select-text'} ${expressionBreakAtPlus ? 'text-left' : 'text-right'}`}
                   onCopy={handleExpressionCopy}
                   onPaste={handleExpressionPaste}
+                  onContextMenu={(e) => e.preventDefault()}
                   tabIndex={0}
                   style={{
                     paddingTop: isLandscape ? '0.1rem' : '0.15rem',
@@ -1447,21 +1636,34 @@ const AppContent: React.FC = () => {
                     ...(expressionViewportMaxHeight
                       ? { maxHeight: `${expressionViewportMaxHeight}px` }
                       : {}),
+                    ...(expressionLoupe ? { touchAction: 'none' } : {}),
                   }}
                   aria-label={`Expression: ${expression}`}
                   onPointerDown={(e) => {
-                    if (expression === '0') return;
                     expressionPointerRef.current = {
                       id: e.pointerId,
                       x: e.clientX,
                       y: e.clientY,
+                      lastX: e.clientX,
+                      lastY: e.clientY,
                       mode: 'pending',
                     };
+                    clearLoupeHoldTimer();
+                    loupeHoldTimerRef.current = window.setTimeout(() => {
+                      loupeHoldTimerRef.current = null;
+                      const start = expressionPointerRef.current;
+                      if (!start || start.mode !== 'pending') return;
+                      start.mode = 'magnify';
+                      isDraggingCursor.current = true;
+                      captureExpressionPointer(start.id);
+                      beginExpressionLoupe(start.lastX, start.lastY);
+                    }, EXPRESSION_LOUPE_HOLD_MS);
                   }}
                   onPointerMove={(e) => {
-                    if (expression === '0') return;
                     const start = expressionPointerRef.current;
                     if (!start || start.id !== e.pointerId) return;
+                    start.lastX = e.clientX;
+                    start.lastY = e.clientY;
                     const dx = e.clientX - start.x;
                     const dy = e.clientY - start.y;
                     if (start.mode === 'pending') {
@@ -1470,24 +1672,35 @@ const AppContent: React.FC = () => {
                       const canScrollY = !!el && el.scrollHeight > el.clientHeight + 2;
                       if (canScrollY && Math.abs(dy) >= Math.abs(dx)) {
                         start.mode = 'scroll';
+                        clearLoupeHoldTimer();
                         return;
                       }
                       start.mode = 'cursor';
+                      clearLoupeHoldTimer();
                       isDraggingCursor.current = true;
-                      e.currentTarget.setPointerCapture(e.pointerId);
+                      captureExpressionPointer(e.pointerId);
                       updateCursorFromPointer(e.clientX, e.clientY);
                       return;
                     }
                     if (start.mode === 'scroll') return;
+                    if (start.mode === 'magnify') {
+                      updateCursorFromPointer(e.clientX, e.clientY, { scrollIntoView: false });
+                      setExpressionLoupe({ clientX: e.clientX, clientY: e.clientY });
+                      return;
+                    }
                     updateCursorFromPointer(e.clientX, e.clientY);
                   }}
                   onPointerUp={(e) => {
                     const start = expressionPointerRef.current;
                     expressionPointerRef.current = null;
+                    clearLoupeHoldTimer();
                     if (start?.mode === 'pending') {
-                      updateCursorFromPointer(e.clientX, e.clientY);
+                      const pos = mapPointerToCursorPos(e.clientX, e.clientY);
+                      setCursorPos(pos);
+                      openAmbiguousPricePickerAt(pos);
                     }
                     isDraggingCursor.current = false;
+                    hideExpressionLoupe();
                     if (expressionScrollRef.current?.hasPointerCapture(e.pointerId)) {
                       expressionScrollRef.current.releasePointerCapture(e.pointerId);
                     }
@@ -1495,6 +1708,7 @@ const AppContent: React.FC = () => {
                   onPointerCancel={(e) => {
                     expressionPointerRef.current = null;
                     isDraggingCursor.current = false;
+                    hideExpressionLoupe();
                     if (expressionScrollRef.current?.hasPointerCapture(e.pointerId)) {
                       expressionScrollRef.current.releasePointerCapture(e.pointerId);
                     }
@@ -1595,6 +1809,22 @@ const AppContent: React.FC = () => {
                 </div>
               </div>
 
+              <PriceItemPicker
+                isOpen={isPricePickerOpen}
+                items={priceAmbiguity?.items ?? []}
+                price={priceAmbiguity?.price ?? 0}
+                selectedItemId={
+                  priceAmbiguity
+                    ? getPinnedItemId(priceAmbiguity.price, priceAmbiguity.occurrence)
+                    : null
+                }
+                currency={settings.currency}
+                isLight={calcIsLight}
+                accountId={account?.id ?? null}
+                onSelect={handlePickPriceItem}
+                onClose={closePriceAmbiguity}
+              />
+
               {/* Action toolbar */}
               <div
                 ref={expressionToolbarRef}
@@ -1609,7 +1839,17 @@ const AppContent: React.FC = () => {
                 <button onClick={handleUndo} className="flex-1 py-[0.34rem] flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Undo"><Icons.Undo size={14} /></button>
                 <button onClick={handleRedo} className="flex-1 py-[0.34rem] flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Redo"><Icons.Redo size={14} /></button>
                 <button onClick={() => setIsPOSOpen(true)} className="flex-1 py-[0.34rem] flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Trends"><Icons.Trends size={14} /></button>
-                <button onClick={deleteLast} className="flex-1 py-[0.34rem] flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all" title="Delete"><Icons.Delete size={14} /></button>
+                <button
+                  onClick={() => {
+                    closePriceAmbiguity();
+                    deleteLast();
+                  }}
+                  className="flex-1 py-[0.34rem] flex justify-center hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all"
+                  title="Delete"
+                  aria-label="Backspace"
+                >
+                  <Icons.Delete size={14} />
+                </button>
               </div>
             </div>
 
@@ -1760,6 +2000,15 @@ const AppContent: React.FC = () => {
         onStartNewInvoice={handleNewInvoice}
       />
       {isUnlocked && <AccountToastHost isLight={isLight} api={accountNotifications} />}
+      {expressionLoupe && (
+        <ExpressionMagnifier
+          clientX={expressionLoupe.clientX}
+          clientY={expressionLoupe.clientY}
+          sourceEl={displayContentRef.current}
+          cloneKey={`${expression}-${displayFontSize}-${charsPerLine}-${expressionBreakAtPlus}-${expressionLineHeight}`}
+          isLight={calcIsLight}
+        />
+      )}
       <SyncStatusIndicator
         syncState={syncStatus.syncState}
         isLight={isLight}

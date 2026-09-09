@@ -7,6 +7,7 @@ import {
   getLoggedSegments,
   parsePosLineItems,
   formatPriceLabel,
+  isBlankExpression,
 } from '../utils/posExpression';
 import { safeEvaluate } from '../utils/calculator';
 
@@ -16,6 +17,12 @@ const PRINT_LOGS_KEY = 'invoice_print_logs';
 /** Durable invoice roster — survives empty days / restarts until swipe-removed. */
 const SAVED_INVOICES_KEY = 'saved_invoices';
 const EXPRESSIONS_KEY = 'invoice_expressions';
+const ITEM_CHOICES_KEY = 'invoice_price_item_choices';
+
+type PriceItemChoice = { itemId: string; itemName: string };
+
+const choiceKey = (invoice: string, price: number, occurrence: number) =>
+  `${invoice}|${price}|${occurrence}`;
 
 const matchInventoryByPrice = (
   price: number,
@@ -71,6 +78,10 @@ export const useInvoice = (
 
   const [savedInvoices, setSavedInvoices] = useState<SavedInvoice[]>(() => loadSavedInvoices());
 
+  const [itemChoices, setItemChoices] = useState<Record<string, PriceItemChoice>>(
+    () => storage.get<Record<string, PriceItemChoice>>(ITEM_CHOICES_KEY, {})
+  );
+
   const segmentMetaRef = useRef<Map<string, SegmentMeta>>(new Map());
   const expressionsByInvoiceRef = useRef<Record<string, string>>(
     storage.get<Record<string, string>>(EXPRESSIONS_KEY, {})
@@ -122,13 +133,61 @@ export const useInvoice = (
     storage.set(SAVED_INVOICES_KEY, savedInvoices);
   }, [savedInvoices]);
 
+  useEffect(() => {
+    storage.set(ITEM_CHOICES_KEY, itemChoices);
+  }, [itemChoices]);
+
+  const resolveChosenItem = useCallback(
+    (price: number, occurrence: number) => {
+      const pinned = itemChoices[choiceKey(invoiceName, price, occurrence)];
+      if (pinned) {
+        return {
+          name: pinned.itemName,
+          itemId: pinned.itemId,
+          isUnidentified: false as const,
+        };
+      }
+      const matched = matchInventoryByPrice(price, inventory);
+      return {
+        name: matched?.name,
+        itemId: matched?.id,
+        isUnidentified: !matched,
+      };
+    },
+    [itemChoices, invoiceName, inventory]
+  );
+
+  const pinInvoiceItemChoice = useCallback(
+    (price: number, occurrence: number, item: { id: string; name: string }) => {
+      setItemChoices((prev) => ({
+        ...prev,
+        [choiceKey(invoiceName, price, occurrence)]: {
+          itemId: item.id,
+          itemName: item.name,
+        },
+      }));
+    },
+    [invoiceName]
+  );
+
+  const getPinnedItemId = useCallback(
+    (price: number, occurrence: number) =>
+      itemChoices[choiceKey(invoiceName, price, occurrence)]?.itemId ?? null,
+    [itemChoices, invoiceName]
+  );
+
   const cartItems = useMemo((): CartLineItem[] => {
     if (!expression || expression === '0') return [];
-    return parsePosLineItems(expression).map((item) => ({
-      ...item,
-      name: matchInventoryByPrice(item.price, inventory)?.name,
-    }));
-  }, [expression, inventory]);
+    const seen = new Map<number, number>();
+    return parsePosLineItems(expression).map((item) => {
+      const occurrence = seen.get(item.price) ?? 0;
+      seen.set(item.price, occurrence + 1);
+      return {
+        ...item,
+        name: resolveChosenItem(item.price, occurrence).name,
+      };
+    });
+  }, [expression, resolveChosenItem]);
 
   const currentLogs = useMemo((): InvoiceActionLog[] => {
     const segments = getLoggedSegments(expression);
@@ -144,30 +203,32 @@ export const useInvoice = (
       if (!segments.includes(key)) metaMap.delete(key);
     }
 
+    const seen = new Map<number, number>();
     return segments
       .map((segment, idx) => {
         const item = parsePosLineItems(segment)[0];
         if (!item) return null;
 
-        const matched = matchInventoryByPrice(item.price, inventory);
-        const isUnidentified = !matched;
-        const label = matched?.name ?? formatPriceLabel(item.price, currency);
+        const occurrence = seen.get(item.price) ?? 0;
+        seen.set(item.price, occurrence + 1);
+        const chosen = resolveChosenItem(item.price, occurrence);
+        const label = chosen.name ?? formatPriceLabel(item.price, currency);
         const meta = metaMap.get(segment);
 
         return {
           id: `invoice-log-${idx}-${segment}`,
           message: `${label} has been added to ${invoiceName}`,
-          itemName: matched?.name,
+          itemName: chosen.name,
           price: item.price,
           quantity: item.quantity,
           invoiceName,
           timestamp: meta?.timestamp ?? now,
-          isUnidentified,
+          isUnidentified: chosen.isUnidentified,
           profileName: meta?.profileName ?? profileName,
         };
       })
       .filter((log): log is NonNullable<typeof log> => log !== null) as InvoiceActionLog[];
-  }, [expression, inventory, invoiceName, currency, profileName]);
+  }, [expression, invoiceName, currency, profileName, resolveChosenItem]);
 
   const actionLogs = useMemo(() => {
     return [...pastLogs, ...currentLogs];
@@ -251,8 +312,9 @@ export const useInvoice = (
 
   const getInvoiceExpression = useCallback(
     (name: string) => {
-      if (expressionsByInvoiceRef.current[name]) return expressionsByInvoiceRef.current[name];
-      if (name === invoiceName) return expression;
+      const stored = expressionsByInvoiceRef.current[name];
+      if (!isBlankExpression(stored)) return stored;
+      if (name === invoiceName && !isBlankExpression(expression)) return expression;
       const items = pastLogs
         .filter((log) => log.invoiceName === name)
         .map((log) => ({ price: log.price, quantity: log.quantity }));
@@ -400,6 +462,8 @@ export const useInvoice = (
     clearAllInvoices,
     recordPrint,
     resolveUnidentifiedPrice,
+    pinInvoiceItemChoice,
+    getPinnedItemId,
     hydrateInvoiceState,
     replaceInvoiceHistory,
     getInvoiceExpression,

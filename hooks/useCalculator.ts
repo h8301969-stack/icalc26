@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   safeEvaluate,
   tryEvaluateExpression,
@@ -42,7 +42,8 @@ export const useCalculator = (
       return;
     }
     const result = tryEvaluateExpression(expression);
-    setCalcError(result === null ? 'Invalid expression' : null);
+    const incomplete = /[+\-×÷*/%xX.(]$/.test(expression.trim());
+    setCalcError(result === null && !incomplete ? 'Invalid expression' : null);
   }, [expression]);
 
   const inputChar = useCallback((raw: string) => {
@@ -182,9 +183,15 @@ export const useCalculator = (
   const deleteLast = useCallback(() => {
     triggerHaptic();
     setExpression(prev => {
+      if (!prev || prev === '0') {
+        cursorPosRef.current = 0;
+        setCursorPos(0);
+        return '0';
+      }
       let pos = cursorPosRef.current;
-      if (pos === null || pos < 0) pos = prev.length;
-      if (pos === 0) return prev || '0';
+      if (pos === null || pos < 0 || pos > prev.length) pos = prev.length;
+      // Cursor parked at the start (e.g. after tapping a price) still backs up the last glyph.
+      if (pos === 0) pos = prev.length;
       const newExpr = prev.slice(0, pos - 1) + prev.slice(pos);
       const nextPos = Math.max(0, pos - 1);
       cursorPosRef.current = nextPos;
@@ -263,9 +270,20 @@ export const useCalculator = (
     [expression, triggerHaptic, pushToUndo]
   );
 
+  const loadExpression = useCallback((expr: string) => {
+    const next = expr || '0';
+    setIsResultMode(false);
+    setCalcError(null);
+    setExpression(next);
+    const pos = next === '0' ? 0 : next.length;
+    cursorPosRef.current = pos;
+    setCursorPos(pos);
+  }, []);
+
   return {
     expression,
     setExpression,
+    loadExpression,
     calcError,
     inputChar,
     toggleSign,

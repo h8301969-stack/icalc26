@@ -13,6 +13,83 @@ export const isPosStyleExpression = (expression: string): boolean => {
   return /^[\d.x+]+$/i.test(normalized);
 };
 
+export const pricesMatch = (a: number, b: number): boolean =>
+  Math.abs(a - b) < 0.001;
+
+export interface PosPriceSpan {
+  start: number;
+  end: number;
+  price: number;
+  occurrence: number;
+}
+
+/** Price literals in a POS expression, including a following `×` in the hit range. */
+export const getPosPriceSpans = (expression: string): PosPriceSpan[] => {
+  if (!expression || expression === '0' || !isPosStyleExpression(expression)) return [];
+
+  const spans: PosPriceSpan[] = [];
+  const seen = new Map<number, number>();
+  let i = 0;
+
+  while (i < expression.length) {
+    const ch = expression[i];
+    if (ch === '+' || ch === 'x' || ch === '×') {
+      i += 1;
+      continue;
+    }
+    if (ch >= '0' && ch <= '9') {
+      const start = i;
+      const isPrice = start === 0 || expression[start - 1] === '+';
+      let j = i + 1;
+      while (j < expression.length && ((expression[j] >= '0' && expression[j] <= '9') || expression[j] === '.')) {
+        j += 1;
+      }
+      if (isPrice) {
+        const price = parseFloat(expression.slice(start, j));
+        if (Number.isFinite(price)) {
+          const key = Math.round(price * 1000);
+          const occurrence = seen.get(key) ?? 0;
+          seen.set(key, occurrence + 1);
+          const next = expression[j];
+          const end = next === 'x' || next === '×' ? j + 1 : j;
+          spans.push({ start, end, price, occurrence });
+        }
+      }
+      i = j;
+      continue;
+    }
+    i += 1;
+  }
+
+  return spans;
+};
+
+/** Price waiting for a quantity, e.g. `78×` or `10x2+78x`. */
+export const getTrailingMultiplyPrice = (expression: string): number | null => {
+  if (!expression || expression === '0') return null;
+  const normalized = normalizeExpression(expression);
+  if (!isPosStyleExpression(expression) && !/^\d+(?:\.\d+)?x$/i.test(normalized)) {
+    return null;
+  }
+  const match = normalized.match(/(?:^|\+)(\d+(?:\.\d+)?)x$/i);
+  if (!match) return null;
+  const price = parseFloat(match[1]);
+  return Number.isFinite(price) ? price : null;
+};
+
+/** Completed POS lines at this price, ignoring a trailing `price×` with no qty yet. */
+export const countCompletedPriceOccurrences = (
+  expression: string,
+  price: number
+): number => {
+  const normalized = normalizeExpression(expression);
+  const stripped = getTrailingMultiplyPrice(expression)
+    ? normalized.replace(/(\d+(?:\.\d+)?)x$/i, '').replace(/\+$/, '')
+    : normalized;
+  if (!stripped) return 0;
+  return parsePosLineItems(stripped).filter((item) => pricesMatch(item.price, price)).length;
+};
+
 export const parsePosLineItems = (expression: string): PosLineItem[] => {
   if (!expression || expression === '0') return [];
 
@@ -128,6 +205,20 @@ const formatPosSegment = (item: PosLineItem): string => {
 export const buildPosExpressionFromItems = (items: PosLineItem[]): string => {
   if (!items.length) return '0';
   return items.map(formatPosSegment).join('+');
+};
+
+export const isBlankExpression = (
+  expression?: string | null
+): expression is undefined | null | '' | '0' =>
+  !expression || expression === '0';
+
+/** Continue an invoice: use its stored calc expression, else rebuild from line items. */
+export const resolveInvoiceContinueExpression = (
+  stored: string | undefined | null,
+  items: PosLineItem[]
+): string => {
+  if (!isBlankExpression(stored)) return stored as string;
+  return buildPosExpressionFromItems(items) || '0';
 };
 
 /** Add qty to a price line (or create it). Used by Assets Hub carting. */

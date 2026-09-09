@@ -24,6 +24,7 @@ import {
 } from '../utils/invoiceShareImage';
 import { MORPH_EXIT_MS, MorphPresence, useMorphModeSwap } from './MorphCrossfade';
 import FluidSegmentControl from './FluidSegmentControl';
+import { parsePosLineItems } from '../utils/posExpression';
 
 const ATTENDANT_NAMES_KEY = 'invoice_attendant_names';
 
@@ -478,14 +479,15 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     for (const inv of roster) {
       if (inv.name === invoiceName) continue;
       const logs = grouped.get(inv.name) ?? [];
+      const fromExpr = parsePosLineItems(inv.expression);
       const items =
         logs.length > 0
           ? logs.map((l) => ({ price: l.price, quantity: l.quantity, name: l.itemName }))
-          : [];
+          : fromExpr.map((item) => ({ price: item.price, quantity: item.quantity }));
       const total =
         logs.length > 0
           ? logs.reduce((s, l) => s + l.price * l.quantity, 0).toFixed(2)
-          : '0.00';
+          : fromExpr.reduce((s, l) => s + l.price * l.quantity, 0).toFixed(2);
       built.push({
         id: `past-${inv.name}`,
         name: inv.name,

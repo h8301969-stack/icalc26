@@ -43,6 +43,8 @@ interface VisionHubPrintPanelProps {
   onThemeToggle: () => void;
   onSettingsOpen: () => void;
   onCloseDashboard: () => void;
+  onNewICalc?: () => void;
+  onNewInvoice?: () => void;
   isThemeAnimating: boolean;
   isSettingsAnimating: boolean;
   isCloseAnimating: boolean;
@@ -79,6 +81,8 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
   onThemeToggle,
   onSettingsOpen,
   onCloseDashboard,
+  onNewICalc,
+  onNewInvoice,
   isThemeAnimating,
   isSettingsAnimating,
   isCloseAnimating,
@@ -105,6 +109,8 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
   const [reconnectPrompt, setReconnectPrompt] = useState(false);
   const [printSuccess, setPrintSuccess] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const plusMenuRef = useRef<HTMLDivElement>(null);
 
   const dragStartY = useRef(0);
   const swipeStartX = useRef(0);
@@ -369,6 +375,31 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
       return;
     }
     onCloseDashboard();
+  };
+
+  useEffect(() => {
+    if (!plusMenuOpen) return;
+    const onDoc = (event: PointerEvent) => {
+      if (plusMenuRef.current && !plusMenuRef.current.contains(event.target as Node)) {
+        setPlusMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', onDoc);
+    return () => document.removeEventListener('pointerdown', onDoc);
+  }, [plusMenuOpen]);
+
+  useEffect(() => {
+    if (isDragging) setPlusMenuOpen(false);
+  }, [isDragging]);
+
+  const handleNewICalc = () => {
+    setPlusMenuOpen(false);
+    onNewICalc?.();
+  };
+
+  const handleNewInvoice = () => {
+    setPlusMenuOpen(false);
+    onNewInvoice?.();
   };
 
   const handleInvoicePointerDown = (e: React.PointerEvent, invoice: HubInvoice) => {
@@ -783,7 +814,7 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
 
       <div ref={panelRef} className="vision-hub-panel relative shrink-0 z-[70]">
         <div
-          className={`relative pt-8 px-6 pb-2 touch-manipulation ${expanded ? 'overflow-hidden' : 'overflow-visible'}`}
+          className={`relative pt-8 px-6 pb-2 touch-manipulation ${expanded && !plusMenuOpen ? 'overflow-hidden' : 'overflow-visible'}`}
           style={{
             transform: `translateY(${panelTranslate}px)`,
             transition: isDragging ? 'none' : 'transform 0.38s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -796,14 +827,51 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
           <div
             className={`vision-hub-shell w-full rounded-xl p-8 shadow-[0_32px_80px_rgba(0,0,0,0.25)] pos-dashboard-card-motion ${headerShellClass} ${
               hubActive ? 'vision-hub-shell--active' : ''
-            } ${expanded ? 'vision-hub-shell--drawer-open' : ''}`}
+            } ${expanded ? 'vision-hub-shell--drawer-open' : ''} ${plusMenuOpen ? 'vision-hub-shell--plus-open' : ''}`}
           >
             <div className="flex justify-between items-start gap-4">
               <div className="flex flex-col min-w-0 flex-1 pr-2">
                 <span className={`pos-subtext text-[9px] font-black mb-1 ${invertedBarSubtextClass}`}>
                   Neural Terminal
                 </span>
-                <h2 className="vision-hub-title text-4xl font-black ">Vision Hub</h2>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <h2 className="vision-hub-title text-4xl font-black min-w-0 truncate">Vision Hub</h2>
+                  <div
+                    ref={plusMenuRef}
+                    className="relative shrink-0"
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setPlusMenuOpen((open) => !open)}
+                      className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 pos-dashboard-icon-lift ${
+                        isLight
+                          ? 'pos-dashboard-icon-lift--on-dark bg-black/40 border-white/5 hover:bg-black/60 text-white'
+                          : 'pos-dashboard-icon-lift--on-light bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-900'
+                      } ${plusMenuOpen ? 'ring-2 ring-white/40' : ''}`}
+                      title="New"
+                      aria-label="New iCalc or invoice"
+                      aria-expanded={plusMenuOpen}
+                      aria-haspopup="menu"
+                    >
+                      <Icons.Plus size={16} />
+                    </button>
+                    {plusMenuOpen && (
+                      <div
+                        className={`vision-hub-plus-menu ${isLight ? 'vision-hub-plus-menu--light' : 'vision-hub-plus-menu--dark'}`}
+                        role="menu"
+                        aria-label="Create"
+                      >
+                        <button type="button" role="menuitem" onClick={handleNewICalc}>
+                          New iCalc
+                        </button>
+                        <button type="button" role="menuitem" onClick={handleNewInvoice}>
+                          New invoice
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <div className="font-num-medium text-xl leading-none shrink-0">{currentTimeLabel}</div>
                   <div className={`w-px h-4 shrink-0 ${isLight ? 'bg-white/20' : 'bg-zinc-900/20'}`} />

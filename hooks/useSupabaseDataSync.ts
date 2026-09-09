@@ -48,13 +48,16 @@ interface UseSupabaseDataSyncOptions {
   pastLogs: InvoiceActionLog[];
   printLogs: InvoicePrintLog[];
   getSavedInvoices: () => SavedInvoice[];
-  onInvoiceHydrated: (data: {
-    invoiceName: string;
-    expression: string;
-    pastLogs: InvoiceActionLog[];
-    printLogs: InvoicePrintLog[];
-    savedInvoices: SavedInvoice[];
-  }) => void;
+  onInvoiceHydrated: (
+    data: {
+      invoiceName: string;
+      expression: string;
+      pastLogs: InvoiceActionLog[];
+      printLogs: InvoicePrintLog[];
+      savedInvoices: SavedInvoice[];
+    },
+    options?: { applyExpression?: boolean }
+  ) => void;
 }
 
 export const useSupabaseDataSync = ({
@@ -90,6 +93,7 @@ export const useSupabaseDataSync = ({
   const purchasesSyncTimerRef = useRef<number | null>(null);
   const dashboardSyncTimerRef = useRef<number | null>(null);
   const lastLocalInvoiceWriteAt = useRef(0);
+  const lastTypedAt = useRef(0);
 
   const historyRef = useRef(history);
   const inventoryRef = useRef(inventory);
@@ -108,6 +112,10 @@ export const useSupabaseDataSync = ({
   requestsRef.current = requests;
   restocksRef.current = restocks;
   invoiceRef.current = { invoiceName, expression, pastLogs, printLogs, getSavedInvoices };
+
+  useEffect(() => {
+    lastTypedAt.current = Date.now();
+  }, [expression, invoiceName]);
 
   useEffect(() => {
     hydratedRef.current = false;
@@ -294,12 +302,24 @@ export const useSupabaseDataSync = ({
           for (const inv of localSaved) {
             if (!savedByName.has(inv.name)) savedByName.set(inv.name, inv);
           }
-          onInvoiceHydratedRef.current({
-            ...remoteInvoice,
-            pastLogs: [...pastById.values()].sort((a, b) => a.timestamp - b.timestamp),
-            printLogs: [...printById.values()].sort((a, b) => a.timestamp - b.timestamp),
-            savedInvoices: [...savedByName.values()],
-          });
+          const keepLocalExpr =
+            Date.now() - lastTypedAt.current < 8000 &&
+            invoiceRef.current.expression !== '0';
+          onInvoiceHydratedRef.current(
+            {
+              ...remoteInvoice,
+              expression: keepLocalExpr
+                ? invoiceRef.current.expression
+                : remoteInvoice.expression,
+              invoiceName: keepLocalExpr
+                ? invoiceRef.current.invoiceName
+                : remoteInvoice.invoiceName,
+              pastLogs: [...pastById.values()].sort((a, b) => a.timestamp - b.timestamp),
+              printLogs: [...printById.values()].sort((a, b) => a.timestamp - b.timestamp),
+              savedInvoices: [...savedByName.values()],
+            },
+            { applyExpression: !keepLocalExpr }
+          );
         }
         // If remote invoice is missing, keep whatever is already on this device.
 
@@ -456,18 +476,20 @@ export const useSupabaseDataSync = ({
             updated_at?: string;
           } | null;
           if (!row?.is_current) return;
-          const remoteAt = Date.parse(row.updated_at ?? '') || 0;
-          if (remoteAt && remoteAt < lastLocalInvoiceWriteAt.current - 1500) return;
+          if (Date.now() - lastTypedAt.current < 5000) return;
+          if (Date.now() - lastLocalInvoiceWriteAt.current < 4000) return;
+          const nextExpr = row.expression ?? invoiceRef.current.expression;
+          const nextName = row.name ?? invoiceRef.current.invoiceName;
           if (
-            row.expression === invoiceRef.current.expression &&
-            row.name === invoiceRef.current.invoiceName
+            nextExpr === invoiceRef.current.expression &&
+            nextName === invoiceRef.current.invoiceName
           ) {
             return;
           }
           const saved = invoiceRef.current.getSavedInvoices?.() ?? [];
           onInvoiceHydratedRef.current({
-            invoiceName: row.name || invoiceRef.current.invoiceName,
-            expression: row.expression || invoiceRef.current.expression,
+            invoiceName: nextName,
+            expression: nextExpr,
             pastLogs: invoiceRef.current.pastLogs,
             printLogs: invoiceRef.current.printLogs,
             savedInvoices: saved,
