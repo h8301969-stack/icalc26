@@ -1024,17 +1024,17 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   background: #64d2ff;
 }
 
-.price-item-picker-slot {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 280ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-.price-item-picker-slot--in {
-  grid-template-rows: 1fr;
-}
-.price-item-picker-slot__inner {
-  overflow: hidden;
-  min-height: 0;
+.price-item-picker-overlay {
+  position: absolute;
+  top: calc(-1 * var(--qa-cover, 0px));
+  left: var(--keypad-pad, 2%);
+  right: var(--keypad-pad, 2%);
+  z-index: 60;
+  height: calc(
+    var(--qa-cover, 0px) +
+    (100% - var(--keypad-pad-top, 0px) - var(--keypad-pad-bottom, 0px) - 4 * var(--keypad-gap, 6px)) / 5
+  );
+  padding: 0;
 }
 .price-item-picker {
   transform-origin: top center;
@@ -1051,8 +1051,8 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 }
 .price-item-picker--out {
   opacity: 0;
-  transform: translateY(-12px) scale(0.94);
-  filter: blur(5px);
+  transform: translateY(-8px) scale(0.96);
+  filter: blur(4px);
   pointer-events: none;
 }
 @keyframes price-item-tile-in {
@@ -1079,29 +1079,44 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 
 .price-item-picker-row {
   display: flex;
-  gap: 0.7rem;
+  align-items: stretch;
+  gap: 0.4rem;
+  height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
-  padding: 0.7rem 0.75rem 0.9rem;
+  padding: 0.28rem 0.32rem;
   scrollbar-width: none;
 }
 .price-item-picker-row::-webkit-scrollbar {
   display: none;
 }
+.price-item-picker-close {
+  width: 1.55rem;
+  height: 1.55rem;
+  margin: auto 0.1rem auto 0.15rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 .price-item-picker-tile {
   scroll-snap-align: start;
   flex: 0 0 auto;
-  width: 6.6rem;
-  border: 1px solid;
-  border-radius: 1.1rem;
-  padding: 0.4rem 0.4rem 0.55rem;
+  height: 100%;
+  width: auto;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
   text-align: left;
   transition: transform 0.12s ease, box-shadow 0.12s ease;
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.06),
-    0 6px 14px rgba(0, 0, 0, 0.1);
+    0 4px 10px rgba(0, 0, 0, 0.12);
+  border-radius: 0.7rem;
 }
 .price-item-picker-tile:active {
   transform: scale(0.96);
@@ -1109,24 +1124,24 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .price-item-picker-tile__image {
   position: relative;
   width: 100%;
-  aspect-ratio: 1;
-  border-radius: 0.8rem;
+  height: 100%;
+  border-radius: 0.7rem;
   overflow: hidden;
   background: rgba(128, 128, 128, 0.16);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 .price-item-picker-tile--selected {
   box-shadow:
     0 0 0 2px #22c55e,
     0 1px 2px rgba(0, 0, 0, 0.06),
-    0 6px 14px rgba(0, 0, 0, 0.1);
+    0 4px 10px rgba(0, 0, 0, 0.12);
 }
 .price-item-picker-tile__check {
   position: absolute;
-  top: 0.35rem;
-  right: 0.35rem;
-  width: 1.35rem;
-  height: 1.35rem;
+  top: 0.22rem;
+  right: 0.22rem;
+  z-index: 2;
+  width: 1.05rem;
+  height: 1.05rem;
   border-radius: 999px;
   display: flex;
   align-items: center;
@@ -1135,23 +1150,35 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   color: #fff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
 }
+.price-item-picker-tile__caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  padding: 0.7rem 0.28rem 0.22rem;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.32) 55%, transparent 100%);
+  color: #fff;
+  text-align: left;
+}
 .price-item-picker-tile__name {
   display: block;
-  margin-top: 0.4rem;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 800;
   line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 .price-item-picker-tile__meta {
   display: block;
-  margin-top: 0.12rem;
-  font-size: 9px;
+  margin-top: 0.06rem;
+  font-size: 8px;
   font-weight: 700;
   letter-spacing: 0;
-  opacity: 0.5;
+  opacity: 0.88;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 
 .calc-expression-display [data-expression-cursor] {

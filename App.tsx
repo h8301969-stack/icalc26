@@ -662,6 +662,7 @@ const AppContent: React.FC = () => {
   const expressionAreaRef = useRef<HTMLDivElement>(null);
   const expressionColumnRef = useRef<HTMLDivElement>(null);
   const expressionToolbarRef = useRef<HTMLDivElement>(null);
+  const portraitKeypadRef = useRef<HTMLDivElement>(null);
   const baseDisplayFontSize = isLandscape ? 32 : 36;
   const expressionViewMode = normalizeExpressionViewMode(settings.expressionViewMode);
   const expressionViewPreset = getExpressionViewPreset(expressionViewMode);
@@ -921,6 +922,7 @@ const AppContent: React.FC = () => {
       const container = expressionScrollRef.current;
       const area = expressionAreaRef.current;
       const toolbar = expressionToolbarRef.current;
+      const keypad = portraitKeypadRef.current;
       if (container) {
         setExpressionAvailWidth(container.clientWidth * 0.84);
       }
@@ -932,6 +934,13 @@ const AppContent: React.FC = () => {
       } else if (area) {
         setExpressionAvailHeight(area.clientHeight);
       }
+      if (keypad && toolbar && !isLandscape) {
+        const cover = Math.max(
+          0,
+          (keypad.getBoundingClientRect().top - toolbar.getBoundingClientRect().top) / keypadScale
+        );
+        keypad.style.setProperty('--qa-cover', `${cover}px`);
+      }
     };
 
     measure();
@@ -941,13 +950,14 @@ const AppContent: React.FC = () => {
     if (expressionAreaRef.current) ro.observe(expressionAreaRef.current);
     if (expressionColumnRef.current) ro.observe(expressionColumnRef.current);
     if (expressionToolbarRef.current) ro.observe(expressionToolbarRef.current);
+    if (portraitKeypadRef.current) ro.observe(portraitKeypadRef.current);
 
     window.addEventListener('resize', measure);
     return () => {
       ro.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [isLandscape, disableCard, expressionViewPreset]);
+  }, [isLandscape, disableCard, expressionViewPreset, keypadScale]);
   
   const isCalculatorActive = isUnlocked && !isPOSOpen && !isSettingsOpen;
   const isPricePickerOpen = !!priceAmbiguity;
@@ -1048,6 +1058,24 @@ const AppContent: React.FC = () => {
       return true;
     },
     [expression, items, triggerHaptic]
+  );
+
+  const renderPriceItemPicker = () => (
+    <PriceItemPicker
+      isOpen={isPricePickerOpen}
+      items={priceAmbiguity?.items ?? []}
+      price={priceAmbiguity?.price ?? 0}
+      selectedItemId={
+        priceAmbiguity
+          ? getPinnedItemId(priceAmbiguity.price, priceAmbiguity.occurrence)
+          : null
+      }
+      currency={settings.currency}
+      isLight={calcIsLight}
+      accountId={account?.id ?? null}
+      onSelect={handlePickPriceItem}
+      onClose={closePriceAmbiguity}
+    />
   );
   // Settings sits on the blurred autoswipe wallpaper — hide the calculator chrome.
   const isCalculatorHidden = isHistoryPanelActive || isPOSOpen || isSettingsOpen;
@@ -1572,8 +1600,13 @@ const AppContent: React.FC = () => {
                   paddingTop: keypadEdge,
                   transform: `translateY(-3%) scale(${keypadScale})`,
                   transformOrigin: 'left bottom',
+                  ['--keypad-gap' as string]: keypadGap,
+                  ['--keypad-pad' as string]: keypadEdge,
+                  ['--keypad-pad-top' as string]: keypadEdge,
+                  ['--keypad-pad-bottom' as string]: keypadEdge,
                 }}
               >
+                {renderPriceItemPicker()}
                 {keypad.map((btn, idx) => (
                   <CalcButton
                     key={`land-${idx}`}
@@ -1809,26 +1842,10 @@ const AppContent: React.FC = () => {
                 </div>
               </div>
 
-              <PriceItemPicker
-                isOpen={isPricePickerOpen}
-                items={priceAmbiguity?.items ?? []}
-                price={priceAmbiguity?.price ?? 0}
-                selectedItemId={
-                  priceAmbiguity
-                    ? getPinnedItemId(priceAmbiguity.price, priceAmbiguity.occurrence)
-                    : null
-                }
-                currency={settings.currency}
-                isLight={calcIsLight}
-                accountId={account?.id ?? null}
-                onSelect={handlePickPriceItem}
-                onClose={closePriceAmbiguity}
-              />
-
               {/* Action toolbar */}
               <div
                 ref={expressionToolbarRef}
-                className={`calc-expression-toolbar relative z-50 isolate shrink-0 flex justify-between gap-1.5 py-[0.34rem] rounded-full border transition-all duration-300 self-center ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white border-black/8 text-black' : 'bg-[#141414] border-white/14 text-white'}`}
+                className={`calc-expression-toolbar relative isolate shrink-0 flex justify-between gap-1.5 py-[0.34rem] rounded-full border transition-all duration-300 self-center ${isPricePickerOpen ? 'z-20' : 'z-50'} ${isSearchOpen ? 'blur-xl opacity-40' : ''} ${isLight ? 'bg-white border-black/8 text-black' : 'bg-[#141414] border-white/14 text-white'}`}
                 style={{
                   width: '80%',
                   marginBottom: isLandscape ? '0.35rem' : '0.5rem',
@@ -1855,7 +1872,8 @@ const AppContent: React.FC = () => {
 
             {!isLandscape && (
               <div
-                className={`relative z-30 shrink-0 grid grid-cols-4 grid-rows-5 min-h-0 overflow-hidden transition-opacity duration-300 ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
+                ref={portraitKeypadRef}
+                className={`relative shrink-0 grid grid-cols-4 grid-rows-5 min-h-0 transition-opacity duration-300 ${isPricePickerOpen ? 'z-50 overflow-visible' : 'z-30 overflow-hidden'} ${isSearchOpen ? 'blur-xl opacity-40' : ''}`}
                 style={{
                   flex: '1.3 0 0%',
                   gap: keypadGap,
@@ -1864,8 +1882,13 @@ const AppContent: React.FC = () => {
                   paddingBottom: keypadEdge,
                   transform: `translateY(-3%) scale(${keypadScale})`,
                   transformOrigin: 'center bottom',
+                  ['--keypad-gap' as string]: keypadGap,
+                  ['--keypad-pad' as string]: keypadEdge,
+                  ['--keypad-pad-top' as string]: '0px',
+                  ['--keypad-pad-bottom' as string]: keypadEdge,
                 }}
               >
+                {renderPriceItemPicker()}
                 {keypad.map((btn, idx) => (
                   <CalcButton
                     key={`port-${idx}`}

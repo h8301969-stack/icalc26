@@ -29,7 +29,6 @@ const PriceItemPicker: React.FC<PriceItemPickerProps> = ({
   onClose,
 }) => {
   const panelBg = isLight ? 'bg-[#f2f2f7] text-zinc-900' : 'bg-[#1c1c1e] text-white';
-  const tileBg = isLight ? 'bg-white border-zinc-200' : 'bg-zinc-800/70 border-white/8';
   const priceLabel = formatPriceLabel(price, currency);
   const rowRef = useRef<HTMLDivElement>(null);
 
@@ -47,41 +46,17 @@ const PriceItemPicker: React.FC<PriceItemPickerProps> = ({
     <MorphPresence show={isOpen} exitMs={280}>
       {(visible) => (
         <div
-          className={`price-item-picker-slot w-full shrink-0 px-[8%] ${
-            visible ? 'price-item-picker-slot--in pointer-events-auto' : 'pointer-events-none'
+          className={`price-item-picker-overlay ${
+            visible ? 'pointer-events-auto' : 'pointer-events-none'
           }`}
         >
-          <div className="price-item-picker-slot__inner">
           <div
-            className={`price-item-picker relative w-full mb-1 rounded-[20px] shadow-[0_12px_32px_rgba(0,0,0,0.28)] ${
+            className={`price-item-picker h-full w-full rounded-[16px] shadow-[0_8px_22px_rgba(0,0,0,0.28)] ${
               visible ? 'price-item-picker--in' : 'price-item-picker--out'
             } ${panelBg}`}
             role="dialog"
-            aria-label="Choose item"
-            aria-labelledby="price-item-picker-title"
+            aria-label={`Choose item, ${priceLabel}, ${items.length} matches`}
           >
-            <div
-              className={`px-3 pt-2.5 pb-1.5 flex items-center justify-between border-b ${
-                isLight ? 'border-black/6' : 'border-white/6'
-              }`}
-            >
-              <div className="min-w-0 pr-3">
-                <h3 id="price-item-picker-title" className="text-sm font-black truncate">
-                  Choose item
-                </h3>
-                <p className={`text-[11px] font-semibold opacity-55 truncate`}>
-                  {priceLabel} · {items.length} matches
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close"
-                className={`p-1.5 rounded-full shrink-0 ${isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
-              >
-                <Icons.X size={18} />
-              </button>
-            </div>
             <div ref={rowRef} className="price-item-picker-row" role="list">
               {items.map((item) => {
                 const selected = item.id === selectedItemId;
@@ -92,7 +67,7 @@ const PriceItemPicker: React.FC<PriceItemPickerProps> = ({
                   role="listitem"
                   data-price-item={item.id}
                   onClick={() => onSelect(item)}
-                  className={`price-item-picker-tile ${tileBg} ${selected ? 'price-item-picker-tile--selected' : ''}`}
+                  className={`price-item-picker-tile ${selected ? 'price-item-picker-tile--selected' : ''}`}
                   aria-label={selected ? `${item.name}, selected` : `Use ${item.name} on invoice`}
                   aria-pressed={selected}
                 >
@@ -106,21 +81,28 @@ const PriceItemPicker: React.FC<PriceItemPickerProps> = ({
                     />
                     {selected && (
                       <span className="price-item-picker-tile__check" aria-hidden="true">
-                        <Icons.Check size={14} />
+                        <Icons.Check size={11} />
                       </span>
                     )}
+                    <div className="price-item-picker-tile__caption">
+                      <span className="price-item-picker-tile__name">{item.name}</span>
+                      <span className="price-item-picker-tile__meta">
+                        {(item.grams ?? 0) > 0 ? `${item.grams}g` : `Stock ${item.stock}`}
+                      </span>
+                    </div>
                   </div>
-                  <span className="price-item-picker-tile__name">{item.name}</span>
-                  {(item.grams ?? 0) > 0 ? (
-                    <span className="price-item-picker-tile__meta">{item.grams}g</span>
-                  ) : (
-                    <span className="price-item-picker-tile__meta">Stock {item.stock}</span>
-                  )}
                 </button>
                 );
               })}
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className={`price-item-picker-close shrink-0 ${isLight ? 'bg-black/8 text-black/70' : 'bg-white/12 text-white/80'}`}
+              >
+                <Icons.X size={14} />
+              </button>
             </div>
-          </div>
           </div>
         </div>
       )}
