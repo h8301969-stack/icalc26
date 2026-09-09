@@ -844,11 +844,10 @@ const VisionHubPrintPanel: React.FC<VisionHubPrintPanelProps> = ({
                     <button
                       type="button"
                       onClick={() => setPlusMenuOpen((open) => !open)}
-                      className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 pos-dashboard-icon-lift ${
-                        isLight
-                          ? 'pos-dashboard-icon-lift--on-dark bg-black/40 border-white/5 hover:bg-black/60 text-white'
-                          : 'pos-dashboard-icon-lift--on-light bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-900'
-                      } ${plusMenuOpen ? 'ring-2 ring-white/40' : ''}`}
+                      className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 text-white ${
+                        plusMenuOpen ? 'ring-2 ring-white/50' : ''
+                      }`}
+                      style={{ backgroundColor: '#22c55e' }}
                       title="New"
                       aria-label="New iCalc or invoice"
                       aria-expanded={plusMenuOpen}

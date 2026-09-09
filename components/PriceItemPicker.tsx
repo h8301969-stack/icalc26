@@ -44,14 +44,17 @@ const PriceItemPicker: React.FC<PriceItemPickerProps> = ({
   }, [isOpen, selectedItemId]);
 
   return (
-    <MorphPresence show={isOpen}>
+    <MorphPresence show={isOpen} exitMs={280}>
       {(visible) => (
         <div
-          className={`w-full shrink-0 px-[8%] mb-1 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`}
+          className={`price-item-picker-slot w-full shrink-0 px-[8%] ${
+            visible ? 'price-item-picker-slot--in pointer-events-auto' : 'pointer-events-none'
+          }`}
         >
+          <div className="price-item-picker-slot__inner">
           <div
-            className={`relative w-full rounded-[20px] overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.28)] morph-panel ${
-              visible ? 'morph-panel--in' : 'morph-panel--out'
+            className={`price-item-picker relative w-full mb-1 rounded-[20px] shadow-[0_12px_32px_rgba(0,0,0,0.28)] ${
+              visible ? 'price-item-picker--in' : 'price-item-picker--out'
             } ${panelBg}`}
             role="dialog"
             aria-label="Choose item"
@@ -117,6 +120,7 @@ const PriceItemPicker: React.FC<PriceItemPickerProps> = ({
                 );
               })}
             </div>
+          </div>
           </div>
         </div>
       )}
