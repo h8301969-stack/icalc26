@@ -1,5 +1,5 @@
-﻿# Telegram database setup (local notes)
+﻿# Telegram database setup
 
-Operational notes for Telegram DB / bot wiring belong in a **local-only** file named `telegramdb.md` (gitignored).
+In-app admin docs are loaded from [`../telegramdb.md`](../telegramdb.md) (imported as raw markdown in `AdminCodeDashboard`).
 
-Do not put bot tokens, API keys, or passwords in the repo. Store secrets in Supabase/GitHub secrets or a password manager.
+Never put real bot tokens in that file. Use Supabase Edge Function secrets / a password manager.

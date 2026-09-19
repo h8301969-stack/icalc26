@@ -37,5 +37,5 @@ public/icalc.apk
 
 # Local ops / credential notes (never commit)
 SUPABASE_DEV_ADMIN_PASSWORD.md
-telegramdb.md
 *.secret.md
+
