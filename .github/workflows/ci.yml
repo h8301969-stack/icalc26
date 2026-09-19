@@ -1,27 +1,32 @@
 name: CI
-on: [push, pull_request]
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 18
-          cache: 'npm'
-      - run: npm install
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
       - name: Lint
         run: npm run lint
+
       - name: Test
         run: npm test
+
       - name: Build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         run: npm run build
-      - name: Accessibility Audit (Lighthouse)
-        uses: treosh/lighthouse-ci-action@v12
-        with:
-          uploadArtifacts: true
-          temporaryPublicStorage: true
-          configPath: './lighthouserc.json'

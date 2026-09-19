@@ -856,10 +856,10 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
     let scale = Math.max(0.86, 1 - absRel * 0.08);
     let opacity = Math.max(0, 1 - absRel * 0.22);
     let blurPx = 0;
-    let rotateY = 0;
-    let translateZ = 0;
+    const rotateY = 0;
+    const translateZ = 0;
     let zIndex = Math.round(130 - absRel * 12);
-    let transformOrigin = 'center center';
+    const transformOrigin = 'center center';
     let translateXValue = `${effectiveRel * 42}%`;
 
     if (relativePos === 0 && verticalDismiss) {

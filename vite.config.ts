@@ -46,6 +46,7 @@ export default defineConfig(async () => {
       test: {
         environment: 'node',
         include: ['utils/**/*.test.ts'],
+        setupFiles: ['./vitest.setup.ts'],
       },
     };
 });
